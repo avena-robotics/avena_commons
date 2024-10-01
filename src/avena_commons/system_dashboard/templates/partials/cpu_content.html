@@ -1,0 +1,26 @@
+<div class="data"></div>
+<h2>CPU Usage Detailed</h2>
+{% for core, usage in cpu_info['cpu_usage_per_core'].items() %}
+{% if loop.index0 % 3 == 0 %}
+<div class="row-100">
+    {% endif %}
+    <div class="col-33">
+        <div id="data-div-core-{{ core }}" class="data div-color-normal">
+            <div id="cpu-core-{{ core }}" class="cpu-core">
+                <h3>CPU Core {{ core }}</h3>
+                <p><span id="cpu-usage-detailed">{{ usage }}%</span></p>
+                <p><span id="top-process-{{ core }}-1" class="top_proc_detail"> </span></p>
+                <p><span id="top-process-{{ core }}-2" class="top_proc_detail"> </span></p>
+                <p><span id="top-process-{{ core }}-3" class="top_proc_detail"> </span></p>
+
+                <!-- Możliwość dodania wykresu dla każdego rdzenia -->
+                <!-- <canvas id="core-chart-{{ core }}"></canvas> -->
+            </div>
+        </div>
+    </div>
+    {% if loop.index0 % 3 == 2 or loop.last %}
+</div>
+</div>
+{% endif %}
+{% endfor %}
+</div>
