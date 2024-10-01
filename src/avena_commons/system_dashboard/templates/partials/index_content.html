@@ -1,0 +1,51 @@
+<div class="row-100">
+    <div class="col-50">
+        <div class="data">
+            <h2>System Information</h2>
+            <p><strong>System Name:</strong> <span id="kernel-version">{{ kernel_info["node_name"] }}</span></p>
+            <p><strong>IP Address:</strong> <span id="ip-address">{{ network_info["ip_addresses"][1][1] }}</span></p>
+            <p><strong>Kernel Version:</strong> <span id="kernel-version">{{ kernel_info["kernel_version"] }}</span></p>
+            <p><strong>Uptime:</strong> <span id="uptime">{{ uptime['uptime'] }}</span></p>
+        </div>
+    </div>
+    <div class="col-50">
+        <div id="cpu-button" class="data">
+            <h2>CPU Usage</h2>
+            <h3>CPU total cores: {{ cpu_total_cores }}</h3>
+            <p><span id="cpu-usage">{{ cpu_usage }}%</span></p>
+            <canvas id="cpu-chart"></canvas>
+        </div>
+    </div>
+</div>
+<div class="row-100">
+    <div class="col-50">
+        <div class="data">
+            <h2>Memory Usage</h2>
+            <h3>Memory Total: {{ memory_total }} GB</h3>
+            <p><span id="mem-usage">{{ memory_usage }}%</span></p>
+            <canvas id="memory-chart"></canvas>
+        </div>
+    </div>
+    <div class="col-50">
+        <div class="data">
+            <h2>Disk Usage</h2>
+            <h3>Disk Total space: {{ disk_total_space }} GB</h3>
+            <p><span id="disk-usage">{{ disk_usage }}%</span></p>
+            <canvas id="disk-chart"></canvas>
+        </div>
+    </div>
+</div>
+<div class="row-100">
+    <div class="col-50">
+        <div class="data">
+            <h2>Control Loop 1</h2>
+            <p><span id="control_loop_1">{{ control_loop_1 }}</span></p>
+        </div>
+    </div>
+    <div class="col-50">
+        <div class="data">
+            <h2>Control Loop 2</h2>
+            <p><span id="control_loop_2">{{ control_loop_2 }}</span></p>
+        </div>
+    </div>
+</div>
