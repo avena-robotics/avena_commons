@@ -51,6 +51,7 @@ from flask_session.__init__ import Session
 # from waitress import serve
 import os, sys
 from .system_status import *
+# from multiprocessing import Process, Pipe
 # from avena_commons.controller import Controller
 
 
@@ -69,11 +70,9 @@ def get_system_data():
     }
 
 
-if __name__ == "__main__":
-    from multiprocessing import Process, Pipe
-
+def run_app():
     key = os.urandom(24)
-    app = Flask(__name__, static_folder="static")
+    app = Flask(__name__, static_folder="static", template_folder="templates")
     app.secret_key = key
     app.config["SESSION_TYPE"] = "filesystem"
     Session(app)
