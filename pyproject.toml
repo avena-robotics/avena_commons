@@ -1,21 +1,24 @@
 [build-system]
-requires = ["setuptools>=75.1.0"]
+requires = ["setuptools>=75.1.0", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
 [project]
 name = "avena_commons"
-version = "1.0.0"
-authors = [
-  { name="Avena Robotics", email="author@example.com" },
-]
+version = "1.1.0"
 description = "A small utility library for working with Avena Robotics"
+authors = [
+    { name = "Avena Robotics", email = "lukasz.lecki@pomagier.info" },
+]
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: APACHE-2.0",
-    "Operating System :: Ubuntu",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent"
 ]
 
+[project.scripts]
+run_system_dashboard = "avena_commons.system_dashboard.app:run_app"
+
 [project.urls]
-Homepage = "https://github.com/pypa/sampleproject"
-Issues = "https://github.com/pypa/sampleproject/issues"
+Homepage = "https://github.com/avena-robotics/avena_commons"
