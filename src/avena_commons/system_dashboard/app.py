@@ -71,11 +71,11 @@ def get_system_data():
 
 
 def run_app():
-    key = os.urandom(24)
+    # key = os.urandom(24)
     app = Flask(__name__, static_folder="static", template_folder="templates")
-    app.secret_key = key
-    app.config["SESSION_TYPE"] = "filesystem"
-    Session(app)
+    # app.secret_key = key
+    # app.config["SESSION_TYPE"] = "filesystem"
+    # Session(app)
 
     @app.route("/data")
     def data():
@@ -125,8 +125,7 @@ def run_app():
     def index_content():
         """Returns the home page content in HTML format. Dynamic content.
         :return: The home page content template with system information."""
-        if not session.get("logged_in"):
-            return redirect("/login")
+
         data = get_system_data()
         return render_template("partials/index_content.html", **data)
 
@@ -134,8 +133,7 @@ def run_app():
     def cpu_info():
         """Renders the CPU static page.
         :return: The CPU page template with cpu_info."""
-        if not session.get("logged_in"):
-            return redirect("/login")
+        
         cpu_info = get_cpu_info()
         return render_template("cpu.html", cpu_info=cpu_info)
 
@@ -143,14 +141,16 @@ def run_app():
     def cpu_content():
         """Returns the CPU page content in HTML format. Dynamic content.
         :return: The CPU page content template with cpu_info."""
-        if not session.get("logged_in"):
-            return redirect("/login")
 
         cpu_info = get_cpu_info()
 
         # Zwracanie tylko fragmentu informacji o CPU
         return render_template("partials/cpu_content.html", cpu_info=cpu_info)
 
+    @app.route("/login")
+    def login():
+        return redirect("/")
+    
     # @app.route("/control_loop_1")
     # def control_loop_1():
     #     """Renders the control loop 1 data. Not USED"""
