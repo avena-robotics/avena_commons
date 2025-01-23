@@ -28,6 +28,7 @@ class AvenaComm:
         data=[],
         message_logger=None,
         use_pickle=1,
+        debug=False,
     ):
         self.comm_name = "/" + comm_name
         self.comm_name_lock = self.comm_name + "_semaphore"
@@ -40,6 +41,7 @@ class AvenaComm:
         self.message_logger = message_logger
         # self.use_pickle = use_pickle
         self.data = data
+        self._debug = debug
         format_shm = False
 
         try:
@@ -182,10 +184,11 @@ class AvenaComm:
         )
 
     def _info(self, message):
-        if self.message_logger:
-            self.message_logger.info(message)
-        else:
-            print(message)
+        if self._debug:
+            if self.message_logger:
+                self.message_logger.info(message)
+            else:
+                print(message)
 
     def _error(self, message):
         if self.message_logger:
