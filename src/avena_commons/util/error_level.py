@@ -127,7 +127,7 @@ class ErrorManager:
     :type current_error: list
     """
 
-    def __init__(self, suffix, message_logger=None):
+    def __init__(self, suffix, message_logger=None, debug=False):
         self.__message_logger = message_logger
 
         self.__error_interface = ErrorInterface(log=False)
@@ -138,6 +138,7 @@ class ErrorManager:
             semaphore_timeout=0.01,
             data=self.__error_interface,
             message_logger=self.__message_logger,
+            debug=debug
         )
 
         self.__cl = ControlLoop(
