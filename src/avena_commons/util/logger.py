@@ -1,11 +1,12 @@
 import datetime
 import multiprocessing
-import os, errno
-import psutil
-from colorify import *
-from pathlib import Path
+import os
 import time
 from enum import Enum
+from pathlib import Path
+
+import psutil
+from colorify import C, colorify
 
 
 class LoggerPolicyPeriod:
@@ -59,19 +60,13 @@ class Logger_Receiver:
         current_filename = self._current_filename()
         link_name = self.base_filename + self.extenstion
         self.files.append(current_filename)
-        if self.create_symlinks:
+        if self.create_symlinks and os.name != 'nt':  # Only create symlinks on non-Windows systems
             try:
-                os.symlink(
-                    current_filename, link_name
-                )  # tworzenie symlinku do najnowszego pliku
-            except OSError as e:
-                if e.errno == errno.EEXIST:
-                    os.remove(link_name)  # usuniecie starego symlinku
-                    os.symlink(
-                        current_filename, link_name
-                    )  # tworzenie symlinku do najnowszego pliku
-                else:
-                    raise e
+                if os.path.exists(link_name):
+                    os.remove(link_name)
+                os.symlink(current_filename, link_name)
+            except Exception as e:
+                print(f"Warning: Could not create symlink: {e}")
         return current_filename
 
     def run(self, pipe_in):
@@ -166,12 +161,22 @@ class Logger:
 
         self.process.start()
         p = psutil.Process(self.process.pid)
-        p.cpu_affinity([10])  # Przypisanie do rdzenia nr 5
-        # p.nice(40)
+        
+        # Set CPU affinity in a cross-platform way
+        try:
+            if os.name == 'nt':  # Windows
+                # On Windows, we use a different CPU core number scheme
+                p.cpu_affinity([0])  # Use first CPU as fallback
+            else:
+                p.cpu_affinity([10])
+        except Exception as e:
+            print(f"Warning: Could not set CPU affinity: {e}")
 
     def run_receiver(self, pipe_in):
-        # print(f"Starting run_receiver() {self.filename} {self.type}")
-        os.nice(40)
+        # Set process priority only on Unix systems
+        if os.name == 'posix':  # Unix-like systems
+            os.nice(40)
+            
         receiver = Logger_Receiver(
             filename=self.filename,
             clear_file=self.clear_file,
@@ -217,7 +222,7 @@ class DataLogger(Logger):
         else:
             self.row.append(value)
 
-    def end_row(self):  # konice wiersza - zapis do slownika - otwarcie nowego wiersza
+    def end_row(self):
         if len(self.row) == 0:
             return  # nie zapisuj pustych wierszy
         self.data.append(self.row)
