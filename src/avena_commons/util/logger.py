@@ -6,11 +6,10 @@ from enum import Enum
 from pathlib import Path
 
 import psutil
-from colorify import C, colorify
+from colorify import *
 
 
 class LoggerPolicyPeriod:
-
     NONE = 1e20
     LAST_1_MINUTE = 60
     LAST_15_MINUTES = LAST_1_MINUTE * 15
@@ -60,7 +59,9 @@ class Logger_Receiver:
         current_filename = self._current_filename()
         link_name = self.base_filename + self.extenstion
         self.files.append(current_filename)
-        if self.create_symlinks and os.name != 'nt':  # Only create symlinks on non-Windows systems
+        if (
+            self.create_symlinks and os.name != "nt"
+        ):  # Only create symlinks on non-Windows systems
             try:
                 if os.path.exists(link_name):
                     os.remove(link_name)
@@ -78,7 +79,6 @@ class Logger_Receiver:
             current_filename = f"{self.base_filename}{self.extenstion}"
         try:
             while True:
-
                 if (
                     time.time() - self.last_file_change_time >= self.period
                 ):  # sprawdzenie czy nalezy wymienic plik na nowy
@@ -136,7 +136,6 @@ class Logger_Receiver:
 
 
 class Logger:
-
     def __init__(
         self,
         filename,
@@ -146,7 +145,6 @@ class Logger:
         files_count: int = 1,
         create_symlinks: bool = False,
     ):
-
         self.filename = filename
         self.type = type
         self.clear_file = clear_file
@@ -161,10 +159,10 @@ class Logger:
 
         self.process.start()
         p = psutil.Process(self.process.pid)
-        
+
         # Set CPU affinity in a cross-platform way
         try:
-            if os.name == 'nt':  # Windows
+            if os.name == "nt":  # Windows
                 # On Windows, we use a different CPU core number scheme
                 p.cpu_affinity([0])  # Use first CPU as fallback
             else:
@@ -174,9 +172,9 @@ class Logger:
 
     def run_receiver(self, pipe_in):
         # Set process priority only on Unix systems
-        if os.name == 'posix':  # Unix-like systems
+        if os.name == "posix":  # Unix-like systems
             os.nice(40)
-            
+
         receiver = Logger_Receiver(
             filename=self.filename,
             clear_file=self.clear_file,
@@ -200,7 +198,6 @@ class Logger:
 
 
 class DataLogger(Logger):
-
     def __init__(
         self, filename, clear_file=True, period=LoggerPolicyPeriod.NONE, files_count=1
     ):
@@ -262,7 +259,6 @@ class DataLogger(Logger):
 
 
 class MessageLogger(Logger):
-
     def __init__(
         self,
         filename,
@@ -323,28 +319,28 @@ def format_message(message: str, level: LogLevelType = LogLevelType.INFO):
         return f"{generate_timestamp()} [{colorify('NONE', C.red)}] {message}"
 
 
-def debug(message: str, message_logger: MessageLogger = None):
+def debug(message: str, message_logger: MessageLogger = None | None) -> None:
     if message_logger is not None:
         message_logger.debug(message)
     else:
         print(format_message(message, LogLevelType.DEBUG))
 
 
-def info(message: str, message_logger: MessageLogger = None):
+def info(message: str, message_logger: MessageLogger = None | None) -> None:
     if message_logger is not None:
         message_logger.info(str(message))
     else:
         print(format_message(message, LogLevelType.INFO))
 
 
-def warning(message: str, message_logger: MessageLogger = None):
+def warning(message: str, message_logger: MessageLogger = None | None) -> None:
     if message_logger is not None:
         message_logger.warning(message)
     else:
         print(format_message(message, LogLevelType.WARNING))
 
 
-def error(message: str, message_logger: MessageLogger = None):
+def error(message: str, message_logger: MessageLogger = None | None) -> None:
     if message_logger is not None:
         message_logger.error(message)
     else:
