@@ -319,28 +319,28 @@ def format_message(message: str, level: LogLevelType = LogLevelType.INFO):
         return f"{generate_timestamp()} [{colorify('NONE', C.red)}] {message}"
 
 
-def debug(message: str, message_logger: MessageLogger = None | None) -> None:
+def debug(message: str, message_logger: MessageLogger | None = None) -> None:
     if message_logger is not None:
         message_logger.debug(message)
     else:
         print(format_message(message, LogLevelType.DEBUG))
 
 
-def info(message: str, message_logger: MessageLogger = None | None) -> None:
+def info(message: str, message_logger: MessageLogger | None = None) -> None:
     if message_logger is not None:
         message_logger.info(str(message))
     else:
         print(format_message(message, LogLevelType.INFO))
 
 
-def warning(message: str, message_logger: MessageLogger = None | None) -> None:
+def warning(message: str, message_logger: MessageLogger | None = None) -> None:
     if message_logger is not None:
         message_logger.warning(message)
     else:
         print(format_message(message, LogLevelType.WARNING))
 
 
-def error(message: str, message_logger: MessageLogger = None | None) -> None:
+def error(message: str, message_logger: MessageLogger | None = None) -> None:
     if message_logger is not None:
         message_logger.error(message)
     else:
