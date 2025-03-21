@@ -110,144 +110,183 @@ finally:
 
 import copy
 import os
-from enum import Enum, auto
 import threading
-from ..connection.shm import AvenaComm as shm
-from .logger import info, debug, warning, error
+from enum import Enum, auto
+
 from .control_loop import ControlLoop
+from .logger import error, info, warning
 
+# Check if running on Windows
+IS_WINDOWS = os.name == 'nt'
 
-class ErrorManager:
-    """Error manager class.
+if not IS_WINDOWS:
+    from ..connection.shm import AvenaComm as shm
 
-    :param suffix: Suffix - number for the shared memory
-    :param message_logger: Message logger
-
-    :param current_error: Current error
-    :type current_error: list
-    """
-
-    def __init__(self, suffix, message_logger=None, debug=False):
-        self.__message_logger = message_logger
-
-        self.__error_interface = ErrorInterface(log=False)
-
-        self.__comm = shm(
-            comm_name=f"error_manager_{suffix}",
-            shm_size=100_000,
-            semaphore_timeout=0.01,
-            data=self.__error_interface,
-            message_logger=self.__message_logger,
-            debug=debug
-        )
-
-        self.__cl = ControlLoop(
-            name="manager_loop",
-            warning_printer=False,
-            period=1 / 1000,
-            message_logger=self.__message_logger,
-        )  # 1000hz
-        self.__shm_freq = 1000 / 100  # 50hz/100hz
-
-        self.__set_error = False
-        self.__ack_errors = False
-        self.__ack_error = None
-
-        self.__stop_event = threading.Event()
-        self.__connect()
-        self.__update_msg_logger()
-
-    def __connect(self):
-        self._t1 = threading.Thread(target=self.__run)
-        self._t1.start()
-
-    def __run(self):
-        os.nice(15)
-        try:
-            while not self.__stop_event.is_set():
-                self.__cl.loop_begin()  # 1000hz
-                if self.__cl.loop_counter % self.__shm_freq == 0:  # 50hz
-                    check, interface = self.__comm.lock_and_read()
-                    if check:
-
-                        if self.__set_error:
-                            self.__set_error = False
-                            try:
-                                interface.set_error(
-                                    self.__error_interface.current_error.pop()
-                                )
-                            except IndexError:
-                                pass
-
-                        elif self.__ack_errors:
-                            self.__ack_errors = False
-                            interface.ack_errors()
-
-                        elif self.__ack_error is not None:
-                            interface.ack_error(self.__ack_error)
-                            self.__ack_error = None
-
-                        self.__comm.save_and_unlock(interface)
-                        self.__error_interface = copy.deepcopy(interface)
-                        self.__update_msg_logger()
-
-                self.__cl.loop_end()
-        except KeyboardInterrupt:
+if IS_WINDOWS:
+    warning("ErrorManager is not supported on Windows due to POSIX IPC requirements")
+    
+    # Dummy ErrorManager for Windows systems
+    class ErrorManager:
+        """Dummy ErrorManager for Windows systems - IPC functionality disabled"""
+        def __init__(self, suffix, message_logger=None, debug=False):
+            warning("ErrorManager is not supported on Windows - using dummy implementation")
+            self._message_logger = message_logger
+            
+        def set_error(self, error_code, msg=""):
+            warning(f"Error occurred but not propagated (Windows): {error_code} - {msg}", 
+                   self._message_logger)
+            
+        def ack_errors(self):
             pass
-        except Exception as e:
-            error(
-                f"Error interface loop error: {e}", message_logger=self.__message_logger
+            
+        def ack_error(self, error_code):
+            pass
+            
+        def check_current_group(self, groups):
+            return False
+            
+        def check_current_error(self, error_code):
+            return False
+            
+        def get_error_history(self):
+            return []
+            
+        def stop(self):
+            pass
+
+else:
+    # Original ErrorManager implementation for POSIX systems
+    class ErrorManager:
+        """Error manager class.
+
+        :param suffix: Suffix - number for the shared memory
+        :param message_logger: Message logger
+
+        :param current_error: Current error
+        :type current_error: list
+        """
+
+        def __init__(self, suffix, message_logger=None, debug=False):
+            self.__message_logger = message_logger
+
+            self.__error_interface = ErrorInterface(log=False)
+
+            self.__comm = shm(
+                comm_name=f"error_manager_{suffix}",
+                shm_size=100_000,
+                semaphore_timeout=0.01,
+                data=self.__error_interface,
+                message_logger=self.__message_logger,
+                debug=debug
             )
-            raise
-        finally:
-            self.__comm.save_and_unlock(interface)
-            # print(f"Closing error manager interface")
 
-    @property
-    def current_error(self):
-        return self.__error_interface.current_error
+            self.__cl = ControlLoop(
+                name="manager_loop",
+                warning_printer=False,
+                period=1 / 1000,
+                message_logger=self.__message_logger,
+            )  # 1000hz
+            self.__shm_freq = 1000 / 100  # 50hz/100hz
 
-    @current_error.setter
-    def current_error(self, *args) -> None:
-        raise AttributeError("Cannot set current_error attribute")
+            self.__set_error = False
+            self.__ack_errors = False
+            self.__ack_error = None
 
-    def set_error(self, error_code, msg=""):
-        self.__error_interface.set_error(error_code, msg)
-        self.__set_error = True
+            self.__stop_event = threading.Event()
+            self.__connect()
+            self.__update_msg_logger()
 
-    def ack_errors(self):
-        self.__ack_errors = True
+        def __connect(self):
+            self._t1 = threading.Thread(target=self.__run)
+            self._t1.start()
 
-    def ack_error(self, error_code):
-        self.__ack_error = error_code
+        def __run(self):
+            os.nice(15)
+            try:
+                while not self.__stop_event.is_set():
+                    self.__cl.loop_begin()  # 1000hz
+                    if self.__cl.loop_counter % self.__shm_freq == 0:  # 50hz
+                        check, interface = self.__comm.lock_and_read()
+                        if check:
 
-    def check_current_group(self, group):
-        """Check if error group in current error.
+                            if self.__set_error:
+                                self.__set_error = False
+                                try:
+                                    interface.set_error(
+                                        self.__error_interface.current_error.pop()
+                                    )
+                                except IndexError:
+                                    pass
 
-        group (ErrorCodes): Error group to check, can be a list of groups
+                            elif self.__ack_errors:
+                                self.__ack_errors = False
+                                interface.ack_errors()
 
-        """
-        return self.__error_interface.check_current_group(group)
+                            elif self.__ack_error is not None:
+                                interface.ack_error(self.__ack_error)
+                                self.__ack_error = None
 
-    def check_current_error(self, error_code):
-        """Check if error code in current error.
+                            self.__comm.save_and_unlock(interface)
+                            self.__error_interface = copy.deepcopy(interface)
+                            self.__update_msg_logger()
 
-        error_code (ErrorCodes): Error code to check, can be a list of error codes
+                    self.__cl.loop_end()
+            except KeyboardInterrupt:
+                pass
+            except Exception as e:
+                error(
+                    f"Error interface loop error: {e}", message_logger=self.__message_logger
+                )
+                raise
+            finally:
+                self.__comm.save_and_unlock(interface)
+                # print(f"Closing error manager interface")
 
-        """
-        return self.__error_interface.check_current_error(error_code)
+        @property
+        def current_error(self):
+            return self.__error_interface.current_error
 
-    def get_error_history(self):
-        return self.__error_interface.get_error_history()
+        @current_error.setter
+        def current_error(self, *args) -> None:
+            raise AttributeError("Cannot set current_error attribute")
 
-    def __update_msg_logger(self):
-        """Because we cant pickle logger"""
-        self.__error_interface._log = True
-        self.__error_interface._message_logger = self.__message_logger
+        def set_error(self, error_code, msg=""):
+            self.__error_interface.set_error(error_code, msg)
+            self.__set_error = True
 
-    def stop(self):
-        self.__stop_event.set()
-        self._t1.join()
+        def ack_errors(self):
+            self.__ack_errors = True
+
+        def ack_error(self, error_code):
+            self.__ack_error = error_code
+
+        def check_current_group(self, group):
+            """Check if error group in current error.
+
+            group (ErrorCodes): Error group to check, can be a list of groups
+
+            """
+            return self.__error_interface.check_current_group(group)
+
+        def check_current_error(self, error_code):
+            """Check if error code in current error.
+
+            error_code (ErrorCodes): Error code to check, can be a list of error codes
+
+            """
+            return self.__error_interface.check_current_error(error_code)
+
+        def get_error_history(self):
+            return self.__error_interface.get_error_history()
+
+        def __update_msg_logger(self):
+            """Because we cant pickle logger"""
+            self.__error_interface._log = True
+            self.__error_interface._message_logger = self.__message_logger
+
+        def stop(self):
+            self.__stop_event.set()
+            self._t1.join()
 
 
 class ErrorCodes(Enum):
