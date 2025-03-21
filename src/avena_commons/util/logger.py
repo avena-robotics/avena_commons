@@ -1,15 +1,15 @@
 import datetime
 import multiprocessing
-import os, errno
-import psutil
-from colorify import *
-from pathlib import Path
+import os
 import time
 from enum import Enum
+from pathlib import Path
+
+import psutil
+from colorify import *
 
 
 class LoggerPolicyPeriod:
-
     NONE = 1e20
     LAST_1_MINUTE = 60
     LAST_15_MINUTES = LAST_1_MINUTE * 15
@@ -38,6 +38,7 @@ class Logger_Receiver:
         period=LoggerPolicyPeriod.NONE,
         files_count=1,
         create_symlinks=False,
+        colors=True,
     ):
         self.base_filename, self.extenstion = os.path.splitext(filename)
         self.clear_file = clear_file
@@ -49,7 +50,7 @@ class Logger_Receiver:
         self.header_written: bool = False
         self.type = type
         self.create_symlinks: bool = create_symlinks
-
+        self.__colors: bool = colors
     def _current_filename(self):
         # Tworzenie nazwy pliku z uwzględnieniem bieżącego czasu
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -59,19 +60,15 @@ class Logger_Receiver:
         current_filename = self._current_filename()
         link_name = self.base_filename + self.extenstion
         self.files.append(current_filename)
-        if self.create_symlinks:
+        if (
+            self.create_symlinks and os.name != "nt"
+        ):  # Only create symlinks on non-Windows systems
             try:
-                os.symlink(
-                    current_filename, link_name
-                )  # tworzenie symlinku do najnowszego pliku
-            except OSError as e:
-                if e.errno == errno.EEXIST:
-                    os.remove(link_name)  # usuniecie starego symlinku
-                    os.symlink(
-                        current_filename, link_name
-                    )  # tworzenie symlinku do najnowszego pliku
-                else:
-                    raise e
+                if os.path.exists(link_name):
+                    os.remove(link_name)
+                os.symlink(current_filename, link_name)
+            except Exception as e:
+                print(f"Warning: Could not create symlink: {e}")
         return current_filename
 
     def run(self, pipe_in):
@@ -83,7 +80,6 @@ class Logger_Receiver:
             current_filename = f"{self.base_filename}{self.extenstion}"
         try:
             while True:
-
                 if (
                     time.time() - self.last_file_change_time >= self.period
                 ):  # sprawdzenie czy nalezy wymienic plik na nowy
@@ -119,7 +115,7 @@ class Logger_Receiver:
                     match self.type:
                         case DataType.LOG:
                             [level, message] = data
-                            file.write(format_message(message, level) + "\n")
+                            file.write(format_message(message, level, self.__colors) + "\n")
 
                         case DataType.CSV:
                             data_str = ",".join([str(x) for x in data])
@@ -141,7 +137,6 @@ class Logger_Receiver:
 
 
 class Logger:
-
     def __init__(
         self,
         filename,
@@ -150,8 +145,8 @@ class Logger:
         period=LoggerPolicyPeriod.NONE,
         files_count: int = 1,
         create_symlinks: bool = False,
+        colors: bool = False,
     ):
-
         self.filename = filename
         self.type = type
         self.clear_file = clear_file
@@ -163,15 +158,25 @@ class Logger:
         self.period = period
         self.files_count = files_count
         self.create_symlinks: bool = create_symlinks
-
+        self.__colors: bool = colors
         self.process.start()
         p = psutil.Process(self.process.pid)
-        p.cpu_affinity([10])  # Przypisanie do rdzenia nr 5
-        # p.nice(40)
+
+        # Set CPU affinity in a cross-platform way
+        try:
+            if os.name == "nt":  # Windows
+                # On Windows, we use a different CPU core number scheme
+                p.cpu_affinity([0])  # Use first CPU as fallback
+            else:
+                p.cpu_affinity([10])
+        except Exception as e:
+            print(f"Warning: Could not set CPU affinity: {e}")
 
     def run_receiver(self, pipe_in):
-        # print(f"Starting run_receiver() {self.filename} {self.type}")
-        os.nice(40)
+        # Set process priority only on Unix systems
+        if os.name == "posix":  # Unix-like systems
+            os.nice(40)
+
         receiver = Logger_Receiver(
             filename=self.filename,
             clear_file=self.clear_file,
@@ -179,6 +184,7 @@ class Logger:
             period=self.period,
             files_count=self.files_count,
             create_symlinks=self.create_symlinks,
+            colors=self.__colors,
         )
         receiver.run(pipe_in)
 
@@ -195,7 +201,6 @@ class Logger:
 
 
 class DataLogger(Logger):
-
     def __init__(
         self, filename, clear_file=True, period=LoggerPolicyPeriod.NONE, files_count=1
     ):
@@ -217,7 +222,7 @@ class DataLogger(Logger):
         else:
             self.row.append(value)
 
-    def end_row(self):  # konice wiersza - zapis do slownika - otwarcie nowego wiersza
+    def end_row(self):
         if len(self.row) == 0:
             return  # nie zapisuj pustych wierszy
         self.data.append(self.row)
@@ -257,7 +262,6 @@ class DataLogger(Logger):
 
 
 class MessageLogger(Logger):
-
     def __init__(
         self,
         filename,
@@ -265,6 +269,7 @@ class MessageLogger(Logger):
         period=LoggerPolicyPeriod.NONE,
         files_count=4,
         debug=True,
+        colors: bool = False,
     ):
         super().__init__(
             filename,
@@ -273,21 +278,22 @@ class MessageLogger(Logger):
             period=period,
             files_count=files_count,
             create_symlinks=True,
+            colors=colors,
         )
         self.__debug = debug
 
     def error(self, message):
-        self.pipe_out.send([LogLevelType.ERROR, message])
+        self.pipe_out.send([LogLevelType.error, message])
 
     def warning(self, message):
-        self.pipe_out.send([LogLevelType.WARNING, message])
+        self.pipe_out.send([LogLevelType.warning, message])
 
     def info(self, message):
-        self.pipe_out.send([LogLevelType.INFO, message])
+        self.pipe_out.send([LogLevelType.info, message])
 
     def debug(self, message):
         if self.__debug:
-            self.pipe_out.send([LogLevelType.DEBUG, message])
+            self.pipe_out.send([LogLevelType.debug, message])
 
     def set_debug(self, debug: bool):
         self.__debug = debug
@@ -305,43 +311,43 @@ def generate_timestamp():
     return now.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def format_message(message: str, level: LogLevelType = LogLevelType.info, colorize: bool = True):
+def format_message(message: str, level: LogLevelType = LogLevelType.info, colors: bool = True):
     match level:
         case LogLevelType.debug:
-            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colorize else level.name}] {message}"
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
         case LogLevelType.info:
-            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colorize else level.name}] {message}"
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
         case LogLevelType.warning:
-            return f"{generate_timestamp()} [{colorify(level.name, C.orange) if colorize else level.name}] {message}"
+            return f"{generate_timestamp()} [{colorify(level.name, C.orange) if colors else level.name}] {message}"
         case LogLevelType.error:
-            return f"{generate_timestamp()} [{colorify(level.name, C.red) if colorize else level.name}] {message}"
+            return f"{generate_timestamp()} [{colorify(level.name, C.red) if colors else level.name}] {message}"
         case _:
-            return f"{generate_timestamp()} [{colorify('NONE', C.red) if colorize else 'NONE'}] {message}"
+            return f"{generate_timestamp()} [{colorify('NONE', C.red) if colors else 'NONE'}] {message}"
 
 
-def debug(message: str, message_logger: MessageLogger = None, colorize: bool = False):
+def debug(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.debug(message)
     else:
-        print(format_message(message, LogLevelType.debug))
+        print(format_message(message, LogLevelType.debug, colors))
 
 
-def info(message: str, message_logger: MessageLogger = None, colorize: bool = False):
+def info(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.info(str(message))
     else:
-        print(format_message(message, LogLevelType.info))
+        print(format_message(message, LogLevelType.info, colors))
 
 
-def warning(message: str, message_logger: MessageLogger = None, colorize: bool = False):
+def warning(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.warning(message)
     else:
-        print(format_message(message, LogLevelType.warning, colorize))
+        print(format_message(message, LogLevelType.warning, colors))
 
 
-def error(message: str, message_logger: MessageLogger = None, colorize: bool = False):
+def error(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.error(message)
     else:
-        print(format_message(message, LogLevelType.error))
+        print(format_message(message, LogLevelType.error, colors))
