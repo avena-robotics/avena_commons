@@ -294,10 +294,10 @@ class MessageLogger(Logger):
 
 
 class LogLevelType(Enum):
-    DEBUG = 0
-    INFO = 1
-    WARNING = 2
-    ERROR = 3
+    debug = 0
+    info = 1
+    warning = 2
+    error = 3
 
 
 def generate_timestamp():
@@ -305,42 +305,43 @@ def generate_timestamp():
     return now.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def format_message(message: str, level: LogLevelType = LogLevelType.INFO):
-    if level == LogLevelType.DEBUG:
-        return f"{generate_timestamp()} [{level.name}] {message}"
-    elif level == LogLevelType.INFO:
-        return f"{generate_timestamp()} [{colorify(level.name, C.blue)}] {message}"
-    elif level == LogLevelType.WARNING:
-        return f"{generate_timestamp()} [{colorify(level.name, C.orange)}] {message}"
-    elif level == LogLevelType.ERROR:
-        return f"{generate_timestamp()} [{colorify(level.name, C.red)}] {message}"
-    else:
-        return f"{generate_timestamp()} [{colorify('NONE', C.red)}] {message}"
+def format_message(message: str, level: LogLevelType = LogLevelType.info, colorize: bool = True):
+    match level:
+        case LogLevelType.debug:
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colorize else level.name}] {message}"
+        case LogLevelType.info:
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colorize else level.name}] {message}"
+        case LogLevelType.warning:
+            return f"{generate_timestamp()} [{colorify(level.name, C.orange) if colorize else level.name}] {message}"
+        case LogLevelType.error:
+            return f"{generate_timestamp()} [{colorify(level.name, C.red) if colorize else level.name}] {message}"
+        case _:
+            return f"{generate_timestamp()} [{colorify('NONE', C.red) if colorize else 'NONE'}] {message}"
 
 
-def debug(message: str, message_logger: MessageLogger = None):
+def debug(message: str, message_logger: MessageLogger = None, colorize: bool = False):
     if message_logger is not None:
         message_logger.debug(message)
     else:
-        print(format_message(message, LogLevelType.DEBUG))
+        print(format_message(message, LogLevelType.debug))
 
 
-def info(message: str, message_logger: MessageLogger = None):
+def info(message: str, message_logger: MessageLogger = None, colorize: bool = False):
     if message_logger is not None:
         message_logger.info(str(message))
     else:
-        print(format_message(message, LogLevelType.INFO))
+        print(format_message(message, LogLevelType.info))
 
 
-def warning(message: str, message_logger: MessageLogger = None):
+def warning(message: str, message_logger: MessageLogger = None, colorize: bool = False):
     if message_logger is not None:
         message_logger.warning(message)
     else:
-        print(format_message(message, LogLevelType.WARNING))
+        print(format_message(message, LogLevelType.warning, colorize))
 
 
-def error(message: str, message_logger: MessageLogger = None):
+def error(message: str, message_logger: MessageLogger = None, colorize: bool = False):
     if message_logger is not None:
         message_logger.error(message)
     else:
-        print(format_message(message, LogLevelType.ERROR))
+        print(format_message(message, LogLevelType.error))
