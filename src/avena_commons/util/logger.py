@@ -38,6 +38,7 @@ class Logger_Receiver:
         period=LoggerPolicyPeriod.NONE,
         files_count=1,
         create_symlinks=False,
+        colors=True,
     ):
         self.base_filename, self.extenstion = os.path.splitext(filename)
         self.clear_file = clear_file
@@ -49,7 +50,7 @@ class Logger_Receiver:
         self.header_written: bool = False
         self.type = type
         self.create_symlinks: bool = create_symlinks
-
+        self.__colors: bool = colors
     def _current_filename(self):
         # Tworzenie nazwy pliku z uwzględnieniem bieżącego czasu
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -114,7 +115,7 @@ class Logger_Receiver:
                     match self.type:
                         case DataType.LOG:
                             [level, message] = data
-                            file.write(format_message(message, level) + "\n")
+                            file.write(format_message(message, level, self.__colors) + "\n")
 
                         case DataType.CSV:
                             data_str = ",".join([str(x) for x in data])
@@ -144,6 +145,7 @@ class Logger:
         period=LoggerPolicyPeriod.NONE,
         files_count: int = 1,
         create_symlinks: bool = False,
+        colors: bool = False,
     ):
         self.filename = filename
         self.type = type
@@ -156,7 +158,7 @@ class Logger:
         self.period = period
         self.files_count = files_count
         self.create_symlinks: bool = create_symlinks
-
+        self.__colors: bool = colors
         self.process.start()
         p = psutil.Process(self.process.pid)
 
@@ -182,6 +184,7 @@ class Logger:
             period=self.period,
             files_count=self.files_count,
             create_symlinks=self.create_symlinks,
+            colors=self.__colors,
         )
         receiver.run(pipe_in)
 
@@ -266,6 +269,7 @@ class MessageLogger(Logger):
         period=LoggerPolicyPeriod.NONE,
         files_count=4,
         debug=True,
+        colors: bool = False,
     ):
         super().__init__(
             filename,
@@ -274,31 +278,32 @@ class MessageLogger(Logger):
             period=period,
             files_count=files_count,
             create_symlinks=True,
+            colors=colors,
         )
         self.__debug = debug
 
     def error(self, message):
-        self.pipe_out.send([LogLevelType.ERROR, message])
+        self.pipe_out.send([LogLevelType.error, message])
 
     def warning(self, message):
-        self.pipe_out.send([LogLevelType.WARNING, message])
+        self.pipe_out.send([LogLevelType.warning, message])
 
     def info(self, message):
-        self.pipe_out.send([LogLevelType.INFO, message])
+        self.pipe_out.send([LogLevelType.info, message])
 
     def debug(self, message):
         if self.__debug:
-            self.pipe_out.send([LogLevelType.DEBUG, message])
+            self.pipe_out.send([LogLevelType.debug, message])
 
     def set_debug(self, debug: bool):
         self.__debug = debug
 
 
 class LogLevelType(Enum):
-    DEBUG = 0
-    INFO = 1
-    WARNING = 2
-    ERROR = 3
+    debug = 0
+    info = 1
+    warning = 2
+    error = 3
 
 
 def generate_timestamp():
@@ -306,42 +311,43 @@ def generate_timestamp():
     return now.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def format_message(message: str, level: LogLevelType = LogLevelType.INFO):
-    if level == LogLevelType.DEBUG:
-        return f"{generate_timestamp()} [{level.name}] {message}"
-    elif level == LogLevelType.INFO:
-        return f"{generate_timestamp()} [{colorify(level.name, C.blue)}] {message}"
-    elif level == LogLevelType.WARNING:
-        return f"{generate_timestamp()} [{colorify(level.name, C.orange)}] {message}"
-    elif level == LogLevelType.ERROR:
-        return f"{generate_timestamp()} [{colorify(level.name, C.red)}] {message}"
-    else:
-        return f"{generate_timestamp()} [{colorify('NONE', C.red)}] {message}"
+def format_message(message: str, level: LogLevelType = LogLevelType.info, colors: bool = True):
+    match level:
+        case LogLevelType.debug:
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
+        case LogLevelType.info:
+            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
+        case LogLevelType.warning:
+            return f"{generate_timestamp()} [{colorify(level.name, C.orange) if colors else level.name}] {message}"
+        case LogLevelType.error:
+            return f"{generate_timestamp()} [{colorify(level.name, C.red) if colors else level.name}] {message}"
+        case _:
+            return f"{generate_timestamp()} [{colorify('NONE', C.red) if colors else 'NONE'}] {message}"
 
 
-def debug(message: str, message_logger: MessageLogger | None = None) -> None:
+def debug(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.debug(message)
     else:
-        print(format_message(message, LogLevelType.DEBUG))
+        print(format_message(message, LogLevelType.debug, colors))
 
 
-def info(message: str, message_logger: MessageLogger | None = None) -> None:
+def info(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.info(str(message))
     else:
-        print(format_message(message, LogLevelType.INFO))
+        print(format_message(message, LogLevelType.info, colors))
 
 
-def warning(message: str, message_logger: MessageLogger | None = None) -> None:
+def warning(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.warning(message)
     else:
-        print(format_message(message, LogLevelType.WARNING))
+        print(format_message(message, LogLevelType.warning, colors))
 
 
-def error(message: str, message_logger: MessageLogger | None = None) -> None:
+def error(message: str, message_logger: MessageLogger = None, colors: bool = True):
     if message_logger is not None:
         message_logger.error(message)
     else:
-        print(format_message(message, LogLevelType.ERROR))
+        print(format_message(message, LogLevelType.error, colors))
