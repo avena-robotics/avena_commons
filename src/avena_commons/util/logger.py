@@ -207,7 +207,12 @@ class Logger:
 
 class DataLogger(Logger):
     def __init__(
-        self, filename, clear_file=True, period=LoggerPolicyPeriod.NONE, files_count=1
+        self,
+        filename,
+        clear_file=True,
+        period=LoggerPolicyPeriod.NONE,
+        files_count=1,
+        core=10,
     ):
         super().__init__(
             filename,
@@ -215,6 +220,7 @@ class DataLogger(Logger):
             clear_file=clear_file,
             period=period,
             files_count=files_count,
+            core=core,
             create_symlinks=False,
         )
         self.header = []
@@ -273,6 +279,7 @@ class MessageLogger(Logger):
         clear_file=True,
         period=LoggerPolicyPeriod.NONE,
         files_count=4,
+        core=10,
         debug=True,
         colors: bool = False,
     ):
@@ -282,6 +289,7 @@ class MessageLogger(Logger):
             clear_file=clear_file,
             period=period,
             files_count=files_count,
+            core=core,
             create_symlinks=True,
             colors=colors,
         )
