@@ -51,6 +51,7 @@ class Logger_Receiver:
         self.type = type
         self.create_symlinks: bool = create_symlinks
         self.__colors: bool = colors
+
     def _current_filename(self):
         # Tworzenie nazwy pliku z uwzględnieniem bieżącego czasu
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -115,7 +116,9 @@ class Logger_Receiver:
                     match self.type:
                         case DataType.LOG:
                             [level, message] = data
-                            file.write(format_message(message, level, self.__colors) + "\n")
+                            file.write(
+                                format_message(message, level, self.__colors) + "\n"
+                            )
 
                         case DataType.CSV:
                             data_str = ",".join([str(x) for x in data])
@@ -144,6 +147,7 @@ class Logger:
         clear_file: bool = True,
         period=LoggerPolicyPeriod.NONE,
         files_count: int = 1,
+        core: int = 10,
         create_symlinks: bool = False,
         colors: bool = False,
     ):
@@ -159,6 +163,7 @@ class Logger:
         self.files_count = files_count
         self.create_symlinks: bool = create_symlinks
         self.__colors: bool = colors
+        self.__core = core
         self.process.start()
         p = psutil.Process(self.process.pid)
 
@@ -168,7 +173,7 @@ class Logger:
                 # On Windows, we use a different CPU core number scheme
                 p.cpu_affinity([0])  # Use first CPU as fallback
             else:
-                p.cpu_affinity([10])
+                p.cpu_affinity([self.__core])
         except Exception as e:
             print(f"Warning: Could not set CPU affinity: {e}")
 
@@ -202,7 +207,12 @@ class Logger:
 
 class DataLogger(Logger):
     def __init__(
-        self, filename, clear_file=True, period=LoggerPolicyPeriod.NONE, files_count=1
+        self,
+        filename,
+        clear_file=True,
+        period=LoggerPolicyPeriod.NONE,
+        files_count=1,
+        core=10,
     ):
         super().__init__(
             filename,
@@ -210,6 +220,7 @@ class DataLogger(Logger):
             clear_file=clear_file,
             period=period,
             files_count=files_count,
+            core=core,
             create_symlinks=False,
         )
         self.header = []
@@ -268,6 +279,7 @@ class MessageLogger(Logger):
         clear_file=True,
         period=LoggerPolicyPeriod.NONE,
         files_count=4,
+        core=10,
         debug=True,
         colors: bool = False,
     ):
@@ -277,6 +289,7 @@ class MessageLogger(Logger):
             clear_file=clear_file,
             period=period,
             files_count=files_count,
+            core=core,
             create_symlinks=True,
             colors=colors,
         )
@@ -311,7 +324,9 @@ def generate_timestamp():
     return now.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def format_message(message: str, level: LogLevelType = LogLevelType.info, colors: bool = True):
+def format_message(
+    message: str, level: LogLevelType = LogLevelType.info, colors: bool = True
+):
     match level:
         case LogLevelType.debug:
             return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
