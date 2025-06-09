@@ -16,10 +16,12 @@ dependencies = [
     "colorify>=1.1.0",
     "numpy>=2.2.5",
     "scipy>=1.15.2",
+    'posix-ipc>=1.1.0; platform_system=="Linux"',
     "opencv-python>=4.11.0.86",
     "pydantic>=2.11.2",
     "requests>=2.32.3",
-    "uvicorn>=0.34.0"
+    "uvicorn>=0.34.0",
+    "httpx"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

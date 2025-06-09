@@ -1,14 +1,9 @@
 import math
 
+import cv2
 import numpy as np
 from colorify import *
 from scipy.spatial.transform import Rotation
-
-try:
-    import PyAvenaTrajectory as pat
-except ImportError:
-    print("PyAvenaTrajectory not found. Please install it using '...'.")
-import cv2
 
 
 def interpolate(x, y, new_x):
@@ -278,9 +273,6 @@ def check_distance(current, target, fksolver=None):
     elif len(current) < 6:
         diff = [target[i] - current[i] for i in range(len(current))]
         return max(diff)
-    else:
-        pose1 = pat.rconfig_to_pose_quat(target, fksolver, 6)
-        pose2 = pat.rconfig_to_pose_quat(current, fksolver, 6)
 
     diff = [pose1[i] - pose2[i] for i in range(3)]
     distance = round(np.linalg.norm(diff), 6)  # meters

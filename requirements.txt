@@ -7,3 +7,4 @@ colorify
 scipy
 opencv-python
 psutil
+build

@@ -880,7 +880,7 @@ class EventListener:
     async def __state_handler(self, event: Event):
         pass
 
-    async def __discover_handler(self, event: Event):
+    async def __discovery_handler(self, event: Event):
         pass
 
     async def __event_handler(self, event: Event):
