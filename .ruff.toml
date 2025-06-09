@@ -1,0 +1,7 @@
+line-length = 176
+preview = true
+target-version = "py310"
+
+[lint]
+select = ["F401"]
+extend-unsafe-fixes = ["F401"]

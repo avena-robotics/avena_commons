@@ -1,6 +1,7 @@
-from configparser import ConfigParser
-from .common import Config
 import os
+from configparser import ConfigParser
+
+from .common import Config
 
 
 class ControllerConfig(Config):

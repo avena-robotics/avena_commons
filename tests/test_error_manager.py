@@ -1,11 +1,10 @@
-import sys, os
 import unittest
+
 from avena_commons.util.error_level import (
-    ErrorInterface,
-    ErrorInfo,
+    ErrorCodeException,
     ErrorCodes,
     ErrorGroups,
-    ErrorCodeException,
+    ErrorInterface,
     InvalidError,
 )
 
@@ -19,9 +18,7 @@ class TestErrorManager(unittest.TestCase):
 
     def test_valid_error_set(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertEqual(
-            self.error_manager.current_error[-1].error_code, ErrorCodes.CONNECTION_ERROR
-        )
+        self.assertEqual(self.error_manager.current_error[-1].error_code, ErrorCodes.CONNECTION_ERROR)
 
     def test_invalid_error_set(self):
         with self.assertRaises(InvalidError):
@@ -29,9 +26,7 @@ class TestErrorManager(unittest.TestCase):
 
     def test_string_error_set(self):
         with self.assertRaises(InvalidError):
-            self.error_manager.set_error(
-                "SomeNonexistentError"
-            )  # Pass a string that isn't a valid Enum name
+            self.error_manager.set_error("SomeNonexistentError")  # Pass a string that isn't a valid Enum name
 
     def test_error_acknowledgement(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
@@ -46,9 +41,7 @@ class TestErrorManager(unittest.TestCase):
         self.assertEqual(len(self.error_manager.get_error_history()), 0)
 
     def test_error_with_message_logging(self):
-        self.error_manager.set_error(
-            ErrorCodes.PUMP_WATCHDOG_ERROR, "Pump watchdog triggered"
-        )
+        self.error_manager.set_error(ErrorCodes.PUMP_WATCHDOG_ERROR, "Pump watchdog triggered")
         self.assertEqual(
             self.error_manager.get_error_history()[-1].message,
             "Pump watchdog triggered",
@@ -57,9 +50,7 @@ class TestErrorManager(unittest.TestCase):
     def test_error_with_message(self):
         message = "Connection timeout"
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR, message)
-        self.assertIn(
-            message, (entry.message for entry in self.error_manager.get_error_history())
-        )
+        self.assertIn(message, (entry.message for entry in self.error_manager.get_error_history()))
 
     def test_log_error_with_no_message(self):
         self.error_manager.set_error(ErrorCodes.DEVICE_WARNING)
@@ -74,18 +65,12 @@ class TestErrorManager(unittest.TestCase):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR, "First error")
         self.error_manager.set_error(ErrorCodes.INITIALIZATION_ERROR, "Second error")
         self.assertEqual(len(self.error_manager.get_error_history()), 2)
-        self.assertEqual(
-            self.error_manager.get_error_history()[0].message, "First error"
-        )
-        self.assertEqual(
-            self.error_manager.get_error_history()[1].message, "Second error"
-        )
+        self.assertEqual(self.error_manager.get_error_history()[0].message, "First error")
+        self.assertEqual(self.error_manager.get_error_history()[1].message, "Second error")
 
     def test_error_group_enum(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertEqual(
-            self.error_manager.current_error[-1].error_group, ErrorGroups.CRITICAL
-        )
+        self.assertEqual(self.error_manager.current_error[-1].error_group, ErrorGroups.CRITICAL)
 
     def test_error_code_membership(self):
         for code in self.error_manager.error_groups.keys():
@@ -102,9 +87,7 @@ class TestErrorManager(unittest.TestCase):
 
     def test_current_error_check(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertTrue(
-            self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR)
-        )
+        self.assertTrue(self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR))
 
     def test_current_error_check_fail(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
@@ -114,50 +97,36 @@ class TestErrorManager(unittest.TestCase):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
         self.error_manager.set_error(ErrorCodes.INITIALIZATION_ERROR)
         self.error_manager.ack_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertFalse(
-            self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR)
-        )
+        self.assertFalse(self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR))
 
     def test_set_check_ack_specific_error(self):
         self.error_manager.set_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertTrue(
-            self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR)
-        )
+        self.assertTrue(self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR))
         self.assertTrue(self.error_manager.check_current_group(ErrorGroups.CRITICAL))
         self.error_manager.ack_error(ErrorCodes.CONNECTION_ERROR)
-        self.assertFalse(
-            self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR)
-        )
+        self.assertFalse(self.error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR))
         self.assertFalse(self.error_manager.check_current_group(ErrorGroups.CRITICAL))
 
     def test_custom_exception(self):
         with self.assertRaises(ErrorCodeException):
-            raise ErrorCodeException(
-                ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server"
-            )
+            raise ErrorCodeException(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
 
     def test_custom_exception_message(self):
         try:
-            raise ErrorCodeException(
-                ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server"
-            )
+            raise ErrorCodeException(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
         except ErrorCodeException as ce:
             self.assertEqual(ce.message, "Failed to connect to the server")
 
     def test_custom_exception_error_code(self):
         try:
-            raise ErrorCodeException(
-                ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server"
-            )
+            raise ErrorCodeException(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
         except ErrorCodeException as ce:
             self.assertEqual(ce.error_code, ErrorCodes.CONNECTION_ERROR)
 
     def test_set_error_with_exception(self):
         with self.assertRaises(ErrorCodeException):
             try:
-                raise ErrorCodeException(
-                    ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server"
-                )
+                raise ErrorCodeException(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
             except ErrorCodeException as ce:
                 self.error_manager.set_error(ce.error_code, ce.message)
                 self.assertEqual(

@@ -1,7 +1,8 @@
-import psutil
-import time
-import curses
 import argparse
+import curses
+import time
+
+import psutil
 
 
 class PCMonitor:
@@ -78,10 +79,7 @@ class PCMonitor:
     def get_initial_network_stats():
         """Get the initial network statistics."""
         net_io = psutil.net_io_counters(pernic=True)
-        return {
-            iface: (stats.bytes_sent, stats.bytes_recv)
-            for iface, stats in net_io.items()
-        }
+        return {iface: (stats.bytes_sent, stats.bytes_recv) for iface, stats in net_io.items()}
 
     @staticmethod
     def check_network_usage(initial_stats, interval):
@@ -183,9 +181,7 @@ class PCMonitor:
                             stdscr.addstr(row, 0, msg)
                             row += 1
 
-                    if (
-                        row + 5 < height
-                    ):  # Ensure there is enough space for the disk usage section
+                    if row + 5 < height:  # Ensure there is enough space for the disk usage section
                         stdscr.addstr(row, 0, "\nLargest Disk Usage:")
                         row += 2
                         stdscr.addstr(
@@ -218,9 +214,7 @@ class PCMonitor:
 
                     row += 2  # Add some space before network usage section
 
-                    if (
-                        row + 5 < height
-                    ):  # Ensure there is enough space for the network usage section
+                    if row + 5 < height:  # Ensure there is enough space for the network usage section
                         stdscr.addstr(row, 0, "\nNetwork Usage:")
                         row += 2
                         stdscr.addstr(
@@ -233,9 +227,7 @@ class PCMonitor:
                         row += 1
 
                         # Check network usage
-                        network_usage = PCMonitor.check_network_usage(
-                            initial_network_stats, interval
-                        )
+                        network_usage = PCMonitor.check_network_usage(initial_network_stats, interval)
                         for iface, sent_percentage, recv_percentage in network_usage:
                             stdscr.addstr(
                                 row,
@@ -257,9 +249,7 @@ class PCMonitor:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Monitor CPU core, disk, and network usage."
-    )
+    parser = argparse.ArgumentParser(description="Monitor CPU core, disk, and network usage.")
     parser.add_argument(
         "--threshold",
         "-t",

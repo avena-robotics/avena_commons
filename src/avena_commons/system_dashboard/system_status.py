@@ -1,8 +1,9 @@
-import os
-import psutil
 import json
-import time
+import os
 import socket
+import time
+
+import psutil
 
 
 def get_kernel_info():
@@ -43,9 +44,7 @@ def get_cpu_info():
         "physical_cores": psutil.cpu_count(logical=False),
         "total_cores": psutil.cpu_count(logical=True),
         "processor_speed": psutil.cpu_freq().current,
-        "cpu_usage_per_core": dict(
-            enumerate(psutil.cpu_percent(percpu=True, interval=1))
-        ),
+        "cpu_usage_per_core": dict(enumerate(psutil.cpu_percent(percpu=True, interval=1))),
         "total_cpu_usage": psutil.cpu_percent(interval=1),
     }
 
@@ -98,31 +97,23 @@ def get_process_info():
     :return: A list of dictionaries containing process details such as CPU number, PID, name, command line, memory percentage, and CPU percentage.
     """
     process_info = []
-    for process in psutil.process_iter(
-        ["cpu_num", "pid", "name", "cmdline", "memory_percent", "cpu_percent"]
-    ):
+    for process in psutil.process_iter(["cpu_num", "pid", "name", "cmdline", "memory_percent", "cpu_percent"]):
         try:
             proc_info = process.info
 
             # Check the conditions for memory and CPU usage
-            if (
-                proc_info["memory_percent"] == 0.0 and proc_info["cpu_percent"] == 0.0
-            ) or (
-                proc_info["memory_percent"] <= 1.0 and proc_info["cpu_percent"] <= 1.0
-            ):
+            if (proc_info["memory_percent"] == 0.0 and proc_info["cpu_percent"] == 0.0) or (proc_info["memory_percent"] <= 1.0 and proc_info["cpu_percent"] <= 1.0):
                 continue
 
             # Append process info if conditions are not met
-            process_info.append(
-                {
-                    "cpu_num": proc_info["cpu_num"],
-                    "pid": proc_info["pid"],
-                    "name": proc_info["name"],
-                    "cmdline": proc_info["cmdline"],
-                    "memory_percent": proc_info["memory_percent"],
-                    "cpu_percent": proc_info["cpu_percent"],
-                }
-            )
+            process_info.append({
+                "cpu_num": proc_info["cpu_num"],
+                "pid": proc_info["pid"],
+                "name": proc_info["name"],
+                "cmdline": proc_info["cmdline"],
+                "memory_percent": proc_info["memory_percent"],
+                "cpu_percent": proc_info["cpu_percent"],
+            })
 
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             # Handle exceptions for processes that have ended or cannot be accessed

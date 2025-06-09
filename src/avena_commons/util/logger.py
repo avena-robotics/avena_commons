@@ -61,9 +61,7 @@ class Logger_Receiver:
         current_filename = self._current_filename()
         link_name = self.base_filename + self.extenstion
         self.files.append(current_filename)
-        if (
-            self.create_symlinks and os.name != "nt"
-        ):  # Only create symlinks on non-Windows systems
+        if self.create_symlinks and os.name != "nt":  # Only create symlinks on non-Windows systems
             try:
                 if os.path.exists(link_name):
                     os.remove(link_name)
@@ -81,18 +79,14 @@ class Logger_Receiver:
             current_filename = f"{self.base_filename}{self.extenstion}"
         try:
             while True:
-                if (
-                    time.time() - self.last_file_change_time >= self.period
-                ):  # sprawdzenie czy nalezy wymienic plik na nowy
+                if time.time() - self.last_file_change_time >= self.period:  # sprawdzenie czy nalezy wymienic plik na nowy
                     self.last_file_change_time = time.time()
                     current_filename = self._create_new_file()
                     # current_filename = self._current_filename()
                     # self.files.append(current_filename) # dopisanie do listy plikow
                     self.header_written = False
 
-                if (
-                    len(self.files) > self.files_count + 1
-                ):  # chce zostawic jeden plik wiecej
+                if len(self.files) > self.files_count + 1:  # chce zostawic jeden plik wiecej
                     file_to_delete = self.files.pop(0)
                     try:
                         os.remove(file_to_delete)
@@ -116,16 +110,12 @@ class Logger_Receiver:
                     match self.type:
                         case DataType.LOG:
                             [level, message] = data
-                            file.write(
-                                format_message(message, level, self.__colors) + "\n"
-                            )
+                            file.write(format_message(message, level, self.__colors) + "\n")
 
                         case DataType.CSV:
                             data_str = ",".join([str(x) for x in data])
                             if not self.header_written:
-                                if (
-                                    self.csv_header == []
-                                ):  # nie ma jeszcze headera - zapamietuje 1 linie
+                                if self.csv_header == []:  # nie ma jeszcze headera - zapamietuje 1 linie
                                     self.csv_header = data_str
                                 else:  # header juz jest zapamietany, dodaje do nowego pliku
                                     file.write(self.csv_header + "\n")
@@ -155,9 +145,7 @@ class Logger:
         self.type = type
         self.clear_file = clear_file
         self.pipe_out, pipe_in = multiprocessing.Pipe()
-        self.process = multiprocessing.Process(
-            target=self.run_receiver, args=(pipe_in,)
-        )
+        self.process = multiprocessing.Process(target=self.run_receiver, args=(pipe_in,))
 
         self.period = period
         self.files_count = files_count
@@ -248,9 +236,7 @@ class DataLogger(Logger):
 
         rows = self.get_count_rows() if rows > self.get_count_rows() else rows
 
-        rows_to_dump = self.data[
-            :rows
-        ]  # Pobieramy odpowiednią liczbę wierszy do zapisu
+        rows_to_dump = self.data[:rows]  # Pobieramy odpowiednią liczbę wierszy do zapisu
         self.data = self.data[rows:]  # Usuwamy zapisane wiersze
 
         for row in rows_to_dump:
@@ -324,9 +310,7 @@ def generate_timestamp():
     return now.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def format_message(
-    message: str, level: LogLevelType = LogLevelType.info, colors: bool = True
-):
+def format_message(message: str, level: LogLevelType = LogLevelType.info, colors: bool = True):
     match level:
         case LogLevelType.debug:
             return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"

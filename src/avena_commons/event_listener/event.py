@@ -139,13 +139,13 @@ class Event(BaseModel):
 
     def __init__(
         self,
-        source: str = 'default',
-        source_address: str = '127.0.0.1',
+        source: str = "default",
+        source_address: str = "127.0.0.1",
         source_port: int = 0,
-        destination: str = 'default',
-        destination_address: str = '127.0.0.1',
+        destination: str = "default",
+        destination_address: str = "127.0.0.1",
         destination_port: int = 0,
-        event_type: str = 'default',
+        event_type: str = "default",
         data: dict = {},
         id: Optional[int] = None,
         to_be_processed: bool = False,

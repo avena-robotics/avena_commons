@@ -10,3 +10,16 @@ pip install dist/*.whl
 run_system_dashboard
 
 Url: https://localhost:5001
+
+## Development
+
+### Install dependencies
+```bash
+python -m venv .venv
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+## Tests
+

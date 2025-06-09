@@ -74,18 +74,12 @@ def ramp_smoothing(data, alpha):
     # Left to right iteration
     for i in range(1, len(data)):
         if (smoothed_data[i] - smoothed_data[i - 1]) > alpha:
-            smoothed_data[i] = (
-                smoothed_data[i - 1]
-                + np.sign(smoothed_data[i] - smoothed_data[i - 1]) * alpha
-            )
+            smoothed_data[i] = smoothed_data[i - 1] + np.sign(smoothed_data[i] - smoothed_data[i - 1]) * alpha
 
     # Right to left iteration
     for i in range(len(data) - 2, -1, -1):
         if (smoothed_data[i] - smoothed_data[i + 1]) > alpha:
-            smoothed_data[i] = (
-                smoothed_data[i + 1]
-                + np.sign(smoothed_data[i] - smoothed_data[i + 1]) * alpha
-            )
+            smoothed_data[i] = smoothed_data[i + 1] + np.sign(smoothed_data[i] - smoothed_data[i + 1]) * alpha
 
     return smoothed_data
 
@@ -129,9 +123,7 @@ def calculate_factor(x, y, new_x, limit, power):
     _interpolate = interpolate(x, y, new_x)  # wyznaczenie mnoznika
     _abs = np.abs(_interpolate)
     _max_abs = np.max(_abs)
-    _factor = (
-        1.0 if _max_abs == 0 else limit / _max_abs
-    ) ** power  # mnoznik przekroczenia prędkości
+    _factor = (1.0 if _max_abs == 0 else limit / _max_abs) ** power  # mnoznik przekroczenia prędkości
     return _factor
 
 
@@ -217,9 +209,7 @@ def calculate_derivative(arguments, dt):
     :param dt: time step
     :return: derivatives: list of derivatives
     """
-    derivatives = np.zeros_like(
-        arguments
-    )  # Macierz wyników o tym samym kształcie co rconfigs
+    derivatives = np.zeros_like(arguments)  # Macierz wyników o tym samym kształcie co rconfigs
 
     # Zakładamy, że times i rconfigs są wektorami o tej samej długości
     for i in range(1, len(arguments) - 1):
@@ -228,12 +218,8 @@ def calculate_derivative(arguments, dt):
     # Opcjonalnie: Obsługa krańców przedziałów
     # Przykładowo, można użyć różnic do przodu i do tyłu
     if len(arguments) > 1:
-        derivatives[0] = (
-            arguments[1] - arguments[0]
-        ) / dt  # Różnica do przodu dla pierwszego elementu
-        derivatives[-1] = (
-            arguments[-1] - arguments[-2]
-        ) / dt  # Różnica do tyłu dla ostatniego elementu
+        derivatives[0] = (arguments[1] - arguments[0]) / dt  # Różnica do przodu dla pierwszego elementu
+        derivatives[-1] = (arguments[-1] - arguments[-2]) / dt  # Różnica do tyłu dla ostatniego elementu
 
     return derivatives
 
@@ -251,11 +237,7 @@ def find_closest_pose(searched_pose, poses):
 
     for step, pose in enumerate(poses):
         # Oblicz odległość Euklidesową między punktem odniesienia a aktualnym punktem
-        distance = (
-            (searched_pose[0] - pose[0]) ** 2
-            + (searched_pose[1] - pose[1]) ** 2
-            + (searched_pose[2] - pose[2]) ** 2
-        ) ** 0.5
+        distance = ((searched_pose[0] - pose[0]) ** 2 + (searched_pose[1] - pose[1]) ** 2 + (searched_pose[2] - pose[2]) ** 2) ** 0.5
 
         # Aktualizuj najbliższy punkt i minimalną odległość, jeśli to konieczne
         if distance < min_distance:
@@ -410,21 +392,15 @@ def rotate_vector_by_euler(vector, roll, pitch, yaw):
     pitch = np.radians(pitch)
     yaw = np.radians(yaw)
     # Macierz rotacji dla roll (wokół osi X)
-    R_x = np.array(
-        [[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]]
-    )
+    R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
     # Macierz rotacji dla pitch (wokół osi Y)
-    R_y = np.array(
-        [
-            [np.cos(pitch), 0, np.sin(pitch)],
-            [0, 1, 0],
-            [-np.sin(pitch), 0, np.cos(pitch)],
-        ]
-    )
+    R_y = np.array([
+        [np.cos(pitch), 0, np.sin(pitch)],
+        [0, 1, 0],
+        [-np.sin(pitch), 0, np.cos(pitch)],
+    ])
     # Macierz rotacji dla yaw (wokół osi Z)
-    R_z = np.array(
-        [[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]]
-    )
+    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
     # Złożona macierz rotacji R (kolejność ZYX)
     R = np.dot(R_x, np.dot(R_y, R_z))
     # Obróć wektor
@@ -461,15 +437,11 @@ def rotate_transformation_matrix(transformation_matrix, angle_degrees, axis):
     :return: new 4x4 transformation matrix after rotation
     """
     if isinstance(axis, str):
-        rotation_axis = Rotation.from_euler(
-            axis, angle_degrees, degrees=True
-        ).as_matrix()
+        rotation_axis = Rotation.from_euler(axis, angle_degrees, degrees=True).as_matrix()
     else:
         # Normalize the axis vector
         axis = np.array(axis) / np.linalg.norm(axis)
-        rotation_axis = Rotation.from_rotvec(
-            np.radians(angle_degrees) * axis
-        ).as_matrix()
+        rotation_axis = Rotation.from_rotvec(np.radians(angle_degrees) * axis).as_matrix()
 
     # Expand rotation matrix to 4x4
     rotation_matrix_4x4 = np.eye(4)
@@ -503,9 +475,7 @@ def rotate_pose(pose_quat, angle_degrees, axis="z"):
     :return: rotated pose in quaternion format
     """
     transformation_matrix = create_transformation_matrix(pose_quat)
-    new_transformation_matrix = rotate_transformation_matrix(
-        transformation_matrix, angle_degrees, axis
-    )
+    new_transformation_matrix = rotate_transformation_matrix(transformation_matrix, angle_degrees, axis)
     return pose_from_transformation_matrix(new_transformation_matrix)
 
 
@@ -610,12 +580,10 @@ def rotate_points_around_center(points, center, angle):
     angle_rad = np.deg2rad(angle)
 
     # Macierz obrotu
-    rotation_matrix = np.array(
-        [
-            [np.cos(angle_rad), -np.sin(angle_rad)],
-            [np.sin(angle_rad), np.cos(angle_rad)],
-        ]
-    )
+    rotation_matrix = np.array([
+        [np.cos(angle_rad), -np.sin(angle_rad)],
+        [np.sin(angle_rad), np.cos(angle_rad)],
+    ])
 
     # Nowa lista na obrocone punkty
     rotated_points = []

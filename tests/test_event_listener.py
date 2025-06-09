@@ -3,9 +3,7 @@ import sys
 import threading
 import time
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from avena_commons.event_listener.event import Event
 from avena_commons.event_listener.event_listener import EventListener
@@ -22,9 +20,7 @@ class EventListenerServer(EventListener):
         do_not_load_state: bool = False,
         raport_overtime: bool = True,
     ):
-        super().__init__(
-            name, address, port, message_logger, do_not_load_state, raport_overtime
-        )
+        super().__init__(name, address, port, message_logger, do_not_load_state, raport_overtime)
 
 
 class EventListenerClient(EventListener):
@@ -37,9 +33,7 @@ class EventListenerClient(EventListener):
         do_not_load_state: bool = False,
         raport_overtime: bool = True,
     ):
-        super().__init__(
-            name, address, port, message_logger, do_not_load_state, raport_overtime
-        )
+        super().__init__(name, address, port, message_logger, do_not_load_state, raport_overtime)
 
     def _analyze_event(self, event: Event):
         self._reply(event)

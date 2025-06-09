@@ -1,6 +1,7 @@
-import time
 import gc
-from .logger import Logger, info, debug, warning, error
+import time
+
+from .logger import Logger, warning
 
 
 class ControlLoop:
@@ -62,15 +63,9 @@ class ControlLoop:
         period = time.perf_counter() - self.last_run  # czas wykonania kroku petli
 
         self.run_time += period
-        self.avg_period = (
-            self.run_time / self.loop_counter
-        )  # sredni czas wykonania kroku petli
-        self.min_period = (
-            period if self.min_period == None else min(self.min_period, period)
-        )  # minimalny czas wykonania kroku petli
-        self.max_period = (
-            period if self.max_period == None else max(self.max_period, period)
-        )  # maksymalny czas wykonania kroku petli
+        self.avg_period = self.run_time / self.loop_counter  # sredni czas wykonania kroku petli
+        self.min_period = period if self.min_period == None else min(self.min_period, period)  # minimalny czas wykonania kroku petli
+        self.max_period = period if self.max_period == None else max(self.max_period, period)  # maksymalny czas wykonania kroku petli
 
         for logger in self._loggers:  # all loggers - new row
             logger.end_row()
@@ -80,27 +75,23 @@ class ControlLoop:
                 self.overtime_counter += 1
                 if gc.isenabled():
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period*1000:.5}ms exceed: {(period - self.period)*1000:.5}ms GC ENABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC ENABLED",
                         message_logger=self.message_logger,
                     )
                 else:
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period*1000:.5}ms exceed: {(period - self.period)*1000:.5}ms GC DISABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC DISABLED",
                         message_logger=self.message_logger,
                     )
             elif self.fill_idle_time:
                 end_time_before_sleep = time.perf_counter()
-                left_time_ms = (
-                    self.period - (end_time_before_sleep - self.last_run)
-                ) * 1000
+                left_time_ms = (self.period - (end_time_before_sleep - self.last_run)) * 1000
                 minimal_idle_time_ms = 0.5
                 # while left_time_ms > minimal_idle_time_ms:
                 for logger in self._loggers:
                     for i in range(logger.get_count_rows()):
                         logger.dump_rows(rows=1)
-                        left_time_ms = (
-                            self.period - (time.perf_counter() - self.last_run)
-                        ) * 1000
+                        left_time_ms = (self.period - (time.perf_counter() - self.last_run)) * 1000
                         if left_time_ms < minimal_idle_time_ms:
                             break
 
@@ -124,4 +115,4 @@ class ControlLoop:
         return logger
 
     def __str__(self):
-        return f"{self.name.upper()}, loops: {self.loop_counter}, overtime: {self.overtime_counter}, min: {self.min_period*1000:.5}ms, max: {self.max_period*1000:.5}ms, avg: {self.avg_period*1000:.5}ms"
+        return f"{self.name.upper()}, loops: {self.loop_counter}, overtime: {self.overtime_counter}, min: {self.min_period * 1000:.5}ms, max: {self.max_period * 1000:.5}ms, avg: {self.avg_period * 1000:.5}ms"
