@@ -1,0 +1,9 @@
+uvicorn
+pydantic
+fastapi
+requests
+numpy
+colorify
+scipy
+opencv-python
+psutil
