@@ -34,6 +34,12 @@ pytest  # Runs tests with 90% coverage requirement
 tox -e build  # Tests must pass before building
 ```
 
+**Build without tests:**
+```bash
+tox -e build-no-tests
+```
+
+
 **Code quality:**
 ```bash
 ruff check .     # Lint

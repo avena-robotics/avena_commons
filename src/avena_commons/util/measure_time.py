@@ -12,7 +12,13 @@ class MeasureTime(ContextDecorator):
 
     elapsed: float = 0.0
 
-    def __init__(self, label="Czas wykonania", max_execution_time: float = 1.0, resolution: int = 3, message_logger: MessageLogger | None = None):
+    def __init__(
+        self,
+        label="Czas wykonania",
+        max_execution_time: float = 1.0,
+        resolution: int = 3,
+        message_logger: MessageLogger | None = None,
+    ):
         self.label = label
         self.__message_logger = message_logger
         self.__max_execution_time = max_execution_time
@@ -26,6 +32,12 @@ class MeasureTime(ContextDecorator):
         self.end = time.perf_counter()
         self.elapsed = (self.end - self.start) * 1000
         if self.elapsed > self.__max_execution_time:
-            error(f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms", message_logger=self.__message_logger)
+            error(
+                f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms",
+                message_logger=self.__message_logger,
+            )
         else:
-            debug(f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms", message_logger=self.__message_logger)
+            debug(
+                f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms",
+                message_logger=self.__message_logger,
+            )
