@@ -4,6 +4,8 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..io_utils import init_device_di, init_device_do
+
 
 class TLC57R24V08:
     def __init__(
@@ -14,7 +16,10 @@ class TLC57R24V08:
         configuration_type,
         reverse_direction: bool = False,
         period: float = 0.05,
+        do_count: int = 3,
+        di_count: int = 5,
         message_logger: MessageLogger | None = None,
+        debug: bool = True,
     ):
         self.device_name = device_name
         self.bus = bus
@@ -22,7 +27,10 @@ class TLC57R24V08:
         self.configuration_type = configuration_type
         self.reverse_direction = reverse_direction
         self.period: float = period
+        self.do_count = do_count
+        self.di_count = di_count
         self.message_logger = message_logger
+        self.__debug = debug
         self.operation_status_in_place = False
         self.operation_status_homing_completed = False
         self.operation_status_motor_running = False
@@ -46,43 +54,43 @@ class TLC57R24V08:
         self._jog_thread = None
         self._jog_counter = 0
 
+        # Position mode variables
+        self._position_mode = False  # True for position mode, False for jog mode
+        self._position_target = 0
+        self._position_speed = 0
+        self._position_accel = 0
+        self._position_decel = 0
+        self._position_start_speed = 0
+        self._position_control_word = 1
+
+        # DI reading thread properties
+        self.di_value: int = 0
+        self.__di_lock: threading.Lock = threading.Lock()
+        self._di_thread: threading.Thread | None = None
+        self._di_stop_event: threading.Event = threading.Event()
+
+        # DO writing thread properties
+        # TODO: implement DO writing thread
+        self.do_current_state: list[int] = [0] * self.do_count
+        self.do_state_changed: bool = False
+        self.do_previous_state: list[int] = [0] * self.do_count
+        self.__do_lock: threading.Lock = threading.Lock()
+        self._do_thread: threading.Thread | None = None
+        self._do_stop_event: threading.Event = threading.Event()
+
         self.__setup()
 
     def __setup(self):
         try:
             if self.configuration_type == 1:  # komora odbiorcza
                 # komora odbiorcza
-                self.bus.write_holding_register(
-                    address=self.address, register=17, value=3
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=18, value=2
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=19, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=20, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=21, value=0
+                self.bus.write_holding_registers(
+                    address=self.address, first_register=17, values=[3, 2, 0, 0, 0]
                 )
             elif self.configuration_type == 2:  # feeder
                 # feeder
-                self.bus.write_holding_register(
-                    address=self.address, register=17, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=18, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=19, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=20, value=0
-                )
-                self.bus.write_holding_register(
-                    address=self.address, register=21, value=0
+                self.bus.write_holding_registers(
+                    address=self.address, first_register=17, values=[0, 0, 0, 0, 0]
                 )
             # pass
 
@@ -93,8 +101,22 @@ class TLC57R24V08:
                 address=self.address, register=34, value=int(self.reverse_direction)
             )  # ustalenie kierunku enkodera
 
+            # Ustawienie portów DO aby działały jak przekaźniki
+            self.bus.write_holding_registers(
+                address=self.address, first_register=28, values=[9, 10, 11]
+            )
+
+            init_device_di(TLC57R24V08, first_index=0, count=self.di_count)
+            init_device_do(TLC57R24V08, first_index=0, count=self.do_count)
+
             # Start the continuous jog thread
             self._start_jog_thread()
+
+            # Start DI reading thread
+            self._start_di_thread()
+
+            # Start DO writing thread
+            self._start_do_thread()
 
         except Exception as e:
             error(
@@ -123,7 +145,7 @@ class TLC57R24V08:
             )
 
     def __jog_thread_worker(self):
-        """Continuous jog thread worker that sends jog parameters when enabled"""
+        """Continuous jog thread worker that sends jog or position parameters when enabled"""
 
         while not self._stop_event.is_set():
             now = time.time()
@@ -131,28 +153,55 @@ class TLC57R24V08:
             try:
                 with self._jog_lock:
                     current_run = self._run
-                    speed = self._jog_speed
-                    accel = self._jog_accel
-                    decel = self._jog_decel
-                    control_word = self._jog_control_word
+                    position_mode = self._position_mode
+
+                    if position_mode:
+                        # Position mode parameters
+                        target = self._position_target
+                        speed = self._position_speed
+                        accel = self._position_accel
+                        decel = self._position_decel
+                        start_speed = self._position_start_speed
+                        control_word = self._position_control_word
+                    else:
+                        # Jog mode parameters
+                        speed = self._jog_speed
+                        accel = self._jog_accel
+                        decel = self._jog_decel
+                        control_word = self._jog_control_word
+
                     jog_counter = self._jog_counter
 
-                # Send jog parameters only once when jog is enabled, then disable the flag
+                # Send parameters only once when enabled, then disable the flag
                 if current_run:
-                    # Immediately set jog_enabled to false after sending parameters
+                    # Immediately set run to false after sending parameters
                     with self._jog_lock:
-                        # Jog enabled - send jog parameters once and disable the flag
-                        response = self.__send_jog_parameters(
-                            speed, accel, decel, control_word
-                        )  # FIXME TUTAJ NORBERT - jak sie nie powiedzie to nie resetujemy flagi i ponowimy w kolejnym kroku
-                        if response:
-                            self._run = False
+                        if position_mode:
+                            # Position enabled - send position parameters once and disable the flag
+                            response = self.__send_position_parameters(
+                                target, speed, accel, decel, start_speed, control_word
+                            )
+                            if response:
+                                self._run = False
+                            else:
+                                self._run = True
+                            debug(
+                                f"{self.device_name} Position parameters sent: target={target}, speed={speed}, accel={accel}, decel={decel}",
+                                message_logger=self.message_logger,
+                            )
                         else:
-                            self._run = True
-                        debug(
-                            f"{self.device_name} Jog parameters sent: speed={speed}, accel={accel}, decel={decel}",
-                            message_logger=self.message_logger,
-                        )
+                            # Jog enabled - send jog parameters once and disable the flag
+                            response = self.__send_jog_parameters(
+                                speed, accel, decel, control_word
+                            )
+                            if response:
+                                self._run = False
+                            else:
+                                self._run = True
+                            debug(
+                                f"{self.device_name} Jog parameters sent: speed={speed}, accel={accel}, decel={decel}",
+                                message_logger=self.message_logger,
+                            )
 
                 # time.sleep(max(0, self.period - (time.time() - now)))
                 # co 10 raz wykonac to:
@@ -240,6 +289,45 @@ class TLC57R24V08:
             )
             return False
 
+    def __send_position_parameters(
+        self,
+        position: int,
+        speed: int,
+        accel: int,
+        decel: int,
+        start_speed: int,
+        control_word: int,
+    ):
+        """Send position parameters to the device via Modbus"""
+        try:
+            high_word = (position >> 16) & 0xFFFF
+            low_word = position & 0xFFFF
+
+            response_setup = self.bus.write_holding_registers(
+                address=self.address,
+                first_register=51,
+                values=[start_speed, accel, decel, speed, high_word, low_word],
+            )
+            response_control_word = self.bus.write_holding_register(
+                register=78, value=control_word, address=self.address
+            )
+
+            if not (response_setup or response_control_word):
+                error(
+                    f"{self.device_name} Error setting position mode parameters",
+                    message_logger=self.message_logger,
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            error(
+                f"{self.device_name} Error sending position parameters: {e}",
+                message_logger=self.message_logger,
+            )
+            return False
+
     def __operation_status_thread(self):
         while self.__motor_running:
             response_status = self.bus.read_holding_registers(
@@ -272,211 +360,11 @@ class TLC57R24V08:
         self._status_thread = threading.Thread(target=self.__operation_status_thread)
         self._status_thread.start()
 
-    def __run_position(
-        self,
-        position: int = 0,
-        speed: int = 0,
-        accel: int = 0,
-        decel: int = 0,
-        start_speed: int = 0,
-        control_word: int = 1,
-    ):
-        """
-        Set parameters for positioning mode and execute
-
-        Args:
-            position (int): Target position in pulses (-2147483648~2147483647)
-            speed (int): Positioning speed in r/min (0-3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
-            start_speed (int): Positioning start speed in r/min (0-3000)
-            control_word (int): Control word (0-127)
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        # if not self.connected:
-        #     error("Not connected to device", message_logger=self.message_logger)
-        #     return False
-
-        try:
-            # Set start speed (address 51)
-            response1 = self.bus.write_holding_register(
-                register=51, value=start_speed, address=self.address
-            )
-
-            # Set acceleration time (address 52)
-            response2 = self.bus.write_holding_register(
-                register=52, value=accel, address=self.address
-            )
-
-            # Set deceleration time (address 53)
-            response3 = self.bus.write_holding_register(
-                register=53, value=decel, address=self.address
-            )
-
-            # Set positioning speed (address 54)
-            response4 = self.bus.write_holding_register(
-                register=54, value=speed, address=self.address
-            )
-
-            # Set target position (addresses 55-56) - 32-bit value
-            # Split 32-bit value into high and low 16-bit registers
-            high_word = (position >> 16) & 0xFFFF
-            low_word = position & 0xFFFF
-
-            response5 = self.bus.write_holding_registers(
-                first_register=55, values=[high_word, low_word], address=self.address
-            )
-
-            # Set control word (address 78)
-            response6 = self.bus.write_holding_register(
-                register=78, value=control_word, address=self.address
-            )
-
-            # Check if any operation failed
-            if not (
-                response1
-                or response2
-                or response3
-                or response4
-                or response5
-                or response6
-            ):
-                error(
-                    f"{self.device_name} Error setting position mode parameters",
-                    message_logger=self.message_logger,
-                )
-                return False
-
-            self.__run_operation_status_read()
-            info(
-                f"{self.device_name} Successfully set position mode: position={position}, speed={speed}, accel={accel}, decel={decel}",
-                message_logger=self.message_logger,
-            )
-            return True
-
-        except Exception as e:
-            error(
-                f"{self.device_name} Error setting position mode: {e}",
-                message_logger=self.message_logger,
-            )
-            return False
-
-    def __run_jog(
-        self, speed: int = 0, accel: int = 0, decel: int = 0, control_word: int = 8
-    ):
-        """
-        Set parameters for positioning mode and execute
-
-        Args:
-            speed (int): Positioning speed in r/min (-3000 - 3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
-            control_word (int): Control word (0-127)
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        # if not self.connected:
-        #     error("Not connected to device", message_logger=self.message_logger)
-        #     return False
-
-        try:
-            response_setup = self.bus.write_holding_registers(
-                address=self.address,
-                first_register=48,
-                values=[self.ujemna_na_uzupelnienie_do_dwoch(speed), accel, decel],
-            )
-            response_control_word = self.bus.write_holding_register(
-                register=78, value=control_word, address=self.address
-            )
-            if not (response_setup or response_control_word):
-                error(
-                    f"{self.device_name} Error setting jog mode parameters",
-                    message_logger=self.message_logger,
-                )
-                return False
-
-            # # Set acceleration time (address 49)
-            # response2 = self.bus.write_holding_register(register=49, value=accel, address=self.address)
-
-            # # Set deceleration time (address 50)
-            # response3 = self.bus.write_holding_register(register=50, value=decel, address=self.address)
-
-            # # Set speed (address 48)
-            # response4 = self.bus.write_holding_register(register=48, value=self.ujemna_na_uzupelnienie_do_dwoch(speed), address=self.address)
-
-            # # Set control word (address 78)
-            # response6 = self.bus.write_holding_register(register=78, value=control_word, address=self.address)
-
-            # # debug(f"response2: {response2.isError()}{response2}, response3: {response3.isError()}{response3}, response4: {response4.isError()}{response4}, response6: {response6.isError()}{response6}", message_logger=self.message_logger)
-            # # Check if any operation failed
-            # if not (response2 or response3 or response4 or response6):
-            #     error("Error setting position mode parameters", message_logger=self.message_logger)
-            #     return False
-
-            self.__run_operation_status_read()
-            info(
-                f"{self.device_name} Successfully set jog mode: speed={speed}, accel={accel}, decel={decel}",
-                message_logger=self.message_logger,
-            )
-            return True
-
-        except Exception as e:
-            error(
-                f"{self.device_name} Error setting position mode: {e}",
-                message_logger=self.message_logger,
-            )
-            return False
-
     def is_motor_running(self):
         return self.operation_status_motor_running
 
     def is_failure(self):
         return self.operation_status_failure
-
-    def __get_digital_inputs(self):
-        """Read the status of the servo"""
-        # if not self.connected:
-        #     logger.error("Not connected to device")
-        #     return None
-
-        try:
-            response = self.bus.read_holding_register(address=self.address, register=6)
-            # print(response)
-            # print(type(response))
-
-            if type(response) == int:
-                info(
-                    f"{self.device_name} Digital inputs: {response}",
-                    message_logger=self.message_logger,
-                )
-                return response
-            else:
-                error(
-                    f"{self.device_name} __get_digital_inputs: Error reading status: {response}",
-                    message_logger=self.message_logger,
-                )
-                return None
-        except Exception as e:
-            error(
-                f"{self.device_name} Exception:Error reading status: {e}",
-                message_logger=self.message_logger,
-            )
-            return None
-
-    def __get_digital_input(self, input_number: int):
-        """Read the status of the servo"""
-        digital_inputs = self.__get_digital_inputs()
-        if digital_inputs is None:
-            # error(f"Error reading status: {digital_inputs}", message_logger=self.message_logger)
-            return None
-        debug(
-            f"{self.device_name} Digital inputs value: {bool(digital_inputs & (1 << input_number))}",
-            message_logger=self.message_logger,
-        )
-        return bool(digital_inputs & (1 << input_number))
 
     def ujemna_na_uzupelnienie_do_dwoch(self, wartosc: int, bity: int = 16):
         if wartosc < 0:
@@ -492,18 +380,30 @@ class TLC57R24V08:
         decel: int = 1,
         start_speed: int = 0,
     ):
+        """
+        Enable position mode with specified parameters. The jog thread will handle sending the parameters.
+
+        Args:
+            position (int): Target position in pulses (-2147483648~2147483647)
+            speed (int): Positioning speed in r/min (0-3000)
+            accel (int): Positioning acceleration time in ms (0-2000)
+            decel (int): Positioning deceleration time in ms (0-2000)
+            start_speed (int): Positioning start speed in r/min (0-3000)
+        """
         info(
             f"{self.device_name}.run_position(position={position}, speed={speed}, accel={accel}, decel={decel}, start_speed={start_speed})",
             message_logger=self.message_logger,
         )
-        self.__run_position(
-            position=position,
-            speed=speed,
-            accel=accel,
-            decel=decel,
-            start_speed=start_speed,
-            control_word=1,
-        )
+
+        with self._jog_lock:
+            self._position_mode = True
+            self._position_target = position
+            self._position_speed = speed
+            self._position_accel = accel
+            self._position_decel = decel
+            self._position_start_speed = start_speed
+            self._position_control_word = 1
+            self._run = True
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         """
@@ -520,6 +420,7 @@ class TLC57R24V08:
         )
 
         with self._jog_lock:
+            self._position_mode = False
             self._jog_speed = speed
             self._jog_accel = accel
             self._jog_decel = decel
@@ -533,6 +434,7 @@ class TLC57R24V08:
         # Disable jog mode
         with self._jog_lock:
             self._run = True
+            self._position_mode = False  # Reset to jog mode
             self._jog_speed = 0
             self._jog_accel = 0
             self._jog_decel = 0
@@ -541,40 +443,34 @@ class TLC57R24V08:
         info(f"{self.device_name}.stop", message_logger=self.message_logger)
         # The jog thread will handle sending the stop command when jog is disabled
 
-    def di0(self):
-        info(f"{self.device_name}.di0", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=0)
+    def di(self, index: int):
+        """Read DI value from cached data"""
+        with self.__di_lock:
+            result = 1 if (self.di_value & (1 << index)) else 0
+            if self.__debug:
+                debug(
+                    f"{self.device_name} - DI{index} value: {result}",
+                    message_logger=self.message_logger,
+                )
+            return result
 
-    def di1(self):
-        info(f"{self.device_name}.di1", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=1)
-
-    def di2(self):
-        info(f"{self.device_name}.di2", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=2)
-
-    def di3(self):
-        info(f"{self.device_name}.di3", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=3)
-
-    def di4(self):
-        info(f"{self.device_name}.di4", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=4)
-
-    def di5(self):
-        info(f"{self.device_name}.di5", message_logger=self.message_logger)
-        return self.__get_digital_input(input_number=5)
-
-    def do0(self):
-        info(f"{self.device_name}.do0", message_logger=self.message_logger)
-        return 1
-
-    def do1(self):
-        info(f"{self.device_name}.do1", message_logger=self.message_logger)
-        return 1
-
-    def read(self, register):
-        pass
+    def do(self, index: int, value: bool = None):
+        """Set or get DO value - buffered write via thread"""
+        if value is None:
+            # Return current state of the specified DO from buffer
+            with self.__do_lock:
+                return self.do_current_state[index]
+        else:
+            # Update buffer - actual write will be handled by DO thread
+            with self.__do_lock:
+                self.do_current_state[index] = 1 if value else 0
+                self.do_state_changed = True
+            if self.__debug:
+                debug(
+                    f"{self.device_name} - DO{index} buffered to: {value}",
+                    message_logger=self.message_logger,
+                )
+            return None
 
     def check_device_connection(self) -> bool:
         return modbus_check_device_connection(
@@ -585,15 +481,148 @@ class TLC57R24V08:
             message_logger=self.message_logger,
         )
 
-    # def __del__(self):
-    #     # self._message_logger = None
-    #     self.stop()
-    #     time.sleep(0.1)
-    #     self._status_thread.join()
-    #     time.sleep(0.1)
+    def _start_di_thread(self):
+        """Start the DI reading thread"""
+        try:
+            if self._di_thread is None or not self._di_thread.is_alive():
+                self._di_stop_event.clear()
+                self._di_thread = threading.Thread(
+                    target=self._di_thread_worker, daemon=True
+                )
+                self._di_thread.start()
+                if self.__debug:
+                    debug(
+                        f"{self.device_name} DI monitoring thread started",
+                        message_logger=self.message_logger,
+                    )
+        except Exception as e:
+            error(
+                f"{self.device_name} Error starting DI thread: {e}",
+                message_logger=self.message_logger,
+            )
+
+    def _start_do_thread(self):
+        """Start the DO writing thread"""
+        try:
+            if self._do_thread is None or not self._do_thread.is_alive():
+                self._do_stop_event.clear()
+                self._do_thread = threading.Thread(
+                    target=self._do_thread_worker, daemon=True
+                )
+                self._do_thread.start()
+                if self.__debug:
+                    debug(
+                        f"{self.device_name} DO writing thread started",
+                        message_logger=self.message_logger,
+                    )
+        except Exception as e:
+            error(
+                f"{self.device_name} Error starting DO thread: {e}",
+                message_logger=self.message_logger,
+            )
+
+    def _di_thread_worker(self):
+        """Background thread that periodically reads DI values"""
+        while not self._di_stop_event.is_set():
+            now = time.time()
+
+            try:
+                # Read DI register
+                response = self.bus.read_holding_register(
+                    address=self.address, register=6
+                )
+
+                if response is not None and type(response) == int:
+                    with self.__di_lock:
+                        self.di_value = response
+                        if self.__debug:
+                            debug(
+                                f"{self.device_name} - DI value updated: {bin(response)}",
+                                message_logger=self.message_logger,
+                            )
+                else:
+                    if self.__debug:
+                        warning(
+                            f"{self.device_name} - Unable to read DI register",
+                            message_logger=self.message_logger,
+                        )
+
+            except Exception as e:
+                error(
+                    f"{self.device_name} - Error reading DI: {e}",
+                    message_logger=self.message_logger,
+                )
+
+            time.sleep(max(0, self.period - (time.time() - now)))
+
+    def _do_thread_worker(self):
+        """Background thread that periodically writes DO values from buffer"""
+        while not self._do_stop_event.is_set():
+            now = time.time()
+
+            try:
+                with self.__do_lock:
+                    if (
+                        self.do_state_changed
+                        or self.do_current_state != self.do_previous_state
+                    ):
+                        do_current_state = self.do_current_state.copy()
+                        self.do_state_changed = False
+                        self.do_previous_state = do_current_state.copy()
+                        write_needed = True
+                    else:
+                        write_needed = False
+
+                if write_needed:
+                    try:
+                        self.bus.write_holding_registers(
+                            address=self.address,
+                            first_register=28,
+                            values=do_current_state,
+                        )
+                        if self.__debug:
+                            debug(
+                                f"{self.device_name} - DO value updated: {bin(do_current_state)}",
+                                message_logger=self.message_logger,
+                            )
+                    except Exception as e:
+                        error(
+                            f"{self.device_name} - Error writing DO: {str(e)}",
+                            message_logger=self.message_logger,
+                        )
+
+            except Exception as e:
+                error(
+                    f"{self.device_name} - Error in DO thread: {e}",
+                    message_logger=self.message_logger,
+                )
+
+            time.sleep(max(0, self.period - (time.time() - now)))
 
     def __del__(self):
         try:
+            # Stop DI thread
+            if hasattr(self, "_di_stop_event"):
+                self._di_stop_event.set()
+            if (
+                hasattr(self, "_di_thread")
+                and self._di_thread is not None
+                and self._di_thread.is_alive()
+            ):
+                self._di_thread.join(timeout=1.0)
+                self._di_thread = None
+
+            # Stop DO thread
+            if hasattr(self, "_do_stop_event"):
+                self._do_stop_event.set()
+            if (
+                hasattr(self, "_do_thread")
+                and self._do_thread is not None
+                and self._do_thread.is_alive()
+            ):
+                self._do_thread.join(timeout=1.0)
+                self._do_thread = None
+
             # Stop jog thread
             if hasattr(self, "_stop_event"):
                 self._stop_event.set()

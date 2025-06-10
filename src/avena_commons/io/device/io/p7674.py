@@ -43,10 +43,10 @@ class P7674:
             # DO writing thread properties
             self.coil_state: list = [
                 0
-            ] * 8  # Track current state of all coils - used as buffer
+            ] * 16  # Track current state of all coils - used as buffer
             self.__previous_coil_state: list = [
                 0
-            ] * 8  # Track previous state to detect changes
+            ] * 16  # Track previous state to detect changes
             self._do_thread: threading.Thread | None = None
             self._do_stop_event: threading.Event = threading.Event()
             self._coil_state_changed: bool = False  # Flag to indicate buffer changes

@@ -63,11 +63,6 @@ class IO_server(EventListener):
                 add_to_processing = await self.device_selector(event)
                 if add_to_processing:
                     self._add_to_processing(event)
-                if self._debug:
-                    debug(
-                        f"Event {event.event_type} processed",
-                        message_logger=self._message_logger,
-                    )
                 return True
             case _:
                 raise ValueError(f"Invalid event source: {event.source}")

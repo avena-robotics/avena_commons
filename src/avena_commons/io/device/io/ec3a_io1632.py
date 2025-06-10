@@ -3,8 +3,8 @@ from enum import Enum
 
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..io_utils import init_device_di, init_device_do
 from .EtherCatSlave import EtherCatDevice, EtherCatSlave
-from .io_utils import init_device_di, init_device_do
 
 
 class ImpulseFSM(Enum):

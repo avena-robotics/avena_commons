@@ -1,6 +1,6 @@
 from avena_commons.util.logger import MessageLogger
 
-from .io_utils import init_device_di, init_device_do
+from ..io_utils import init_device_di, init_device_do
 from .p7674 import P7674
 
 
