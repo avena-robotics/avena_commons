@@ -2,7 +2,6 @@ import math
 
 import cv2
 import numpy as np
-from colorify import *
 from scipy.spatial.transform import Rotation
 
 

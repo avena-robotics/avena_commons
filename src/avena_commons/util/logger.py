@@ -6,7 +6,6 @@ from enum import Enum
 from pathlib import Path
 
 import psutil
-from colorify import *
 
 
 class LoggerPolicyPeriod:
@@ -329,15 +328,15 @@ def format_message(
 ):
     match level:
         case LogLevelType.debug:
-            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
+            return f"{generate_timestamp()} [{level.name}] {message}"
         case LogLevelType.info:
-            return f"{generate_timestamp()} [{colorify(level.name, C.blue) if colors else level.name}] {message}"
+            return f"{generate_timestamp()} [{level.name}] {message}"
         case LogLevelType.warning:
-            return f"{generate_timestamp()} [{colorify(level.name, C.orange) if colors else level.name}] {message}"
+            return f"{generate_timestamp()} [{level.name}] {message}"
         case LogLevelType.error:
-            return f"{generate_timestamp()} [{colorify(level.name, C.red) if colors else level.name}] {message}"
+            return f"{generate_timestamp()} [{level.name}] {message}"
         case _:
-            return f"{generate_timestamp()} [{colorify('NONE', C.red) if colors else 'NONE'}] {message}"
+            return f"{generate_timestamp()} [{level.name}] {message}"
 
 
 def debug(message: str, message_logger: MessageLogger = None, colors: bool = True):

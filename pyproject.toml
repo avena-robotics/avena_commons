@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "avena_commons"
-version = "1.4.4"
+version = "1.4.5"
 description = "A small utility library for working with Avena Robotics"
 authors = [
     { name = "Avena Robotics", email = "lukasz.lecki@pomagier.info" },
@@ -17,15 +17,14 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "psutil>=7.0.0",
-    "colorify>=1.1.0",
-    "numpy>=2.2.5",
-    "scipy>=1.15.2",
-    'posix-ipc>=1.1.0; platform_system=="Linux"',
-    "opencv-python>=4.11.0.86",
-    "pydantic>=2.11.2",
-    "requests>=2.32.3",
-    "uvicorn>=0.34.0",
+    "psutil",
+    "numpy",
+    "scipy",
+    'posix-ipc; platform_system=="Linux"',
+    "opencv-python",
+    "pydantic",
+    "requests",
+    "uvicorn",
     "httpx",
     "fastapi",
     "flask",

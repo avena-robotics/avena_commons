@@ -6,7 +6,6 @@ dotenv
 pysoem
 requests
 numpy
-colorify
 scipy
 opencv-python
 psutil
