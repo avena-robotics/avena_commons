@@ -30,7 +30,8 @@ dependencies = [
     "flask",
     "dotenv",
     "pysoem",
-    "pymodbus"
+    "pymodbus",
+    "ruff"
 ]
 
 [project.optional-dependencies]
