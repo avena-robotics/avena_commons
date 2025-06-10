@@ -673,6 +673,9 @@ class IO_server(EventListener):
                 )  # Everything before is the subfolder path
 
                 # Build the module path including subfolder
+                test_module_path = (
+                    f"lib.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
+                )
                 module_path = f"avena_commons.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
 
                 if self._debug:
@@ -683,17 +686,27 @@ class IO_server(EventListener):
 
                 # Import module and get class
                 try:
-                    module = importlib.import_module(module_path)
+                    module = importlib.import_module(test_module_path)
                     device_class = getattr(module, actual_class_name)
+
                 except (ImportError, AttributeError) as e:
-                    error(
-                        f"Failed to import {actual_class_name} from {module_path}: {str(e)}",
-                        message_logger=self._message_logger,
-                    )
-                    return None
+                    try:
+                        # Try importing from the main module path
+                        module = importlib.import_module(module_path)
+                        device_class = getattr(module, actual_class_name)
+
+                    except (ImportError, AttributeError) as e:
+                        error(
+                            f"Failed to import {actual_class_name} from {module_path}: {str(e)}",
+                            message_logger=self._message_logger,
+                        )
+                        return None
             else:
                 # Standard case - no subfolder
                 actual_class_name = class_name
+                # Test module path
+                test_module_path = f"lib.io.{folder_name}.{class_name.lower()}"
+                # Build the module path
                 module_path = f"avena_commons.io.{folder_name}.{class_name.lower()}"
 
                 if self._debug:
@@ -704,14 +717,21 @@ class IO_server(EventListener):
 
                 # Import module and get class
                 try:
-                    module = importlib.import_module(module_path)
+                    module = importlib.import_module(test_module_path)
                     device_class = getattr(module, class_name)
+
                 except (ImportError, AttributeError) as e:
-                    error(
-                        f"Failed to import {class_name} from {module_path}: {str(e)}",
-                        message_logger=self._message_logger,
-                    )
-                    return None
+                    try:
+                        # Try importing from the module path
+                        module = importlib.import_module(module_path)
+                        device_class = getattr(module, class_name)
+
+                    except (ImportError, AttributeError) as e:
+                        error(
+                            f"Failed to import {class_name} from {module_path}: {str(e)}",
+                            message_logger=self._message_logger,
+                        )
+                        return None
 
             # Correctly determine device type based on folder_name and configuration structure
             is_bus = folder_name == "bus"
