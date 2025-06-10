@@ -1130,7 +1130,7 @@ class EventListener:
 
                     self._event_send_debug(event)
                     requests.post(
-                        url, json=event.to_dict(), timeout=(0.005, 0.005)
+                        url, json=event.to_dict(), timeout=(0.025, 0.025)
                     )  # FIXME: check why low timeout send 2 time to supervisor
                     self.__sended_events += 1
                 except Exception:

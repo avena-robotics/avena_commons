@@ -3,7 +3,11 @@ import threading
 import time
 from enum import Enum
 
-import pysoem
+try:
+    import pysoem
+except ImportError as e:
+    print(f"Failed to import pysoem: {e}")
+
 
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import debug, error, info, warning
