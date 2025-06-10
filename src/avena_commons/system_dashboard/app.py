@@ -84,7 +84,11 @@ def run_app():
         process_info = get_process_info()
 
         msg = "OK"
-        if cpu_info["total_cpu_usage"] > 80 or memory_info["memory_percentage"] > 80 or disk_info["/"]["usage_percentage"] > 80:
+        if (
+            cpu_info["total_cpu_usage"] > 80
+            or memory_info["memory_percentage"] > 80
+            or disk_info["/"]["usage_percentage"] > 80
+        ):
             msg = "Warning"
         return jsonify(
             cpu_info=cpu_info,

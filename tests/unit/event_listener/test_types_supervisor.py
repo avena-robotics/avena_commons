@@ -19,7 +19,13 @@ Test Coverage:
 import pytest
 from pydantic import ValidationError
 
-from avena_commons.event_listener.types.supervisor import Path, SupervisorGripperAction, SupervisorMoveAction, SupervisorPumpAction, Waypoint
+from avena_commons.event_listener.types.supervisor import (
+    Path,
+    SupervisorGripperAction,
+    SupervisorMoveAction,
+    SupervisorPumpAction,
+    Waypoint,
+)
 
 
 class TestWaypoint:
@@ -72,7 +78,12 @@ class TestWaypoint:
 
     @pytest.mark.parametrize(
         "joints_config",
-        [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [10.0, 20.0, 30.0, 40.0, 50.0, 60.0], [-10.0, -20.0, -30.0, -40.0, -50.0, -60.0], [180.0, 90.0, 45.0, 30.0, 15.0, 10.0]],
+        [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            [-10.0, -20.0, -30.0, -40.0, -50.0, -60.0],
+            [180.0, 90.0, 45.0, 30.0, 15.0, 10.0],
+        ],
     )
     def test_joints_configuration(self, joints_config):
         """Test various joint configurations."""
@@ -96,13 +107,24 @@ class TestWaypoint:
         waypoint = Waypoint(waypoint_name="test", waypoint=[1.0, 2.0, 3.0], speed=25.0)
 
         result = waypoint.to_dict()
-        expected = {"waypoint_name": "test", "waypoint": [1.0, 2.0, 3.0], "joints": None, "speed": 25.0, "blend_radius": None, "watchdog_override": None}
+        expected = {
+            "waypoint_name": "test",
+            "waypoint": [1.0, 2.0, 3.0],
+            "joints": None,
+            "speed": 25.0,
+            "blend_radius": None,
+            "watchdog_override": None,
+        }
 
         assert result == expected
 
     def test_from_dict_method(self):
         """Test Waypoint from_dict method."""
-        data = {"waypoint_name": "from_dict", "waypoint": [5.0, 6.0, 7.0], "speed": 75.0}
+        data = {
+            "waypoint_name": "from_dict",
+            "waypoint": [5.0, 6.0, 7.0],
+            "speed": 75.0,
+        }
 
         waypoint = Waypoint.from_dict(data)
 
@@ -117,7 +139,11 @@ class TestPath:
     @pytest.fixture
     def sample_waypoints(self):
         """Fixture providing sample waypoints."""
-        return [Waypoint(waypoint=[1.0, 2.0, 3.0]), Waypoint(waypoint=[4.0, 5.0, 6.0], speed=50.0), Waypoint(waypoint=[7.0, 8.0, 9.0], waypoint_name="end_point")]
+        return [
+            Waypoint(waypoint=[1.0, 2.0, 3.0]),
+            Waypoint(waypoint=[4.0, 5.0, 6.0], speed=50.0),
+            Waypoint(waypoint=[7.0, 8.0, 9.0], waypoint_name="end_point"),
+        ]
 
     def test_init_minimal_required(self, sample_waypoints):
         """Test Path initialization with minimal required fields."""
@@ -134,7 +160,14 @@ class TestPath:
         """Test Path initialization with all fields."""
         start_waypoint = Waypoint(waypoint=[0.0, 0.0, 0.0])
 
-        path = Path(waypoints=sample_waypoints, max_speed=75, start_position=start_waypoint, testing_move=True, interruption_move=True, interruption_duration=5.5)
+        path = Path(
+            waypoints=sample_waypoints,
+            max_speed=75,
+            start_position=start_waypoint,
+            testing_move=True,
+            interruption_move=True,
+            interruption_duration=5.5,
+        )
 
         assert len(path.waypoints) == 3
         assert path.max_speed == 75
@@ -164,7 +197,11 @@ class TestPath:
 
     def test_interruption_duration_values(self, sample_waypoints):
         """Test Path with various interruption duration values."""
-        path = Path(waypoints=sample_waypoints, interruption_move=True, interruption_duration=2.5)
+        path = Path(
+            waypoints=sample_waypoints,
+            interruption_move=True,
+            interruption_duration=2.5,
+        )
         assert path.interruption_duration == 2.5
 
     def test_to_dict_method(self, sample_waypoints):
@@ -179,7 +216,10 @@ class TestPath:
 
     def test_from_dict_method(self):
         """Test Path from_dict method."""
-        data = {"waypoints": [{"waypoint": [1.0, 2.0, 3.0]}, {"waypoint": [4.0, 5.0, 6.0]}], "max_speed": 90}
+        data = {
+            "waypoints": [{"waypoint": [1.0, 2.0, 3.0]}, {"waypoint": [4.0, 5.0, 6.0]}],
+            "max_speed": 90,
+        }
 
         path = Path.from_dict(data)
 
@@ -249,7 +289,9 @@ class TestSupervisorGripperAction:
         """Test SupervisorGripperAction with all fields."""
         waypoint = Waypoint(waypoint=[1.0, 2.0, 3.0, 5.0, 6.0])
 
-        action = SupervisorGripperAction(qr=1, qr_rotation=True, waypoint=waypoint, try_number=3)
+        action = SupervisorGripperAction(
+            qr=1, qr_rotation=True, waypoint=waypoint, try_number=3
+        )
 
         assert action.qr == 1
         assert action.qr_rotation is True
@@ -379,14 +421,37 @@ class TestSupervisorModelsIntegration:
     def complex_path(self):
         """Fixture providing a complex path with multiple waypoints."""
         waypoints = [
-            Waypoint(waypoint_name="start", waypoint=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], joints=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0], speed=25.0),
-            Waypoint(waypoint_name="middle", waypoint=[100.0, 50.0, 25.0, 45.0, 90.0, 180.0], joints=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0], speed=50.0, blend_radius=0.5),
-            Waypoint(waypoint_name="end", waypoint=[200.0, 100.0, 50.0, 90.0, 180.0, 360.0], speed=75.0, watchdog_override=True),
+            Waypoint(
+                waypoint_name="start",
+                waypoint=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                joints=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                speed=25.0,
+            ),
+            Waypoint(
+                waypoint_name="middle",
+                waypoint=[100.0, 50.0, 25.0, 45.0, 90.0, 180.0],
+                joints=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+                speed=50.0,
+                blend_radius=0.5,
+            ),
+            Waypoint(
+                waypoint_name="end",
+                waypoint=[200.0, 100.0, 50.0, 90.0, 180.0, 360.0],
+                speed=75.0,
+                watchdog_override=True,
+            ),
         ]
 
         start_pos = Waypoint(waypoint=[-10.0, -10.0, -10.0])
 
-        return Path(waypoints=waypoints, max_speed=100, start_position=start_pos, testing_move=False, interruption_move=True, interruption_duration=3.0)
+        return Path(
+            waypoints=waypoints,
+            max_speed=100,
+            start_position=start_pos,
+            testing_move=False,
+            interruption_move=True,
+            interruption_duration=3.0,
+        )
 
     def test_move_action_with_complex_path(self, complex_path):
         """Test SupervisorMoveAction with complex path."""
@@ -399,9 +464,16 @@ class TestSupervisorModelsIntegration:
 
     def test_gripper_action_with_waypoint(self):
         """Test SupervisorGripperAction with detailed waypoint."""
-        waypoint = Waypoint(waypoint_name="grip_position", waypoint=[150.0, 75.0, 30.0, 45.0, 90.0], speed=25.0, blend_radius=0.1)
+        waypoint = Waypoint(
+            waypoint_name="grip_position",
+            waypoint=[150.0, 75.0, 30.0, 45.0, 90.0],
+            speed=25.0,
+            blend_radius=0.1,
+        )
 
-        action = SupervisorGripperAction(qr=5, qr_rotation=True, waypoint=waypoint, try_number=2)
+        action = SupervisorGripperAction(
+            qr=5, qr_rotation=True, waypoint=waypoint, try_number=2
+        )
 
         assert action.waypoint.waypoint_name == "grip_position"
         assert action.waypoint.speed == 25.0
@@ -413,7 +485,9 @@ class TestSupervisorModelsIntegration:
         move_action = SupervisorMoveAction(path=complex_path, max_speed=90)
 
         grip_waypoint = Waypoint(waypoint=[1.0, 2.0, 3.0, 4.0, 5.0])
-        gripper_action = SupervisorGripperAction(qr=3, qr_rotation=True, waypoint=grip_waypoint, try_number=1)
+        gripper_action = SupervisorGripperAction(
+            qr=3, qr_rotation=True, waypoint=grip_waypoint, try_number=1
+        )
 
         pump_action = SupervisorPumpAction(pressure_threshold=125)
 
@@ -449,7 +523,13 @@ class TestSupervisorModelsIntegration:
 
         # Test JSON round-trip for each model
         models = [waypoint, path, move_action, gripper_action, pump_action]
-        model_classes = [Waypoint, Path, SupervisorMoveAction, SupervisorGripperAction, SupervisorPumpAction]
+        model_classes = [
+            Waypoint,
+            Path,
+            SupervisorMoveAction,
+            SupervisorGripperAction,
+            SupervisorPumpAction,
+        ]
 
         for model, model_class in zip(models, model_classes):
             # Serialize to JSON
@@ -467,7 +547,12 @@ class TestSupervisorModelsIntegration:
         # Create a path with many waypoints
         waypoints = []
         for i in range(100):
-            waypoints.append(Waypoint(waypoint_name=f"point_{i}", waypoint=[float(i), float(i * 2), float(i * 3)]))
+            waypoints.append(
+                Waypoint(
+                    waypoint_name=f"point_{i}",
+                    waypoint=[float(i), float(i * 2), float(i * 3)],
+                )
+            )
 
         path = Path(waypoints=waypoints, max_speed=100)
         move_action = SupervisorMoveAction(path=path)

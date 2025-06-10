@@ -44,7 +44,9 @@ def get_cpu_info():
         "physical_cores": psutil.cpu_count(logical=False),
         "total_cores": psutil.cpu_count(logical=True),
         "processor_speed": psutil.cpu_freq().current,
-        "cpu_usage_per_core": dict(enumerate(psutil.cpu_percent(percpu=True, interval=1))),
+        "cpu_usage_per_core": dict(
+            enumerate(psutil.cpu_percent(percpu=True, interval=1))
+        ),
         "total_cpu_usage": psutil.cpu_percent(interval=1),
     }
 
@@ -97,12 +99,23 @@ def get_process_info():
     :return: A list of dictionaries containing process details such as CPU number, PID, name, command line, memory percentage, and CPU percentage.
     """
     process_info = []
-    for process in psutil.process_iter(["cpu_num", "pid", "name", "cmdline", "memory_percent", "cpu_percent"]):
+    for process in psutil.process_iter([
+        "cpu_num",
+        "pid",
+        "name",
+        "cmdline",
+        "memory_percent",
+        "cpu_percent",
+    ]):
         try:
             proc_info = process.info
 
             # Check the conditions for memory and CPU usage
-            if (proc_info["memory_percent"] == 0.0 and proc_info["cpu_percent"] == 0.0) or (proc_info["memory_percent"] <= 1.0 and proc_info["cpu_percent"] <= 1.0):
+            if (
+                proc_info["memory_percent"] == 0.0 and proc_info["cpu_percent"] == 0.0
+            ) or (
+                proc_info["memory_percent"] <= 1.0 and proc_info["cpu_percent"] <= 1.0
+            ):
                 continue
 
             # Append process info if conditions are not met

@@ -1,2 +1,2 @@
-from .common import Config
-from .controller import ControllerConfig
+from .common import Config as Config
+from .controller import ControllerConfig as ControllerConfig

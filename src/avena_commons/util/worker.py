@@ -344,7 +344,9 @@ class Connector:
     # @run_info
     def _connect(self):
         self._pipe_out, _pipe_in = multiprocessing.Pipe()
-        self._process = multiprocessing.Process(target=self._run, args=(_pipe_in, self._message_logger))
+        self._process = multiprocessing.Process(
+            target=self._run, args=(_pipe_in, self._message_logger)
+        )
         self._process.start()
         self.core = self._core
 
@@ -375,7 +377,9 @@ class Connector:
         try:
             if self._pipe_out is not None:
                 if self._process.is_alive():
-                    debug("Zamykanie procesu worker", message_logger=self._message_logger)
+                    debug(
+                        "Zamykanie procesu worker", message_logger=self._message_logger
+                    )
                     self._pipe_out.send(["STOP"])
                     self._process.terminate()
                     self._process.join()

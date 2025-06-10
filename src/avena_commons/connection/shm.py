@@ -49,14 +49,20 @@ class AvenaComm:
             self.semaphore = posix_ipc.Semaphore(self.comm_name_lock)
             self._info(f"An existing semaphore has been found: {self.comm_name_lock}")
         except posix_ipc.ExistentialError:
-            self.semaphore = posix_ipc.Semaphore(self.comm_name_lock, posix_ipc.O_CREX, initial_value=1, mode=0o777)
+            self.semaphore = posix_ipc.Semaphore(
+                self.comm_name_lock, posix_ipc.O_CREX, initial_value=1, mode=0o777
+            )
             self._info("New semaphore created: " + self.comm_name_lock)
 
         try:
             self.shm = posix_ipc.SharedMemory(self.comm_name_shm)
-            self._info("An existing shared memory has been found: " + self.comm_name_shm)
+            self._info(
+                "An existing shared memory has been found: " + self.comm_name_shm
+            )
         except posix_ipc.ExistentialError:
-            self.shm = posix_ipc.SharedMemory(self.comm_name_shm, posix_ipc.O_CREX, size=self.shm_size, mode=0o777)
+            self.shm = posix_ipc.SharedMemory(
+                self.comm_name_shm, posix_ipc.O_CREX, size=self.shm_size, mode=0o777
+            )
             self._info("new shared memory created: " + self.comm_name_shm)
             format_shm = True
 
@@ -174,7 +180,9 @@ class AvenaComm:
         self.semaphore.unlink()
 
     def print_errors(self):
-        self._info(f"Connection: {self.comm_name_shm} - lock_counter: {self.lock_counter}, error_counter: {self.error_counter}")
+        self._info(
+            f"Connection: {self.comm_name_shm} - lock_counter: {self.lock_counter}, error_counter: {self.error_counter}"
+        )
 
     def _info(self, message):
         if self._debug:

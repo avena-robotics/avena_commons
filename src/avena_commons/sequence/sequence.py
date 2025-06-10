@@ -119,7 +119,9 @@ class Sequence(BaseModel):
             return v.__name__
         raise ValueError(f"Invalid sequence_enum type: {type(v)}")
 
-    def __init__(self, produkt_id: int, enum_class=None, initial_step=1, parametry=None, **data):
+    def __init__(
+        self, produkt_id: int, enum_class=None, initial_step=1, parametry=None, **data
+    ):
         # Obsługa kompatybilności wstecznej
         if not enum_class and "sequence_enum" in data:
             # Stary styl inicjalizacji - używamy przekazanych danych
@@ -127,27 +129,43 @@ class Sequence(BaseModel):
 
             # Pobieramy klasę enuma z globals() lub z podanych parametrów
             enum_class = data.pop("enum_class", None)
-            enum_name = self.sequence_enum if isinstance(self.sequence_enum, str) else self.sequence_enum.__name__
+            enum_name = (
+                self.sequence_enum
+                if isinstance(self.sequence_enum, str)
+                else self.sequence_enum.__name__
+            )
 
             if enum_class is None:
                 try:
                     enum_class = globals()[enum_name]
                 except KeyError:
-                    raise ValueError(f"Nie znaleziono klasy enumeracji o nazwie {enum_name}. Przekaż bezpośrednio klasę enumeracji jako parametr 'enum_class'.")
+                    raise ValueError(
+                        f"Nie znaleziono klasy enumeracji o nazwie {enum_name}. Przekaż bezpośrednio klasę enumeracji jako parametr 'enum_class'."
+                    )
         else:
             # Nowy styl inicjalizacji - generujemy wszystko na podstawie enum_class
             if enum_class is None:
-                raise ValueError("Parametr 'enum_class' jest wymagany przy nowym stylu inicjalizacji")
+                raise ValueError(
+                    "Parametr 'enum_class' jest wymagany przy nowym stylu inicjalizacji"
+                )
 
             sequence_enum = enum_class.__name__
 
             # Przygotowujemy status
             current_step = initial_step
-            steps = {step.value: SequenceStepStatus(step_id=step.value, fsm_state=StepState.PREPARE) for step in enum_class if not step.name.startswith("__")}
+            steps = {
+                step.value: SequenceStepStatus(
+                    step_id=step.value, fsm_state=StepState.PREPARE
+                )
+                for step in enum_class
+                if not step.name.startswith("__")
+            }
 
             status_obj = data.get(
                 "status",
-                SequenceStatus(sequence_enum=sequence_enum, current_step=current_step, steps=steps),
+                SequenceStatus(
+                    sequence_enum=sequence_enum, current_step=current_step, steps=steps
+                ),
             )
 
             # Wywołujemy konstruktor
@@ -235,7 +253,9 @@ class Sequence(BaseModel):
         step_status.fsm_state = StepFsmState.ERROR
         self._log_state_change(StepFsmState.ERROR, message_logger)
 
-    def _log_state_change(self, state: StepState, message_logger: MessageLogger | None = None) -> None:
+    def _log_state_change(
+        self, state: StepState, message_logger: MessageLogger | None = None
+    ) -> None:
         """Centralny mechanizm logowania zmiany stanu."""
         step_id = self.status.current_step
         step_name = self._get_step_name(step_id)
@@ -310,11 +330,15 @@ class Sequence(BaseModel):
         """
         if self.status.current_step < len(self.status.steps):
             self.status.current_step += 1
-            self._do_prepare(self.status.steps[self.status.current_step], message_logger)
+            self._do_prepare(
+                self.status.steps[self.status.current_step], message_logger
+            )
         else:
             self.status.finished = True
 
-    def go_to_step(self, step_id: int, message_logger: MessageLogger | None = None) -> None:
+    def go_to_step(
+        self, step_id: int, message_logger: MessageLogger | None = None
+    ) -> None:
         """Jumps to a specific step in the sequence.
 
         Sets the current step to the specified step_id and prepares it for execution.
@@ -335,6 +359,8 @@ class Sequence(BaseModel):
         Args:
             message_logger (MessageLogger, optional): Logger for recording messages. Defaults to None.
         """
-        info(f"Sekwencja {self.sequence_enum} zakonczona", message_logger=message_logger)
+        info(
+            f"Sekwencja {self.sequence_enum} zakonczona", message_logger=message_logger
+        )
         self.status.finished = True
         self.status.current_step = 0

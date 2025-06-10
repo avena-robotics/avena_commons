@@ -20,7 +20,9 @@ class QuantizerLogPower:
         self.dequantize_list, self.mid_point_list = self._generate_dequantize_list()
 
     def _find_change_points_linspace(self):
-        x_values = np.linspace(self.x_min, self.x_max, 100000)  # Using linspace for a more uniform distribution
+        x_values = np.linspace(
+            self.x_min, self.x_max, 100000
+        )  # Using linspace for a more uniform distribution
 
         # Initialize previous value and change points list
         prev_value = self.quantize(x_values[0])
@@ -39,20 +41,36 @@ class QuantizerLogPower:
         if self.num_intervals == 1:
             return np.array([0.0]), np.array([0.0])
         if self.num_intervals == 2:
-            return np.array([-self.x_max, self.x_max]), np.array([-self.x_max, self.x_max])
+            return np.array([-self.x_max, self.x_max]), np.array([
+                -self.x_max,
+                self.x_max,
+            ])
         if self.num_intervals == 3:
-            return np.array([-self.x_max, 0.0, self.x_max]), np.array([-self.x_max, 0.0, self.x_max])
+            return np.array([-self.x_max, 0.0, self.x_max]), np.array([
+                -self.x_max,
+                0.0,
+                self.x_max,
+            ])
         if self.num_intervals == 4:
-            return np.array([-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max]), np.array([-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max])
+            return np.array([
+                -self.x_max,
+                -self.x_max / 2,
+                self.x_max / 2,
+                self.x_max,
+            ]), np.array([-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max])
 
         # sytuacja num_intervals = 5 (pierwsza normalna sytuacja)
 
         # na razie rozwazamy num_intervals nieparzyste i >= 5
         ilosc_sektorow_parzysta = 1 if self.num_intervals % 2 == 0 else 0
 
-        srodek = [0.0] if ilosc_sektorow_parzysta == 0 else [-self.x_min / 2, self.x_min / 2]  # srodek przedzialu
+        srodek = (
+            [0.0] if ilosc_sektorow_parzysta == 0 else [-self.x_min / 2, self.x_min / 2]
+        )  # srodek przedzialu
 
-        x_values = np.linspace(self.x_min, self.x_max, 100000)  # Using linspace for a more uniform distribution
+        x_values = np.linspace(
+            self.x_min, self.x_max, 100000
+        )  # Using linspace for a more uniform distribution
 
         # Initialize previous value and change points list
         prev_value = self.quantize(x_values[0])
@@ -69,8 +87,18 @@ class QuantizerLogPower:
 
         midpoints_np = np.convolve(change_points, [0.5, 0.5], mode="valid")
 
-        dequantize_list = np.concatenate([-1 * change_points[::-1], srodek, change_points])
-        mid_point_list = np.concatenate([[-self.x_max], -1 * midpoints_np[::-1], srodek, midpoints_np, [self.x_max]])
+        dequantize_list = np.concatenate([
+            -1 * change_points[::-1],
+            srodek,
+            change_points,
+        ])
+        mid_point_list = np.concatenate([
+            [-self.x_max],
+            -1 * midpoints_np[::-1],
+            srodek,
+            midpoints_np,
+            [self.x_max],
+        ])
         return dequantize_list, mid_point_list
 
     def quantize(self, x: float) -> int:
@@ -97,9 +125,13 @@ class QuantizerLogPower:
         # sytuacja num_intervals = 5 (pierwsza normalna sytuacja)
 
         # na razie rozwazamy num_intervals nieparzyste i >= 5
-        znak = 1 if x >= 0 else -1  # ustalenie czesci kwantow sla argumentow dodatnich/ujemnych
+        znak = (
+            1 if x >= 0 else -1
+        )  # ustalenie czesci kwantow sla argumentow dodatnich/ujemnych
         ilosc_sektorow_parzysta = 1 if self.num_intervals % 2 == 0 else 0
-        positive_intervals_in_function = int(self.num_intervals / 2) - 1  # okreslenie ilosci kwantow po stronie dodatniej liczonych z funkcji
+        positive_intervals_in_function = (
+            int(self.num_intervals / 2) - 1
+        )  # okreslenie ilosci kwantow po stronie dodatniej liczonych z funkcji
 
         # kwanty brzegowe (z poza funkcji)
         if x <= -self.x_max:
@@ -109,11 +141,15 @@ class QuantizerLogPower:
 
         # kwanty srodkowe (z poza funkcji)
         if x > -self.x_min and x < self.x_min and ilosc_sektorow_parzysta == 0:
-            return positive_intervals_in_function + 1  # srodkowy kwant dla nieparzystej ilosci
+            return (
+                positive_intervals_in_function + 1
+            )  # srodkowy kwant dla nieparzystej ilosci
         if x > -self.x_min and x < 0 and ilosc_sektorow_parzysta == 1:
             return positive_intervals_in_function  # srodkowy kwant ujemny dla parzystej ilosci
         if x >= 0 and x < self.x_min and ilosc_sektorow_parzysta == 1:
-            return positive_intervals_in_function + 1  # srodkowy kwant dodatni dla parzystej ilosci
+            return (
+                positive_intervals_in_function + 1
+            )  # srodkowy kwant dodatni dla parzystej ilosci
 
         # kwanty nie brzegowe i srodkowe (w funkcji)
         # if ilosc_sektorow_parzysta == 0:
@@ -126,7 +162,11 @@ class QuantizerLogPower:
         # wybor kwantu
         quant = min(int(round(result)), positive_intervals_in_function)
 
-        quant = quant + positive_intervals_in_function + 1 - ilosc_sektorow_parzysta if znak == 1 else positive_intervals_in_function - quant + 1
+        quant = (
+            quant + positive_intervals_in_function + 1 - ilosc_sektorow_parzysta
+            if znak == 1
+            else positive_intervals_in_function - quant + 1
+        )
         return quant
 
     def dequantize(self, quant: int) -> float:
@@ -136,7 +176,9 @@ class QuantizerLogPower:
 
 
 class QuantizerTanh:
-    def __init__(self, x_min: float, x_max: float, num_intervals: int, power: float) -> None:
+    def __init__(
+        self, x_min: float, x_max: float, num_intervals: int, power: float
+    ) -> None:
         self.x_min = x_min
         self.x_max = x_max
         self.num_intervals = num_intervals
@@ -199,7 +241,9 @@ class QuantizerLinear:
 
 
 class QuantizerPolynomial:
-    def __init__(self, x_min: float, x_max: float, num_intervals: int, power: int) -> None:
+    def __init__(
+        self, x_min: float, x_max: float, num_intervals: int, power: int
+    ) -> None:
         self.x_min = x_min
         self.x_max = x_max
         self.num_intervals = num_intervals
@@ -225,7 +269,9 @@ class QuantizerPolynomial:
 
         # Jeśli x jest dodatnie, mapuj na zakres od środkowego kwantu do ilosc_kwantow-1
         if x >= 0:
-            quantized_val = middle_quant + int(normalized_val * (self.num_intervals - 1 - middle_quant))
+            quantized_val = middle_quant + int(
+                normalized_val * (self.num_intervals - 1 - middle_quant)
+            )
         # Jeśli x jest ujemne, mapuj na zakres od 0 do środkowego kwantu
         else:
             quantized_val = middle_quant - int(normalized_val * middle_quant)
@@ -238,7 +284,9 @@ class QuantizerPolynomial:
 
         # Using the symmetry property for quants below the middle quant
         if quant < self.middle_quant:
-            x_val = self.dequantize_for_positive(self.middle_quant + (self.middle_quant - quant))
+            x_val = self.dequantize_for_positive(
+                self.middle_quant + (self.middle_quant - quant)
+            )
             return -x_val
 
         return self.dequantize_for_positive(quant)
@@ -246,10 +294,21 @@ class QuantizerPolynomial:
     def dequantize_for_positive(self, quant: int) -> float:
         if quant <= self.middle_quant:
             normalized_upper = 1 - (quant / self.middle_quant)
-            normalized_lower = 1 - ((quant + 1) / self.middle_quant) if quant != self.middle_quant else 0
+            normalized_lower = (
+                1 - ((quant + 1) / self.middle_quant)
+                if quant != self.middle_quant
+                else 0
+            )
         else:
-            normalized_lower = (quant - self.middle_quant) / (self.num_intervals - 1 - self.middle_quant)
-            normalized_upper = (quant + 1 - self.middle_quant) / (self.num_intervals - 1 - self.middle_quant) if quant != self.num_intervals - 1 else 1
+            normalized_lower = (quant - self.middle_quant) / (
+                self.num_intervals - 1 - self.middle_quant
+            )
+            normalized_upper = (
+                (quant + 1 - self.middle_quant)
+                / (self.num_intervals - 1 - self.middle_quant)
+                if quant != self.num_intervals - 1
+                else 1
+            )
 
         poly_lower = normalized_lower * self.poly_max
         poly_upper = normalized_upper * self.poly_max

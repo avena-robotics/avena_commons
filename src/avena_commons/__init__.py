@@ -15,4 +15,12 @@ Feel free to explore each module for more details.
 
 from . import config, connection, event_listener, sequence, system_dashboard, util
 
-__all__ = ["config", "connection", "event_listener", "sequence", "system_dashboard", "util"]
+__all__ = [
+    "config",
+    "connection",
+    "event_listener",
+    "io",
+    "sequence",
+    "system_dashboard",
+    "util",
+]

@@ -6,7 +6,9 @@ class Config:
     def __init__(self, config_file, read_only=True):
         # self.config_file= config_file
         self._read_only = read_only
-        self._config_file_base, self._config_file_extenstion = os.path.splitext(config_file)
+        self._config_file_base, self._config_file_extenstion = os.path.splitext(
+            config_file
+        )
 
     def __remove_content_up_to_first_blank_line(self):
         # Odczytaj zawartość pliku i znajdź indeks pierwszej pustej linii
@@ -68,7 +70,7 @@ class Config:
 ##########################################################################################
 ##########################################################################################
 # sys.path.append(os.path.expanduser('~') + '/controller/')
-# from lib.util.logger import LogLevelType
+# from avena_commons.util.logger import LogLevelType
 
 # CONTROLLER_PATH=f"/home/{os.environ.get('USER')}/controller"
 # RESOURCES_PATH=f"{CONTROLLER_PATH}/resources"

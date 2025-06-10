@@ -24,16 +24,20 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from avena_commons.event_listener.event import Event, EventPriority, Result, ResultValue
-from avena_commons.event_listener.event_listener import EventListener, EventListenerState
+from avena_commons.event_listener.event_listener import EventListener
 from avena_commons.event_listener.types.io import IoAction, IoSignal
 from avena_commons.event_listener.types.kds import KdsAction
-from avena_commons.event_listener.types.supervisor import Path, SupervisorGripperAction, SupervisorMoveAction, SupervisorPumpAction, Waypoint
+from avena_commons.event_listener.types.supervisor import (
+    Path,
+    SupervisorMoveAction,
+    Waypoint,
+)
 from avena_commons.util.logger import MessageLogger
 
 
@@ -93,7 +97,12 @@ class TestEventListenerHTTPEndpoints:
 
     def test_event_endpoint_minimal_event(self, test_client):
         """Test /event endpoint with minimal event data."""
-        event_data = {"source": "minimal_client", "destination": "test_listener", "event_type": "minimal_event", "data": {}}
+        event_data = {
+            "source": "minimal_client",
+            "destination": "test_listener",
+            "event_type": "minimal_event",
+            "data": {},
+        }
 
         response = test_client.post("/event", json=event_data)
 
@@ -102,9 +111,16 @@ class TestEventListenerHTTPEndpoints:
 
     def test_event_endpoint_io_action_data(self, test_client):
         """Test /event endpoint with IoAction data."""
-        io_action = IoAction(device_type="digital_output", device_id=1, subdevice_id=2, value=True)
+        io_action = IoAction(
+            device_type="digital_output", device_id=1, subdevice_id=2, value=True
+        )
 
-        event_data = {"source": "io_client", "destination": "test_listener", "event_type": "io_action", "data": io_action.to_dict()}
+        event_data = {
+            "source": "io_client",
+            "destination": "test_listener",
+            "event_type": "io_action",
+            "data": io_action.to_dict(),
+        }
 
         response = test_client.post("/event", json=event_data)
 
@@ -113,9 +129,16 @@ class TestEventListenerHTTPEndpoints:
 
     def test_event_endpoint_kds_action_data(self, test_client):
         """Test /event endpoint with KdsAction data."""
-        kds_action = KdsAction(order_number=123, pickup_number=456, message="test_order")
+        kds_action = KdsAction(
+            order_number=123, pickup_number=456, message="test_order"
+        )
 
-        event_data = {"source": "kds_client", "destination": "test_listener", "event_type": "kds_action", "data": kds_action.to_dict()}
+        event_data = {
+            "source": "kds_client",
+            "destination": "test_listener",
+            "event_type": "kds_action",
+            "data": kds_action.to_dict(),
+        }
 
         response = test_client.post("/event", json=event_data)
 
@@ -128,7 +151,12 @@ class TestEventListenerHTTPEndpoints:
         path = Path(waypoints=[waypoint], max_speed=75)
         move_action = SupervisorMoveAction(path=path, max_speed=50)
 
-        event_data = {"source": "supervisor_client", "destination": "test_listener", "event_type": "supervisor_move", "data": move_action.to_dict()}
+        event_data = {
+            "source": "supervisor_client",
+            "destination": "test_listener",
+            "event_type": "supervisor_move",
+            "data": move_action.to_dict(),
+        }
 
         response = test_client.post("/event", json=event_data)
 
@@ -137,7 +165,12 @@ class TestEventListenerHTTPEndpoints:
 
     def test_state_endpoint(self, test_client):
         """Test /state endpoint."""
-        state_event_data = {"source": "state_client", "destination": "test_listener", "event_type": "state_request", "data": {"request_type": "status"}}
+        state_event_data = {
+            "source": "state_client",
+            "destination": "test_listener",
+            "event_type": "state_request",
+            "data": {"request_type": "status"},
+        }
 
         response = test_client.post("/state", json=state_event_data)
 
@@ -146,7 +179,12 @@ class TestEventListenerHTTPEndpoints:
 
     def test_discovery_endpoint(self, test_client):
         """Test /discovery endpoint."""
-        discovery_event_data = {"source": "discovery_client", "destination": "test_listener", "event_type": "discovery_request", "data": {"discover": True}}
+        discovery_event_data = {
+            "source": "discovery_client",
+            "destination": "test_listener",
+            "event_type": "discovery_request",
+            "data": {"discover": True},
+        }
 
         response = test_client.post("/discovery", json=discovery_event_data)
 
@@ -157,7 +195,9 @@ class TestEventListenerHTTPEndpoints:
         """Test /event endpoint with invalid JSON."""
         response = test_client.post("/event", data="invalid json")
 
-        assert response.status_code == 422  # Unprocessable Entity    def test_event_endpoint_missing_required_fields(self, test_client):
+        assert (
+            response.status_code == 422
+        )  # Unprocessable Entity    def test_event_endpoint_missing_required_fields(self, test_client):
         """Test /event endpoint with missing required fields."""
         incomplete_event = {
             "source": "incomplete_client"
@@ -168,7 +208,10 @@ class TestEventListenerHTTPEndpoints:
 
         # EventListener appears to use defaults for missing fields, so check if it succeeds
         # but with default values filled in
-        assert response.status_code in [200, 422]  # Accept both valid response or validation error
+        assert response.status_code in [
+            200,
+            422,
+        ]  # Accept both valid response or validation error
 
     @pytest.mark.parametrize("endpoint", ["/event", "/state", "/discovery"])
     def test_endpoints_with_get_method(self, test_client, endpoint):
@@ -201,13 +244,21 @@ class TestEventProcessingWorkflows:
 
                 # Simulate different processing outcomes based on event type
                 if event.event_type == "success_event":
-                    result = Result(result=ResultValue.SUCCESS, message="Processed successfully")
+                    result = Result(
+                        result=ResultValue.SUCCESS, message="Processed successfully"
+                    )
                 elif event.event_type == "failure_event":
-                    result = Result(result=ResultValue.FAILURE, message="Processing failed")
+                    result = Result(
+                        result=ResultValue.FAILURE, message="Processing failed"
+                    )
                 elif event.event_type == "timeout_event":
-                    result = Result(result=ResultValue.TIMEOUT, message="Processing timed out")
+                    result = Result(
+                        result=ResultValue.TIMEOUT, message="Processing timed out"
+                    )
                 else:
-                    result = Result(result=ResultValue.SUCCESS, message="Default processing")
+                    result = Result(
+                        result=ResultValue.SUCCESS, message="Default processing"
+                    )
 
                 event.result = result
                 self.processing_results.append(result)
@@ -217,7 +268,13 @@ class TestEventProcessingWorkflows:
 
                 return True  # Remove from incoming queue
 
-        listener = ProcessingEventListener(name="processing_test_listener", port=8002, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = ProcessingEventListener(
+            name="processing_test_listener",
+            port=8002,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Start processing threads manually for testing
         listener._system_ready.set()
@@ -233,7 +290,13 @@ class TestEventProcessingWorkflows:
     def test_complete_event_processing_workflow(self, processing_event_listener):
         """Test complete event processing from receipt to result."""
         # Create test event
-        event = Event(source="workflow_test", destination="processing_test_listener", event_type="success_event", data={"test": "workflow"}, to_be_processed=True)
+        event = Event(
+            source="workflow_test",
+            destination="processing_test_listener",
+            event_type="success_event",
+            data={"test": "workflow"},
+            to_be_processed=True,
+        )
 
         # Simulate event receipt
         asyncio.run(processing_event_listener._EventListener__event_handler(event))
@@ -246,21 +309,33 @@ class TestEventProcessingWorkflows:
         processed_event = processing_event_listener.processed_events[0]
         assert processed_event.event_type == "success_event"
         assert processed_event.result is not None
-        assert processed_event.result.result == "success"  # Compare string values directly
+        assert (
+            processed_event.result.result == "success"
+        )  # Compare string values directly
 
     def test_event_queue_management(self, processing_event_listener):
         """Test event queue management through processing workflow."""
-        initial_incoming_size = processing_event_listener.size_of_incomming_events_queue()
+        initial_incoming_size = (
+            processing_event_listener.size_of_incomming_events_queue()
+        )
 
         # Add multiple events
         events = []
         for i in range(5):
-            event = Event(source=f"queue_test_{i}", destination="processing_test_listener", event_type="queue_test", data={"index": i})
+            event = Event(
+                source=f"queue_test_{i}",
+                destination="processing_test_listener",
+                event_type="queue_test",
+                data={"index": i},
+            )
             events.append(event)
             asyncio.run(processing_event_listener._EventListener__event_handler(event))
 
         # Verify events were queued
-        assert processing_event_listener.size_of_incomming_events_queue() >= initial_incoming_size + 5
+        assert (
+            processing_event_listener.size_of_incomming_events_queue()
+            >= initial_incoming_size + 5
+        )
 
         # Wait for processing
         time.sleep(1.0)
@@ -272,16 +347,28 @@ class TestEventProcessingWorkflows:
         """Test that events with different priorities are handled correctly."""
         # Create events with different priorities
         high_priority_event = Event(
-            source="priority_test", destination="processing_test_listener", event_type="high_priority", priority=EventPriority.HIGH, data={"priority": "high"}
+            source="priority_test",
+            destination="processing_test_listener",
+            event_type="high_priority",
+            priority=EventPriority.HIGH,
+            data={"priority": "high"},
         )
 
         low_priority_event = Event(
-            source="priority_test", destination="processing_test_listener", event_type="low_priority", priority=EventPriority.LOW, data={"priority": "low"}
+            source="priority_test",
+            destination="processing_test_listener",
+            event_type="low_priority",
+            priority=EventPriority.LOW,
+            data={"priority": "low"},
         )
 
         # Send events
-        asyncio.run(processing_event_listener._EventListener__event_handler(low_priority_event))
-        asyncio.run(processing_event_listener._EventListener__event_handler(high_priority_event))
+        asyncio.run(
+            processing_event_listener._EventListener__event_handler(low_priority_event)
+        )
+        asyncio.run(
+            processing_event_listener._EventListener__event_handler(high_priority_event)
+        )
 
         # Wait for processing
         time.sleep(0.5)
@@ -294,18 +381,30 @@ class TestEventProcessingWorkflows:
         # Test with IoAction data
         io_action = IoAction(device_type="digital_output", device_id=1, subdevice_id=2)
 
-        io_event = Event(source="complex_data_test", destination="processing_test_listener", event_type="io_action", data=io_action.to_dict())
+        io_event = Event(
+            source="complex_data_test",
+            destination="processing_test_listener",
+            event_type="io_action",
+            data=io_action.to_dict(),
+        )
 
         # Test with SupervisorMoveAction data
         waypoint = Waypoint(waypoint=[10.0, 20.0, 30.0])
         path = Path(waypoints=[waypoint])
         move_action = SupervisorMoveAction(path=path)
 
-        supervisor_event = Event(source="complex_data_test", destination="processing_test_listener", event_type="supervisor_move", data=move_action.to_dict())
+        supervisor_event = Event(
+            source="complex_data_test",
+            destination="processing_test_listener",
+            event_type="supervisor_move",
+            data=move_action.to_dict(),
+        )
 
         # Send events
         asyncio.run(processing_event_listener._EventListener__event_handler(io_event))
-        asyncio.run(processing_event_listener._EventListener__event_handler(supervisor_event))
+        asyncio.run(
+            processing_event_listener._EventListener__event_handler(supervisor_event)
+        )
 
         # Wait for processing
         time.sleep(0.5)
@@ -313,7 +412,14 @@ class TestEventProcessingWorkflows:
         # Verify events were processed
         assert len(processing_event_listener.processed_events) >= 2
         # Verify data integrity
-        processed_io_event = next((e for e in processing_event_listener.processed_events if e.event_type == "io_action"), None)
+        processed_io_event = next(
+            (
+                e
+                for e in processing_event_listener.processed_events
+                if e.event_type == "io_action"
+            ),
+            None,
+        )
         assert processed_io_event is not None
         assert processed_io_event.data["device_type"] == "digital_output"
         assert processed_io_event.data["device_id"] == 1
@@ -338,10 +444,21 @@ class TestConfigurationPersistence:
         config_name = "config_test"
 
         # Create listener with configuration
-        listener1 = EventListener(name=config_name, port=8003, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener1 = EventListener(
+            name=config_name,
+            port=8003,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Modify configuration
-        test_config = {"test_setting": "test_value", "numeric_setting": 42, "boolean_setting": True, "complex_setting": {"nested": "value", "list": [1, 2, 3]}}
+        test_config = {
+            "test_setting": "test_value",
+            "numeric_setting": 42,
+            "boolean_setting": True,
+            "complex_setting": {"nested": "value", "list": [1, 2, 3]},
+        }
         listener1._configuration = test_config
 
         # Save configuration
@@ -351,7 +468,13 @@ class TestConfigurationPersistence:
         listener1._EventListener__shutdown()
 
         # Create new listener that should load the configuration
-        listener2 = EventListener(name=config_name, port=8004, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener2 = EventListener(
+            name=config_name,
+            port=8004,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Verify configuration was loaded
         assert listener2._configuration == test_config
@@ -372,12 +495,23 @@ class TestConfigurationPersistence:
         state_name = "state_test"
 
         # Create listener with events
-        listener1 = EventListener(name=state_name, port=8005, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener1 = EventListener(
+            name=state_name,
+            port=8005,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Add events to queues
         test_events = []
         for i in range(3):
-            event = Event(source=f"state_test_{i}", destination=state_name, event_type="persistence_test", data={"index": i, "test": True})
+            event = Event(
+                source=f"state_test_{i}",
+                destination=state_name,
+                event_type="persistence_test",
+                data={"index": i, "test": True},
+            )
             test_events.append(event)
             asyncio.run(listener1._EventListener__event_handler(event))
 
@@ -387,7 +521,9 @@ class TestConfigurationPersistence:
         # Verify events are in queue or have been processed
         # Since processing is fast, we check that events were handled
         initial_queue_size = listener1.size_of_incomming_events_queue()
-        assert initial_queue_size >= 0  # Queue size can be 0 if events processed quickly
+        assert (
+            initial_queue_size >= 0
+        )  # Queue size can be 0 if events processed quickly
 
         # Save state
         listener1._EventListener__save_queues()
@@ -411,17 +547,34 @@ class TestConfigurationPersistence:
         # Cleanup
         listener2._EventListener__shutdown()
 
-    def test_configuration_persistence_with_type_data(self, temp_directory, mock_logger):
+    def test_configuration_persistence_with_type_data(
+        self, temp_directory, mock_logger
+    ):
         """Test configuration persistence with type-specific data."""
         config_name = "type_config_test"
 
-        listener = EventListener(name=config_name, port=8007, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = EventListener(
+            name=config_name,
+            port=8007,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Create configuration with type-specific data
-        io_signal = IoSignal(device_type="digital_input", device_id=5, signal_name="test_signal", signal_value=True)
+        io_signal = IoSignal(
+            device_type="digital_input",
+            device_id=5,
+            signal_name="test_signal",
+            signal_value=True,
+        )
         kds_action = KdsAction(order_number=999, message="config_test")
 
-        complex_config = {"io_settings": io_signal.to_dict(), "kds_settings": kds_action.to_dict(), "system_config": {"frequency": 100, "retry_count": 5, "timeout": 30.0}}
+        complex_config = {
+            "io_settings": io_signal.to_dict(),
+            "kds_settings": kds_action.to_dict(),
+            "system_config": {"frequency": 100, "retry_count": 5, "timeout": 30.0},
+        }
 
         listener._configuration = complex_config
 
@@ -456,7 +609,13 @@ class TestThreadSafetyAndConcurrency:
     @pytest.fixture
     def concurrent_event_listener(self, mock_logger):
         """Create EventListener for concurrency testing."""
-        listener = EventListener(name="concurrent_test_listener", port=8008, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = EventListener(
+            name="concurrent_test_listener",
+            port=8008,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         # Start processing
         listener._system_ready.set()
@@ -481,10 +640,15 @@ class TestThreadSafetyAndConcurrency:
             thread_events = []
             for i in range(events_per_thread):
                 event = Event(
-                    source=f"thread_{thread_id}", destination="concurrent_test_listener", event_type="concurrent_test", data={"thread_id": thread_id, "event_index": i}
+                    source=f"thread_{thread_id}",
+                    destination="concurrent_test_listener",
+                    event_type="concurrent_test",
+                    data={"thread_id": thread_id, "event_index": i},
                 )
                 thread_events.append(event)
-                asyncio.run(concurrent_event_listener._EventListener__event_handler(event))
+                asyncio.run(
+                    concurrent_event_listener._EventListener__event_handler(event)
+                )
                 time.sleep(0.001)  # Small delay to increase chance of race conditions
             submitted_events.extend(thread_events)
 
@@ -517,8 +681,12 @@ class TestThreadSafetyAndConcurrency:
             """Perform various queue operations concurrently."""
             for i in range(num_operations):
                 # Check queue sizes (read operations)
-                incoming_size = concurrent_event_listener.size_of_incomming_events_queue()
-                processing_size = concurrent_event_listener.size_of_processing_events_queue()
+                incoming_size = (
+                    concurrent_event_listener.size_of_incomming_events_queue()
+                )
+                processing_size = (
+                    concurrent_event_listener.size_of_processing_events_queue()
+                )
                 send_size = concurrent_event_listener.size_of_events_to_send_queue()
 
                 # These should always be non-negative
@@ -527,8 +695,15 @@ class TestThreadSafetyAndConcurrency:
                 assert send_size >= 0
 
                 # Add an event (write operation)
-                event = Event(source="queue_ops_test", destination="concurrent_test_listener", event_type="queue_operation_test", data={"operation_index": i})
-                asyncio.run(concurrent_event_listener._EventListener__event_handler(event))
+                event = Event(
+                    source="queue_ops_test",
+                    destination="concurrent_test_listener",
+                    event_type="queue_operation_test",
+                    data={"operation_index": i},
+                )
+                asyncio.run(
+                    concurrent_event_listener._EventListener__event_handler(event)
+                )
 
                 time.sleep(0.001)
 
@@ -560,10 +735,16 @@ class TestThreadSafetyAndConcurrency:
             events = []
             for i in range(batch, min(batch + batch_size, high_load_events)):
                 event = Event(
-                    source="high_load_test", destination="concurrent_test_listener", event_type="high_load_event", data={"event_number": i}, priority=EventPriority.MEDIUM
+                    source="high_load_test",
+                    destination="concurrent_test_listener",
+                    event_type="high_load_event",
+                    data={"event_number": i},
+                    priority=EventPriority.MEDIUM,
                 )
                 events.append(event)
-                asyncio.run(concurrent_event_listener._EventListener__event_handler(event))
+                asyncio.run(
+                    concurrent_event_listener._EventListener__event_handler(event)
+                )
 
             # Small delay between batches
             time.sleep(0.01)
@@ -592,7 +773,13 @@ class TestThreadSafetyAndConcurrency:
 
     def test_shutdown_under_load(self, mock_logger):
         """Test graceful shutdown while system is under load."""
-        listener = EventListener(name="shutdown_test_listener", port=8009, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = EventListener(
+            name="shutdown_test_listener",
+            port=8009,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         listener._system_ready.set()
 
@@ -603,7 +790,12 @@ class TestThreadSafetyAndConcurrency:
             """Submit events continuously until stop signal."""
             counter = 0
             while not stop_submission.is_set():
-                event = Event(source="shutdown_load_test", destination="shutdown_test_listener", event_type="shutdown_load_event", data={"counter": counter})
+                event = Event(
+                    source="shutdown_load_test",
+                    destination="shutdown_test_listener",
+                    event_type="shutdown_load_event",
+                    data={"counter": counter},
+                )
                 try:
                     asyncio.run(listener._EventListener__event_handler(event))
                     counter += 1
@@ -665,7 +857,13 @@ class TestErrorHandlingIntegration:
                 self.error_events.append(event)
                 return True
 
-        listener = ErrorHandlingEventListener(name="error_test_listener", port=8010, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = ErrorHandlingEventListener(
+            name="error_test_listener",
+            port=8010,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         listener._system_ready.set()
         yield listener
@@ -678,7 +876,12 @@ class TestErrorHandlingIntegration:
     def test_event_processing_error_recovery(self, error_handling_listener):
         """Test system recovery from event processing errors."""
         # Send a normal event first
-        normal_event = Event(source="error_test", destination="error_test_listener", event_type="normal_event", data={"test": "normal"})
+        normal_event = Event(
+            source="error_test",
+            destination="error_test_listener",
+            event_type="normal_event",
+            data={"test": "normal"},
+        )
         asyncio.run(error_handling_listener._EventListener__event_handler(normal_event))
 
         # Configure to raise errors
@@ -686,21 +889,35 @@ class TestErrorHandlingIntegration:
         error_handling_listener.error_type = "general"
 
         # Send an event that will cause an error
-        error_event = Event(source="error_test", destination="error_test_listener", event_type="error_event", data={"test": "error"})
+        error_event = Event(
+            source="error_test",
+            destination="error_test_listener",
+            event_type="error_event",
+            data={"test": "error"},
+        )
         asyncio.run(error_handling_listener._EventListener__event_handler(error_event))
 
         # Disable error raising
         error_handling_listener.should_raise_error = False
 
         # Send another normal event
-        recovery_event = Event(source="error_test", destination="error_test_listener", event_type="recovery_event", data={"test": "recovery"})
-        asyncio.run(error_handling_listener._EventListener__event_handler(recovery_event))
+        recovery_event = Event(
+            source="error_test",
+            destination="error_test_listener",
+            event_type="recovery_event",
+            data={"test": "recovery"},
+        )
+        asyncio.run(
+            error_handling_listener._EventListener__event_handler(recovery_event)
+        )
 
         # Wait for processing
         time.sleep(1.0)
 
         # Verify system recovered and continued processing
-        assert len(error_handling_listener.error_events) >= 2  # Normal + recovery events
+        assert (
+            len(error_handling_listener.error_events) >= 2
+        )  # Normal + recovery events
 
         # Verify system is still operational
         assert error_handling_listener.size_of_incomming_events_queue() >= 0
@@ -730,7 +947,12 @@ class TestErrorHandlingIntegration:
         assert response.status_code == 422
 
         # Verify system is still operational after malformed requests
-        valid_event = {"source": "recovery_test", "destination": "error_test_listener", "event_type": "valid_after_errors", "data": {"test": "valid"}}
+        valid_event = {
+            "source": "recovery_test",
+            "destination": "error_test_listener",
+            "event_type": "valid_after_errors",
+            "data": {"test": "valid"},
+        }
         response = test_client.post("/event", json=valid_event)
         assert response.status_code == 200
 
@@ -744,9 +966,15 @@ class TestErrorHandlingIntegration:
                 source="resource_test",
                 destination="error_test_listener",
                 event_type="large_event",
-                data={"large_data": "x" * large_data_size, "index": i, "metadata": {"size": large_data_size}},
+                data={
+                    "large_data": "x" * large_data_size,
+                    "index": i,
+                    "metadata": {"size": large_data_size},
+                },
             )
-            asyncio.run(error_handling_listener._EventListener__event_handler(large_event))
+            asyncio.run(
+                error_handling_listener._EventListener__event_handler(large_event)
+            )
 
         # Wait for processing
         time.sleep(2.0)
@@ -755,11 +983,18 @@ class TestErrorHandlingIntegration:
         assert error_handling_listener.size_of_incomming_events_queue() >= 0
 
         # Test that normal events still work after large events
-        normal_event = Event(source="resource_test", destination="error_test_listener", event_type="normal_after_large", data={"test": "normal"})
+        normal_event = Event(
+            source="resource_test",
+            destination="error_test_listener",
+            event_type="normal_after_large",
+            data={"test": "normal"},
+        )
         asyncio.run(error_handling_listener._EventListener__event_handler(normal_event))
 
         time.sleep(0.5)
-        assert len(error_handling_listener.error_events) > 0  # Should have processed some events
+        assert (
+            len(error_handling_listener.error_events) > 0
+        )  # Should have processed some events
 
 
 class TestPerformanceAndScalability:
@@ -793,7 +1028,13 @@ class TestPerformanceAndScalability:
 
                 return True
 
-        listener = PerformanceEventListener(name="performance_test_listener", port=8011, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = PerformanceEventListener(
+            name="performance_test_listener",
+            port=8011,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         listener._system_ready.set()
         yield listener
@@ -810,7 +1051,12 @@ class TestPerformanceAndScalability:
 
         # Submit events as fast as possible
         for i in range(num_events):
-            event = Event(source="throughput_test", destination="performance_test_listener", event_type="throughput_event", data={"index": i, "timestamp": time.time()})
+            event = Event(
+                source="throughput_test",
+                destination="performance_test_listener",
+                event_type="throughput_event",
+                data={"index": i, "timestamp": time.time()},
+            )
             asyncio.run(performance_listener._EventListener__event_handler(event))
 
         submission_time = time.time() - start_time
@@ -819,19 +1065,26 @@ class TestPerformanceAndScalability:
         processing_start = time.time()
         max_wait_time = 30.0  # Maximum wait time
 
-        while performance_listener.processed_count < num_events and time.time() - processing_start < max_wait_time:
+        while (
+            performance_listener.processed_count < num_events
+            and time.time() - processing_start < max_wait_time
+        ):
             time.sleep(0.1)
 
         total_time = time.time() - start_time
 
         # Calculate metrics
         submission_rate = num_events / submission_time if submission_time > 0 else 0
-        processing_rate = performance_listener.processed_count / total_time if total_time > 0 else 0
+        processing_rate = (
+            performance_listener.processed_count / total_time if total_time > 0 else 0
+        )
 
         # Verify reasonable performance (adjust thresholds as needed)
         assert submission_rate > 100  # Should submit at least 100 events/second
         assert processing_rate > 10  # Should process at least 10 events/second
-        assert performance_listener.processed_count >= num_events * 0.9  # Process at least 90%
+        assert (
+            performance_listener.processed_count >= num_events * 0.9
+        )  # Process at least 90%
 
     def test_latency_measurement(self, performance_listener):
         """Measure event processing latency."""
@@ -840,7 +1093,12 @@ class TestPerformanceAndScalability:
 
         for i in range(num_events):
             event_start = time.time()
-            event = Event(source="latency_test", destination="performance_test_listener", event_type="latency_event", data={"start_time": event_start, "index": i})
+            event = Event(
+                source="latency_test",
+                destination="performance_test_listener",
+                event_type="latency_event",
+                data={"start_time": event_start, "index": i},
+            )
             asyncio.run(performance_listener._EventListener__event_handler(event))
 
             # Measure time until event is in processing
@@ -880,7 +1138,12 @@ class TestPerformanceAndScalability:
         for batch in range(num_batches):
             # Submit batch of events
             for i in range(events_per_batch):
-                event = Event(source="memory_test", destination="performance_test_listener", event_type="memory_event", data={"batch": batch, "index": i, "data": "x" * 100})
+                event = Event(
+                    source="memory_test",
+                    destination="performance_test_listener",
+                    event_type="memory_event",
+                    data={"batch": batch, "index": i, "data": "x" * 100},
+                )
                 asyncio.run(performance_listener._EventListener__event_handler(event))
 
             # Sample memory usage
@@ -917,7 +1180,13 @@ class TestEventListenerIntegrationSuite:
         mock_logger = Mock(spec=MessageLogger)
 
         # Create a complete system setup
-        listener = EventListener(name="integration_suite", port=8012, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = EventListener(
+            name="integration_suite",
+            port=8012,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         try:
             listener._system_ready.set()
@@ -931,7 +1200,9 @@ class TestEventListenerIntegrationSuite:
                         "source": "integration_test",
                         "destination": "integration_suite",
                         "event_type": "io_action",
-                        "data": IoAction(device_type="digital_output", device_id=1, subdevice_id=2).to_dict(),
+                        "data": IoAction(
+                            device_type="digital_output", device_id=1, subdevice_id=2
+                        ).to_dict(),
                     },
                 },
                 {
@@ -940,16 +1211,28 @@ class TestEventListenerIntegrationSuite:
                         "source": "integration_test",
                         "destination": "integration_suite",
                         "event_type": "kds_action",
-                        "data": KdsAction(order_number=123, message="integration").to_dict(),
+                        "data": KdsAction(
+                            order_number=123, message="integration"
+                        ).to_dict(),
                     },
                 },
                 {
                     "endpoint": "/state",
-                    "data": {"source": "integration_test", "destination": "integration_suite", "event_type": "state_request", "data": {"request": "status"}},
+                    "data": {
+                        "source": "integration_test",
+                        "destination": "integration_suite",
+                        "event_type": "state_request",
+                        "data": {"request": "status"},
+                    },
                 },
                 {
                     "endpoint": "/discovery",
-                    "data": {"source": "integration_test", "destination": "integration_suite", "event_type": "discovery_request", "data": {"discover": True}},
+                    "data": {
+                        "source": "integration_test",
+                        "destination": "integration_suite",
+                        "event_type": "discovery_request",
+                        "data": {"discover": True},
+                    },
                 },
             ]
 
@@ -976,14 +1259,25 @@ class TestEventListenerIntegrationSuite:
         """Test system resilience under various stress conditions."""
         mock_logger = Mock(spec=MessageLogger)
 
-        listener = EventListener(name="resilience_test", port=8013, message_logger=mock_logger, do_not_load_state=True, raport_overtime=False)
+        listener = EventListener(
+            name="resilience_test",
+            port=8013,
+            message_logger=mock_logger,
+            do_not_load_state=True,
+            raport_overtime=False,
+        )
 
         try:
             listener._system_ready.set()
 
             # Test rapid event submission
             for i in range(200):
-                event = Event(source="resilience_test", destination="resilience_test", event_type="stress_event", data={"index": i, "stress": True})
+                event = Event(
+                    source="resilience_test",
+                    destination="resilience_test",
+                    event_type="stress_event",
+                    data={"index": i, "stress": True},
+                )
                 asyncio.run(listener._EventListener__event_handler(event))
 
                 if i % 50 == 0:
@@ -994,7 +1288,12 @@ class TestEventListenerIntegrationSuite:
                 for i in range(50):
                     listener.size_of_incomming_events_queue()
                     listener.size_of_processing_events_queue()
-                    event = Event(source="concurrent_resilience", destination="resilience_test", event_type="concurrent_event", data={"concurrent": True})
+                    event = Event(
+                        source="concurrent_resilience",
+                        destination="resilience_test",
+                        event_type="concurrent_event",
+                        data={"concurrent": True},
+                    )
                     asyncio.run(listener._EventListener__event_handler(event))
 
             threads = []

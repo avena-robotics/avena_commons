@@ -34,7 +34,9 @@ class TestKdsAction:
 
     def test_init_with_all_fields(self):
         """Test KdsAction initialization with all fields provided."""
-        action = KdsAction(order_number=100, pickup_number=50, message="kds_order_number")
+        action = KdsAction(
+            order_number=100, pickup_number=50, message="kds_order_number"
+        )
 
         assert action.order_number == 100
         assert action.pickup_number == 50
@@ -175,7 +177,9 @@ class TestKdsActionSerialization:
 
     def test_serialization_round_trip(self):
         """Test complete serialization round trip."""
-        original = KdsAction(order_number=777, pickup_number=888, message="round_trip_test")
+        original = KdsAction(
+            order_number=777, pickup_number=888, message="round_trip_test"
+        )
 
         # Serialize to dict
         data = original.to_dict()
@@ -229,7 +233,12 @@ class TestKdsActionValidation:
 
     def test_from_dict_extra_fields(self):
         """Test from_dict with extra fields (should be ignored)."""
-        data = {"order_number": 100, "pickup_number": 50, "message": "test", "extra_field": "should_be_ignored"}
+        data = {
+            "order_number": 100,
+            "pickup_number": 50,
+            "message": "test",
+            "extra_field": "should_be_ignored",
+        }
 
         action = KdsAction.from_dict(data)
 
@@ -316,7 +325,9 @@ class TestKdsActionIntegration:
         return [
             KdsAction(),  # Default
             KdsAction(order_number=100),  # Partial
-            KdsAction(order_number=200, pickup_number=75, message="complete"),  # Complete
+            KdsAction(
+                order_number=200, pickup_number=75, message="complete"
+            ),  # Complete
             KdsAction(pickup_number=0, message=""),  # Edge values
         ]
 

@@ -12,7 +12,6 @@ fixtures, comprehensive coverage, and clear test organization.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pytest
 
@@ -38,21 +37,27 @@ class TestResult:
 
     def test_result_creation_with_error(self):
         """Test creating an error Result object."""
-        result = Result(result="failure", error_code=500, error_message="Internal server error")
+        result = Result(
+            result="failure", error_code=500, error_message="Internal server error"
+        )
         assert result.result == "failure"
         assert result.error_code == 500
         assert result.error_message == "Internal server error"
 
     def test_result_creation_with_all_fields(self):
         """Test creating a Result with all fields populated."""
-        result = Result(result="test_failed", error_code=1, error_message="Test assertion failed")
+        result = Result(
+            result="test_failed", error_code=1, error_message="Test assertion failed"
+        )
         assert result.result == "test_failed"
         assert result.error_code == 1
         assert result.error_message == "Test assertion failed"
 
     def test_result_model_dump(self):
         """Test Result serialization to dictionary."""
-        result = Result(result="success", error_code=0, error_message="Operation completed")
+        result = Result(
+            result="success", error_code=0, error_message="Operation completed"
+        )
         dumped = result.model_dump()
 
         assert isinstance(dumped, dict)
@@ -106,7 +111,11 @@ class TestEvent:
     @pytest.fixture
     def sample_result(self):
         """Fixture providing a sample Result object."""
-        return Result(result="success", error_code=0, error_message="Operation completed successfully")
+        return Result(
+            result="success",
+            error_code=0,
+            error_message="Operation completed successfully",
+        )
 
     @pytest.fixture
     def basic_event(self, sample_event_data):
@@ -290,7 +299,15 @@ class TestEvent:
 
     def test_event_data_types(self):
         """Test Event with various data types."""
-        complex_data = {"string": "test", "integer": 42, "float": 3.14, "boolean": True, "list": [1, 2, 3], "dict": {"nested": "value"}, "null": None}
+        complex_data = {
+            "string": "test",
+            "integer": 42,
+            "float": 3.14,
+            "boolean": True,
+            "list": [1, 2, 3],
+            "dict": {"nested": "value"},
+            "null": None,
+        }
 
         event = Event(data=complex_data)
         assert event.data == complex_data

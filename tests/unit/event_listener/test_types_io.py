@@ -27,7 +27,12 @@ class TestIoSignal:
     @pytest.fixture
     def basic_io_signal_data(self):
         """Fixture providing basic IoSignal data."""
-        return {"device_type": "tor_pieca", "device_id": 1, "signal_name": "in", "signal_value": True}
+        return {
+            "device_type": "tor_pieca",
+            "device_id": 1,
+            "signal_name": "in",
+            "signal_value": True,
+        }
 
     def test_io_signal_creation_basic(self, basic_io_signal_data):
         """Test creating an IoSignal with basic parameters."""
@@ -40,7 +45,12 @@ class TestIoSignal:
 
     def test_io_signal_creation_with_int_value(self):
         """Test creating an IoSignal with integer value."""
-        signal = IoSignal(device_type="sensor_temp", device_id=5, signal_name="temperature", signal_value=25)
+        signal = IoSignal(
+            device_type="sensor_temp",
+            device_id=5,
+            signal_name="temperature",
+            signal_value=25,
+        )
 
         assert signal.device_type == "sensor_temp"
         assert signal.device_id == 5
@@ -50,7 +60,12 @@ class TestIoSignal:
 
     def test_io_signal_creation_with_bool_value(self):
         """Test creating an IoSignal with boolean value."""
-        signal = IoSignal(device_type="door_sensor", device_id=2, signal_name="is_open", signal_value=False)
+        signal = IoSignal(
+            device_type="door_sensor",
+            device_id=2,
+            signal_name="is_open",
+            signal_value=False,
+        )
 
         assert signal.device_type == "door_sensor"
         assert signal.device_id == 2
@@ -103,7 +118,12 @@ class TestIoSignal:
     )
     def test_io_signal_value_types(self, signal_value, expected_type):
         """Test IoSignal with different value types."""
-        signal = IoSignal(device_type="test_device", device_id=1, signal_name="test_signal", signal_value=signal_value)
+        signal = IoSignal(
+            device_type="test_device",
+            device_id=1,
+            signal_name="test_signal",
+            signal_value=signal_value,
+        )
 
         assert signal.signal_value == signal_value
         assert isinstance(signal.signal_value, expected_type)
@@ -116,7 +136,12 @@ class TestIoSignal:
 
     def test_io_signal_serialization_compatibility(self):
         """Test IoSignal serialization compatibility with Pydantic."""
-        signal = IoSignal(device_type="test_device", device_id=1, signal_name="test_signal", signal_value=True)
+        signal = IoSignal(
+            device_type="test_device",
+            device_id=1,
+            signal_name="test_signal",
+            signal_value=True,
+        )
 
         # Test model_dump method (Pydantic v2)
         dumped = signal.model_dump()
@@ -126,15 +151,27 @@ class TestIoSignal:
     def test_io_signal_edge_cases(self):
         """Test IoSignal with edge case values."""
         # Test with zero device_id
-        signal = IoSignal(device_type="edge_device", device_id=0, signal_name="zero_signal", signal_value=False)
+        signal = IoSignal(
+            device_type="edge_device",
+            device_id=0,
+            signal_name="zero_signal",
+            signal_value=False,
+        )
         assert signal.device_id == 0
 
         # Test with negative signal value
-        signal = IoSignal(device_type="edge_device", device_id=1, signal_name="negative_signal", signal_value=-100)
+        signal = IoSignal(
+            device_type="edge_device",
+            device_id=1,
+            signal_name="negative_signal",
+            signal_value=-100,
+        )
         assert signal.signal_value == -100
 
         # Test with empty string device_type
-        signal = IoSignal(device_type="", device_id=1, signal_name="empty_type", signal_value=True)
+        signal = IoSignal(
+            device_type="", device_id=1, signal_name="empty_type", signal_value=True
+        )
         assert signal.device_type == ""
 
 
@@ -240,7 +277,9 @@ class TestIoAction:
     )
     def test_io_action_id_combinations(self, device_id, subdevice_id):
         """Test IoAction with various device_id and subdevice_id combinations."""
-        action = IoAction(device_type="test_device", device_id=device_id, subdevice_id=subdevice_id)
+        action = IoAction(
+            device_type="test_device", device_id=device_id, subdevice_id=subdevice_id
+        )
 
         assert action.device_id == device_id
         assert action.subdevice_id == subdevice_id
@@ -267,7 +306,9 @@ class TestIoAction:
         assert action.device_type == ""
 
         # Test with very large device IDs
-        action = IoAction(device_type="large_id_device", device_id=999999, subdevice_id=999999)
+        action = IoAction(
+            device_type="large_id_device", device_id=999999, subdevice_id=999999
+        )
         assert action.device_id == 999999
         assert action.subdevice_id == 999999
 
@@ -279,7 +320,12 @@ class TestIoModelsIntegration:
         """Test that IoSignal and IoAction have consistent device_type usage."""
         device_type = "integrated_device"
 
-        signal = IoSignal(device_type=device_type, device_id=1, signal_name="status", signal_value=True)
+        signal = IoSignal(
+            device_type=device_type,
+            device_id=1,
+            signal_name="status",
+            signal_value=True,
+        )
 
         action = IoAction(device_type=device_type, device_id=1)
 
@@ -288,7 +334,12 @@ class TestIoModelsIntegration:
 
     def test_io_models_serialization_consistency(self):
         """Test that both models serialize consistently."""
-        signal = IoSignal(device_type="test_device", device_id=1, signal_name="test_signal", signal_value=True)
+        signal = IoSignal(
+            device_type="test_device",
+            device_id=1,
+            signal_name="test_signal",
+            signal_value=True,
+        )
 
         action = IoAction(device_type="test_device", device_id=1)
 
@@ -319,7 +370,12 @@ class TestIoModelsIntegration:
     )
     def test_io_models_parametrized_creation(self, device_type, device_id):
         """Test creating both models with parametrized values."""
-        signal = IoSignal(device_type=device_type, device_id=device_id, signal_name="test_signal", signal_value=True)
+        signal = IoSignal(
+            device_type=device_type,
+            device_id=device_id,
+            signal_name="test_signal",
+            signal_value=True,
+        )
 
         action = IoAction(device_type=device_type, device_id=device_id)
 

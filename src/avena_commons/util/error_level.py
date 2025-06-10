@@ -130,7 +130,9 @@ if IS_WINDOWS:
         """Dummy ErrorManager for Windows systems - IPC functionality disabled"""
 
         def __init__(self, suffix, message_logger=None, debug=False):
-            warning("ErrorManager is not supported on Windows - using dummy implementation")
+            warning(
+                "ErrorManager is not supported on Windows - using dummy implementation"
+            )
             self._message_logger = message_logger
 
         def set_error(self, error_code, msg=""):
@@ -214,7 +216,9 @@ else:
                             if self.__set_error:
                                 self.__set_error = False
                                 try:
-                                    interface.set_error(self.__error_interface.current_error.pop())
+                                    interface.set_error(
+                                        self.__error_interface.current_error.pop()
+                                    )
                                 except IndexError:
                                     pass
 
@@ -465,18 +469,24 @@ class ErrorInterface:
         elif isinstance(error_code, str):
             try:
                 error_code = ErrorCodes[error_code]
-                new_current_error = ErrorInfo(error_code, self.get_group(error_code), msg)
+                new_current_error = ErrorInfo(
+                    error_code, self.get_group(error_code), msg
+                )
             except KeyError:
                 raise InvalidError("Invalid error code provided")
         elif isinstance(error_code, int):
             try:
                 error_code = ErrorCodes(error_code)
-                new_current_error = ErrorInfo(error_code, self.get_group(error_code), msg)
+                new_current_error = ErrorInfo(
+                    error_code, self.get_group(error_code), msg
+                )
             except ValueError:
                 raise InvalidError("Invalid error code provided")
         else:
             try:
-                new_current_error = ErrorInfo(error_code, self.get_group(error_code), msg)
+                new_current_error = ErrorInfo(
+                    error_code, self.get_group(error_code), msg
+                )
             except Exception as e:
                 raise InvalidError(f"Invalid error code provided: {e}")
 
@@ -544,7 +554,9 @@ class ErrorInterface:
 
     def __log_error(self, new_error):
         group = new_error.error_group
-        error_message = f"Error: {new_error.error_code.name}, Group: {new_error.error_group.name}"
+        error_message = (
+            f"Error: {new_error.error_code.name}, Group: {new_error.error_group.name}"
+        )
         if new_error.message:
             error_message += f", Message: {new_error.message}"
 

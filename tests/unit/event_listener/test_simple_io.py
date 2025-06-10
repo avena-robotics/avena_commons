@@ -12,7 +12,9 @@ def test_io_signal_basic():
     """Test basic IoSignal creation."""
     from avena_commons.event_listener.types.io import IoSignal
 
-    signal = IoSignal(device_type="tor_pieca", device_id=1, signal_name="in", signal_value=True)
+    signal = IoSignal(
+        device_type="tor_pieca", device_id=1, signal_name="in", signal_value=True
+    )
 
     assert signal.device_type == "tor_pieca"
     assert signal.device_id == 1

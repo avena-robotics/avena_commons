@@ -187,7 +187,9 @@ class Event(BaseModel):
             to_be_processed=to_be_processed,
             is_processing=is_processing,
             maximum_processing_time=maximum_processing_time,
-            timestamp=timestamp if timestamp is not None else datetime.now(),  # Używamy istniejącego timestamp lub tworzymy nowy
+            timestamp=timestamp
+            if timestamp is not None
+            else datetime.now(),  # Używamy istniejącego timestamp lub tworzymy nowy
         )
 
     def to_dict(self) -> dict:

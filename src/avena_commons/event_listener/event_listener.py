@@ -94,7 +94,9 @@ class EventListener:
 
     __incoming_events: list[Event] = []
     _processing_events: list[Event] = []
-    __events_to_send: list[dict] = []  # Lista słowników {event: Event, retry_count: int}
+    __events_to_send: list[
+        dict
+    ] = []  # Lista słowników {event: Event, retry_count: int}
 
     __lock_for_general_purpose = threading.Lock()
     __lock_for_incoming_events = threading.Lock()
@@ -325,7 +327,9 @@ class EventListener:
         """Context manager dla bezpiecznych operacji na kolejce zdarzeń do wysłania"""
 
         try:
-            with self.__lock_for_events_to_send:  # Używamy tylko with, bez osobnego acquire()
+            with (
+                self.__lock_for_events_to_send
+            ):  # Używamy tylko with, bez osobnego acquire()
                 yield
         finally:
             pass
@@ -335,7 +339,9 @@ class EventListener:
         """Context manager dla bezpiecznych operacji na kolejce zdarzeń do wysłania"""
 
         try:
-            with self.__lock_for_incoming_events:  # Używamy tylko with, bez osobnego acquire()
+            with (
+                self.__lock_for_incoming_events
+            ):  # Używamy tylko with, bez osobnego acquire()
                 yield
         finally:
             pass
@@ -345,7 +351,9 @@ class EventListener:
         """Context manager dla bezpiecznych operacji na kolejce zdarzeń do wysłania"""
 
         try:
-            with self.__lock_for_processing_events:  # Używamy tylko with, bez osobnego acquire()
+            with (
+                self.__lock_for_processing_events
+            ):  # Używamy tylko with, bez osobnego acquire()
                 yield
         finally:
             pass
@@ -381,7 +389,12 @@ class EventListener:
         Operation is skipped if queues and state are empty.
         """
         try:
-            if not (self.__incoming_events or self.__events_to_send or self._state or self._processing_events):
+            if not (
+                self.__incoming_events
+                or self.__events_to_send
+                or self._state
+                or self._processing_events
+            ):
                 debug(
                     "Kolejki są puste, pomijam zapis do pliku",
                     message_logger=self._message_logger,
@@ -389,20 +402,33 @@ class EventListener:
                 return
 
             with self.__lock_for_general_purpose:
-                debug("Starting state serialization", message_logger=self._message_logger)
+                debug(
+                    "Starting state serialization", message_logger=self._message_logger
+                )
                 serialized_state = self._serialize_value(self._state)
-                debug("State serialization completed", message_logger=self._message_logger)
+                debug(
+                    "State serialization completed", message_logger=self._message_logger
+                )
 
                 queues_data = {
-                    "incoming_events": [event.to_dict() for event in self.__incoming_events],
-                    "processing_events": [event.to_dict() for event in self._processing_events],
-                    "events_to_send": [event_data["event"].to_dict() for event_data in self.__events_to_send],
+                    "incoming_events": [
+                        event.to_dict() for event in self.__incoming_events
+                    ],
+                    "processing_events": [
+                        event.to_dict() for event in self._processing_events
+                    ],
+                    "events_to_send": [
+                        event_data["event"].to_dict()
+                        for event_data in self.__events_to_send
+                    ],
                     "state": serialized_state,
                 }
 
                 debug("Writing to file", message_logger=self._message_logger)
                 with open(self.__queue_file_path, "w", encoding="utf-8") as f:
-                    json.dump(queues_data, f, indent=4, sort_keys=True, ensure_ascii=False)
+                    json.dump(
+                        queues_data, f, indent=4, sort_keys=True, ensure_ascii=False
+                    )
                 info(
                     "Kolejki zostały zapisane do pliku",
                     message_logger=self._message_logger,
@@ -413,7 +439,9 @@ class EventListener:
                 f"Błąd podczas zapisywania kolejek: {e}",
                 message_logger=self._message_logger,
             )
-            error(f"State type: {type(self._state)}", message_logger=self._message_logger)
+            error(
+                f"State type: {type(self._state)}", message_logger=self._message_logger
+            )
             error(f"State content: {self._state}", message_logger=self._message_logger)
 
     def __load_queues(self):
@@ -443,10 +471,14 @@ class EventListener:
             else:
                 self._state = state_data
 
-            info("Kolejki zostały wczytane z pliku", message_logger=self._message_logger)
+            info(
+                "Kolejki zostały wczytane z pliku", message_logger=self._message_logger
+            )
             # Usuwanie pliku po wczytaniu
             os.remove(self.__queue_file_path)
-            info("Plik z kolejkami został usunięty", message_logger=self._message_logger)
+            info(
+                "Plik z kolejkami został usunięty", message_logger=self._message_logger
+            )
 
         except Exception as e:
             error(
@@ -632,7 +664,11 @@ class EventListener:
         """
         try:
             info("Stopping local data check", message_logger=self._message_logger)
-            if hasattr(self, "local_check_thread") and self.local_check_thread and self.local_check_thread.is_alive():
+            if (
+                hasattr(self, "local_check_thread")
+                and self.local_check_thread
+                and self.local_check_thread.is_alive()
+            ):
                 self.local_check_thread.join(timeout=2.0)
                 if self.local_check_thread.is_alive():
                     error(
@@ -648,7 +684,11 @@ class EventListener:
     def __stop_analysis(self):
         try:
             info("Stopping analysis", message_logger=self._message_logger)
-            if hasattr(self, "analysis_thread") and self.analysis_thread and self.analysis_thread.is_alive():
+            if (
+                hasattr(self, "analysis_thread")
+                and self.analysis_thread
+                and self.analysis_thread.is_alive()
+            ):
                 self.analysis_thread.join(timeout=2.0)  # Czekamy maksymalnie 2 sekundy
                 if self.analysis_thread.is_alive():
                     error(
@@ -664,8 +704,14 @@ class EventListener:
     def __stop_send_event(self):
         try:
             info("Stopping send_event", message_logger=self._message_logger)
-            if hasattr(self, "send_event_thread") and self.send_event_thread and self.send_event_thread.is_alive():
-                self.send_event_thread.join(timeout=2.0)  # Czekamy maksymalnie 2 sekundy
+            if (
+                hasattr(self, "send_event_thread")
+                and self.send_event_thread
+                and self.send_event_thread.is_alive()
+            ):
+                self.send_event_thread.join(
+                    timeout=2.0
+                )  # Czekamy maksymalnie 2 sekundy
                 if self.send_event_thread.is_alive():
                     error(
                         "Send event thread did not terminate within timeout",
@@ -702,7 +748,9 @@ class EventListener:
             # Give threads time to see the shutdown flag and complete current iterations
             # import time
 
-            time.sleep(0.1)  # Reduced from 0.5s - just enough for threads to see the flag
+            time.sleep(
+                0.1
+            )  # Reduced from 0.5s - just enough for threads to see the flag
 
             # Stop all threads in proper order
             self.__stop_local_check()
@@ -718,7 +766,9 @@ class EventListener:
 
             # Shutdown FastAPI server
             if hasattr(self, "server") and self.server:
-                info("Zamykanie serwera FastAPI...", message_logger=self._message_logger)
+                info(
+                    "Zamykanie serwera FastAPI...", message_logger=self._message_logger
+                )
                 try:
                     self.server.should_exit = True
                     if hasattr(self.server, "force_exit"):
@@ -802,7 +852,9 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
             except Exception as e:
-                error(f"Error in analyze_queues: {e}", message_logger=self._message_logger)
+                error(
+                    f"Error in analyze_queues: {e}", message_logger=self._message_logger
+                )
             loop.loop_end()
         debug("Analyze_queues loop ended", message_logger=self._message_logger)
 
@@ -827,8 +879,12 @@ class EventListener:
                 if not should_remove:
                     new_queue.append(event)
             except Exception as e:
-                error(f"Error processing event: {e}", message_logger=self._message_logger)
-                error(f"Event data: {event.__dict__}", message_logger=self._message_logger)
+                error(
+                    f"Error processing event: {e}", message_logger=self._message_logger
+                )
+                error(
+                    f"Event data: {event.__dict__}", message_logger=self._message_logger
+                )
                 error(
                     f"Traceback:\n{traceback.format_exc()}",
                     message_logger=self._message_logger,
@@ -842,7 +898,9 @@ class EventListener:
     def __start_analysis(self):
         """Starts the event queue analysis thread."""
         info("Starting analysis", message_logger=self._message_logger)
-        self.analysis_thread = threading.Thread(target=lambda: asyncio.run(self.__analyze_queues()), daemon=True)
+        self.analysis_thread = threading.Thread(
+            target=lambda: asyncio.run(self.__analyze_queues()), daemon=True
+        )
         self.analysis_thread.start()
 
     async def __discovery(self):
@@ -874,7 +932,9 @@ class EventListener:
     def __start_discovering(self):
         """Starts the event queue analysis thread."""
         info("Starting analysis", message_logger=self._message_logger)
-        self.discovering_thread = threading.Thread(target=lambda: asyncio.run(self.__discovery()), daemon=True)
+        self.discovering_thread = threading.Thread(
+            target=lambda: asyncio.run(self.__discovery()), daemon=True
+        )
         self.discovering_thread.start()
 
     async def __state_handler(self, event: Event):
@@ -937,16 +997,27 @@ class EventListener:
                 await self._check_local_data()
             except Exception as e:
                 error(f"Error in check_local_data: {e}")
-            if loop.loop_counter % self.__check_local_data_frequency == 0:  # co 1 sekunde
-                self.__received_events_per_second = self.__received_events - self.__prev_received_events
-                self.__sended_events_per_second = self.__sended_events - self.__prev_sended_events
+            if (
+                loop.loop_counter % self.__check_local_data_frequency == 0
+            ):  # co 1 sekunde
+                self.__received_events_per_second = (
+                    self.__received_events - self.__prev_received_events
+                )
+                self.__sended_events_per_second = (
+                    self.__sended_events - self.__prev_sended_events
+                )
 
                 # Aktualizacja poprzednich wartości i czasu
                 self.__prev_received_events = self.__received_events
                 self.__prev_sended_events = self.__sended_events
 
                 message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
-                if self.size_of_incomming_events_queue() + self.size_of_processing_events_queue() + self.size_of_events_to_send_queue() > 100:
+                if (
+                    self.size_of_incomming_events_queue()
+                    + self.size_of_processing_events_queue()
+                    + self.size_of_events_to_send_queue()
+                    > 100
+                ):
                     error(message, message_logger=self._message_logger)
                 else:
                     info(message, message_logger=self._message_logger)
@@ -960,7 +1031,9 @@ class EventListener:
         Initializes the local check flag and starts a new thread for local data monitoring.
         """
         info("Starting local data check", message_logger=self._message_logger)
-        self.local_check_thread = threading.Thread(target=lambda: asyncio.run(self.__check_local_data_loop()), daemon=True)
+        self.local_check_thread = threading.Thread(
+            target=lambda: asyncio.run(self.__check_local_data_loop()), daemon=True
+        )
         self.local_check_thread.start()
 
     def __start_send_event(self):
@@ -971,7 +1044,9 @@ class EventListener:
         for handling event dispatch.
         """
         info("Starting send_event", message_logger=self._message_logger)
-        self.send_event_thread = threading.Thread(target=lambda: asyncio.run(self.__send_event_loop()), daemon=True)
+        self.send_event_thread = threading.Thread(
+            target=lambda: asyncio.run(self.__send_event_loop()), daemon=True
+        )
         self.send_event_thread.start()
 
     async def __send_event_loop(self):
@@ -1035,10 +1110,15 @@ class EventListener:
                         url_cache[event.destination_port] = url
 
                     self._event_send_debug(event)
-                    requests.post(url, json=event.to_dict(), timeout=(0.005, 0.005))  # FIXME: check why low timeout send 2 time to supervisor
+                    requests.post(
+                        url, json=event.to_dict(), timeout=(0.005, 0.005)
+                    )  # FIXME: check why low timeout send 2 time to supervisor
                     self.__sended_events += 1
                 except Exception:
-                    failed_events.append({"event": event, "retry_count": retry_count + 1})
+                    failed_events.append({
+                        "event": event,
+                        "retry_count": retry_count + 1,
+                    })
 
             # Jeśli są nieudane eventy, dodajemy je z powrotem
             if failed_events:
@@ -1186,7 +1266,9 @@ class EventListener:
             )
             return False
 
-    def _find_and_remove_processing_event(self, event_type: str, id: int = None, timestamp: datetime = None) -> Event | None:
+    def _find_and_remove_processing_event(
+        self, event_type: str, id: int = None, timestamp: datetime = None
+    ) -> Event | None:
         try:
             debug(
                 f"Searching for event for remove in processing queue: id={id} event_type={event_type} timestamp={timestamp}",

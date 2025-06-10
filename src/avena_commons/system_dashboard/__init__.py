@@ -19,4 +19,4 @@ Usage:
 To use this package, import the necessary modules and initialize the dashboard with your configuration settings. Refer to the documentation of each module for detailed usage instructions.
 """
 
-from .app import run_app
+from .app import run_app as run_app
