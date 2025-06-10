@@ -126,10 +126,10 @@ class IO_server(EventListener):
             if hasattr(device, action) and callable(getattr(device, action)):
                 try:
                     # Call the method with event data
-                    result = getattr(device, action)(event)
-                    if isinstance(result, Event):
+                    event = getattr(device, action)(event)
+                    if isinstance(event, Event):
                         # If the method returns an Event, we can safely reply that event
-                        await self._reply(result, event.result)
+                        await self._reply(event)
                         return False  # Do not add to processing
                     return True  # Add to processing
                 except Exception as e:
@@ -219,7 +219,7 @@ class IO_server(EventListener):
                                         )
                                     )
                                     if event:
-                                        await self._reply(event, event.result)
+                                        await self._reply(event)
                                         if self._debug:
                                             debug(
                                                 f"Processing event for device {device_name}: {event.event_type}",
