@@ -3,7 +3,7 @@
 # Explicit imports from submodules
 from . import types
 from .event import Event, Result
-from .event_listener import EventListener
+from .event_listener import EventListener, EventListenerState
 
 # Define public API
 __all__ = [
@@ -11,6 +11,7 @@ __all__ = [
     "Event",
     "Result",
     "EventListener",
+    "EventListenerState",
     # Type definitions
     "types",  # This will include all types defined in the types module
 ]

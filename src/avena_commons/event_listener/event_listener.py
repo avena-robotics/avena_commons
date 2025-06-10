@@ -77,7 +77,7 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 
 class EventListenerState(Enum):
     IDLE = 0
-    INITIALIZING = 1
+    INITIALIZED = 1
     RUNNING = 2
     ERROR = 256
 
@@ -241,8 +241,23 @@ class EventListener:
         if self.__discovery_neighbours:
             self.__start_discovering()
 
-        self.__el_state = EventListenerState.RUNNING
+        self.__el_state = EventListenerState.INITIALIZED
         info(f"Event listener '{name}' initialized", message_logger=message_logger)
+
+    def set_state(self, state: EventListenerState):
+        """
+        Set the current state of the event listener
+        """
+        if isinstance(state, EventListenerState):
+            self.__el_state = state
+        else:
+            error(f"Invalid state type: {type(state)}. Expected EventListenerState.")
+
+    def get_state(self):
+        """
+        Get the current state of the event listener
+        """
+        return self.__el_state
 
     @property
     def received_events(self):
@@ -993,35 +1008,39 @@ class EventListener:
 
         while not self._shutdown_requested:
             loop.loop_begin()
-            try:
-                await self._check_local_data()
-            except Exception as e:
-                error(f"Error in check_local_data: {e}")
-            if (
-                loop.loop_counter % self.__check_local_data_frequency == 0
-            ):  # co 1 sekunde
-                self.__received_events_per_second = (
-                    self.__received_events - self.__prev_received_events
-                )
-                self.__sended_events_per_second = (
-                    self.__sended_events - self.__prev_sended_events
-                )
 
-                # Aktualizacja poprzednich wartości i czasu
-                self.__prev_received_events = self.__received_events
-                self.__prev_sended_events = self.__sended_events
-
-                message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
+            if self.__el_state is EventListenerState.RUNNING:
+                try:
+                    await self._check_local_data()
+                except Exception as e:
+                    error(f"Error in check_local_data: {e}")
                 if (
-                    self.size_of_incomming_events_queue()
-                    + self.size_of_processing_events_queue()
-                    + self.size_of_events_to_send_queue()
-                    > 100
-                ):
-                    error(message, message_logger=self._message_logger)
-                else:
-                    info(message, message_logger=self._message_logger)
+                    loop.loop_counter % self.__check_local_data_frequency == 0
+                ):  # co 1 sekunde
+                    self.__received_events_per_second = (
+                        self.__received_events - self.__prev_received_events
+                    )
+                    self.__sended_events_per_second = (
+                        self.__sended_events - self.__prev_sended_events
+                    )
+
+                    # Aktualizacja poprzednich wartości i czasu
+                    self.__prev_received_events = self.__received_events
+                    self.__prev_sended_events = self.__sended_events
+
+                    message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
+                    if (
+                        self.size_of_incomming_events_queue()
+                        + self.size_of_processing_events_queue()
+                        + self.size_of_events_to_send_queue()
+                        > 100
+                    ):
+                        error(message, message_logger=self._message_logger)
+                    else:
+                        info(message, message_logger=self._message_logger)
+
             loop.loop_end()
+
         debug("Check_local_data loop ended", message_logger=self._message_logger)
 
     def __start_local_check(self):

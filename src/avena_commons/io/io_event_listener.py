@@ -4,7 +4,10 @@ import traceback
 from typing import Any, Dict, Optional
 
 from avena_commons.event_listener.event import Event, Result
-from avena_commons.event_listener.event_listener import EventListener
+from avena_commons.event_listener.event_listener import (
+    EventListener,
+    EventListenerState,
+)
 from avena_commons.util.logger import MessageLogger, debug, error, warning
 
 
@@ -30,6 +33,7 @@ class IO_server(EventListener):
                 message_logger=self._message_logger,
                 do_not_load_state=True,
             )
+            self.set_state(EventListenerState.RUNNING)
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
 
@@ -680,7 +684,7 @@ class IO_server(EventListener):
 
                 if self._debug:
                     debug(
-                        f"Importing {actual_class_name} from path {module_path}",
+                        f"Importing {actual_class_name} from path {test_module_path}",
                         message_logger=self._message_logger,
                     )
 
@@ -711,7 +715,7 @@ class IO_server(EventListener):
 
                 if self._debug:
                     debug(
-                        f"Importing {class_name} from {module_path}",
+                        f"Importing {class_name} from {test_module_path}",
                         message_logger=self._message_logger,
                     )
 
