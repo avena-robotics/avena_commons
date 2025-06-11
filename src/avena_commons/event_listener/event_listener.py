@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.measure_time import MeasureTime
 
 from .event import Event, EventPriority
 
@@ -82,6 +83,7 @@ class EventListener:
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
         use_http_session: bool = True,
+        use_parallel_send: bool = True,
     ):
         """
         Initializes a new EventListener object.
@@ -113,6 +115,7 @@ class EventListener:
         self.__sended_events_per_second = 0
         self._shutdown_requested = False
         self.__use_http_session = use_http_session
+        self.__use_parallel_send = use_parallel_send
         self._message_logger = message_logger
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
@@ -163,21 +166,6 @@ class EventListener:
             await self.__discovery_handler(event)
             return {"status": "ok"}
 
-        # @self.app.get("/health")
-        # async def health_check():
-        #     return {
-        #         "status": "healthy" if not self.is_shutting_down() else "shutting_down",
-        #         "queues": {
-        #             "incoming": self.size_of_incomming_events_queue(),
-        #             "processing": self.size_of_processing_events_queue(),
-        #             "sending": self.size_of_events_to_send_queue(),
-        #         },
-        #         "events": {
-        #             "received": self.received_events,
-        #             "sent": self.sended_events,
-        #         },
-        #     }
-
         # Startujemy thready - będą czekać na sygnał
         self.__start_analysis()
         self.__start_send_event()
@@ -221,36 +209,6 @@ class EventListener:
 
     def size_of_events_to_send_queue(self):
         return len(self.__events_to_send)
-
-    # def is_shutting_down(self) -> bool:
-    #     """
-    #     Check if the EventListener is currently shutting down.
-
-    #     Returns:
-    #         bool: True if shutdown has been requested, False otherwise
-    #     """
-    #     return self._shutdown_requested
-
-    # def start_without_server(self):
-    #     """
-    #     Starts EventListener processing threads without starting the HTTP server.
-
-    #     Useful for testing or when you only need the internal processing capabilities
-    #     without the web interface.
-    #     """
-    #     info(
-    #         f"Starting {self.__class__.__name__} without HTTP server...",
-    #         message_logger=self._message_logger,
-    #     )
-
-    #     # Simulate startup event
-    #     time.sleep(0.1)  # Brief delay to simulate startup
-    #     self._system_ready.set()  # Signal threads to start
-
-    #     info(
-    #         f"{self.__class__.__name__} started without server",
-    #         message_logger=self._message_logger,
-    #     )
 
     def __signal_handler(self, signum, frame):
         info(
@@ -461,10 +419,6 @@ class EventListener:
                 f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
                 message_logger=self._message_logger,
             )
-            # debug(
-            #     f"Send time: {elapsed:.2f} ms for event_type='{event.event_type}' to {event.destination}",
-            #     message_logger=self._message_logger,
-            # )
 
     def _event_receive_debug(self, event: Event):
         debug(
@@ -558,7 +512,7 @@ class EventListener:
     def _execute_before_shutdown(self):
         pass
 
-    def shutdown(self, suppress_uvicorn_errors: bool = True):
+    def shutdown(self):
         """
         Public method for graceful shutdown of the EventListener.
 
@@ -571,46 +525,7 @@ class EventListener:
         Returns:
             bool: True if shutdown was successful, False if already shutting down
         """
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Shutdown already requested, ignoring",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return False
-
-        # info(
-        #     f"Initiating graceful shutdown of {self.__class__.__name__}...",
-        #     message_logger=self._message_logger,
-        # )
-
-        # if suppress_uvicorn_errors:
-        #     with SuppressUvicornErrors():
-        #         return self.__shutdown()
-        # else:
-        #
         return self.__shutdown()
-
-    # def silent_shutdown(self):
-    #     """
-    #     Completely silent shutdown - suppresses all output including our own logs.
-
-    #     Useful for automated testing or when you want zero output during shutdown.
-
-    #     Returns:
-    #         bool: True if shutdown was successful, False if already shutting down
-    #     """
-    #     if self._shutdown_requested:
-    #         return False
-
-    #     # Temporarily disable our own logging
-    #     original_logger = self._message_logger
-    #     self._message_logger = None
-
-    #     try:
-    #         with SuppressUvicornErrors():
-    #             return self.__shutdown()
-    #     finally:
-    #         self._message_logger = original_logger
 
     def __stop_local_check(self):
         """
@@ -784,19 +699,8 @@ class EventListener:
             name="analyze_queues_loop",
             period=1 / self.__analyze_queue_frequency,
             warning_printer=self.__raport_overtime,
-            message_logger=self._message_logger
+            message_logger=self._message_logger,
         )
-
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Analyze_queues loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
 
         # Czekamy na gotowość systemu
         self._system_ready.wait()
@@ -881,16 +785,8 @@ class EventListener:
             message_logger=self._message_logger,
         )
 
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Discovery loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
         debug("Discovery loop activated", message_logger=self._message_logger)
 
@@ -949,16 +845,6 @@ class EventListener:
             message_logger=self._message_logger,
         )
 
-        # # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Check_local_data loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
         # Czekamy na gotowość systemu
         self._system_ready.wait()
 
@@ -1041,16 +927,6 @@ class EventListener:
         failed_events = []
         url_cache = {}
 
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Send_event loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
         # Czekamy na gotowość systemu
         self._system_ready.wait()
 
@@ -1069,100 +945,110 @@ class EventListener:
 
             # Wysyłamy eventy z lokalnej kolejki
             failed_events.clear()
+            with MeasureTime(
+                message_logger=self._message_logger, print_info=False
+            ) as mt:
+                if self.__use_parallel_send:
 
-            # ... w __send_event_loop:
-            failed_events = []
+                    async def send_single_event(event_data):
+                        event = event_data["event"]
+                        retry_count = event_data["retry_count"]
 
-            async def send_single_event(event_data):
-                event = event_data["event"]
-                retry_count = event_data["retry_count"]
-
-                if retry_count >= self.__retry_count:
-                    error(
-                        f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-                        message_logger=self._message_logger,
-                    )
-                    return None  # Pomijamy
-
-                try:
-                    # Cache URL
-                    url = url_cache.get(event.destination_port)
-                    if url is None:
-                        url = f"http://{event.destination_address}:{event.destination_port}/event"
-                        url_cache[event.destination_port] = url
-
-                    with self._event_send_debug(event):
-                        if self.__use_http_session:
-                            self.__http_session.post(
-                                url, json=event.to_dict(), timeout=(0.025, 0.025)
+                        if retry_count >= self.__retry_count:
+                            error(
+                                f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                message_logger=self._message_logger,
                             )
-                        else:
-                            requests.post(
-                                url, json=event.to_dict(), timeout=(0.025, 0.025)
+                            return None  # Pomijamy
+
+                        try:
+                            # Cache URL
+                            url = url_cache.get(event.destination_port)
+                            if url is None:
+                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                url_cache[event.destination_port] = url
+
+                            with self._event_send_debug(event):
+                                if self.__use_http_session:
+                                    self.__http_session.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=(0.025, 0.025),
+                                    )
+                                else:
+                                    requests.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=(0.025, 0.025),
+                                    )
+
+                            self.__sended_events += 1
+                            return None  # Sukces
+
+                        except Exception as e:
+                            # Zwracamy event do ponowienia
+                            return {
+                                "event": event,
+                                "retry_count": retry_count + 1,
+                            }
+
+                    # Tworzymy i uruchamiamy wszystkie zadania równolegle
+                    tasks = [send_single_event(data) for data in local_queue]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # Zbierz nieudane wysyłki
+                    for r in results:
+                        if isinstance(r, dict):  # oznacza nieudany event
+                            failed_events.append(r)
+
+                else:
+                    for event_data in local_queue:
+                        event = event_data["event"]
+                        retry_count = event_data["retry_count"]
+
+                        # Sprawdzamy czy event nie przekroczył limitu prób
+                        if retry_count >= self.__retry_count:
+                            error(
+                                f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                message_logger=self._message_logger,
                             )
+                            continue
 
-                    self.__sended_events += 1
-                    return None  # Sukces
+                        try:
+                            # Cache URL
+                            url = url_cache.get(event.destination_port)
+                            if url is None:
+                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                url_cache[event.destination_port] = url
 
-                except Exception as e:
-                    # Zwracamy event do ponowienia
-                    return {
-                        "event": event,
-                        "retry_count": retry_count + 1,
-                    }
-
-            # Tworzymy i uruchamiamy wszystkie zadania równolegle
-            tasks = [send_single_event(data) for data in local_queue]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Zbierz nieudane wysyłki
-            for r in results:
-                if isinstance(r, dict):  # oznacza nieudany event
-                    failed_events.append(r)
-
+                            with self._event_send_debug(event):
+                                if self.__use_http_session:
+                                    self.__http_session.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=(0.025, 0.025),
+                                    )
+                                else:
+                                    requests.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=(0.025, 0.025),
+                                    )
+                            self.__sended_events += 1
+                        except Exception:
+                            failed_events.append({
+                                "event": event,
+                                "retry_count": retry_count + 1,
+                            })
+            debug(
+                f"Send time: {mt.elapsed:.4f} ms for {len(local_queue)} events",
+                message_logger=self._message_logger,
+            )
+            # Jeśli są nieudane eventy, dodajemy je z powrotem
             if failed_events:
                 with self.__atomic_operation_for_events_to_send():
                     self.__events_to_send.extend(failed_events)
 
-            # for event_data in local_queue:
-            #     event = event_data["event"]
-            #     retry_count = event_data["retry_count"]
-
-            #     # Sprawdzamy czy event nie przekroczył limitu prób
-            #     if retry_count >= self.__retry_count:
-            #         error(
-            #             f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-            #             message_logger=self._message_logger,
-            #         )
-            #         continue
-
-            #     try:
-            #         # Cache URL
-            #         url = url_cache.get(event.destination_port)
-            #         if url is None:
-            #             url = f"http://{event.destination_address}:{event.destination_port}/event"
-            #             url_cache[event.destination_port] = url
-
-            #         with self._event_send_debug(event):
-            #             if self.__use_http_session:
-            #                 self.__http_session.post(
-            #                     url, json=event.to_dict(), timeout=(0.025, 0.025)
-            #                 )
-            #             else:
-            #                 requests.post(
-            #                     url, json=event.to_dict(), timeout=(0.025, 0.025)
-            #                 )
-            #         self.__sended_events += 1
-            #     except Exception:
-            #         failed_events.append({
-            #             "event": event,
-            #             "retry_count": retry_count + 1,
-            #         })
-
-            # # Jeśli są nieudane eventy, dodajemy je z powrotem
-            # if failed_events:
-            #     with self.__atomic_operation_for_events_to_send():
-            #         self.__events_to_send.extend(failed_events)
             local_queue.clear()
             loop.loop_end()
         debug("Send_data loop ended", message_logger=self._message_logger)
