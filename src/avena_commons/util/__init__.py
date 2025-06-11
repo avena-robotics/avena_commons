@@ -1,4 +1,35 @@
-from .measure_time import MeasureTime
+"""
+#### Utility Module
+
+Moduł zawierający narzędzia matematyczne i pomocnicze funkcje do obliczeń 3D, robotyki i analizy danych.
+
+#### Główne komponenty:
+- `MeasureTime`: Klasa do pomiaru czasu wykonania kodu (dekorator/context manager)
+- `utils`: Funkcje matematyczne do transformacji 3D, interpolacji i obliczeń robotycznych
+
+#### Funkcjonalności matematyczne:
+- Konwersje między kwaternionami, macierzami rotacji i kątami Eulera
+- Interpolacja liniowa i smooth ramp
+- Obliczenia kinematyki robotycznej
+- Filtrowanie sygnałów (moving average, RMS)
+- Operacje na pozach i transformacjach 3D
+
+#### Użycie:
+```python
+from avena_commons.util import MeasureTime, interpolate, euler_to_rotation_matrix
+
+# Pomiar czasu
+with MeasureTime("Operacja"):
+    # kod do zmierzenia
+
+# Interpolacja
+result = interpolate([0, 1, 2], [0, 10, 20], 1.5)
+
+# Transformacje 3D
+matrix = euler_to_rotation_matrix(roll, pitch, yaw)
+```
+"""
+
 from .utils import (
     angle_axis_to_quaternion,
     calculate_derivative,

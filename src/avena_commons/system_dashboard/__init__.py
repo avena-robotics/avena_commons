@@ -1,22 +1,23 @@
 """
-This module initializes the system dashboard package. The system dashboard provides a comprehensive interface for monitoring and managing various system metrics and operations. It includes functionalities for real-time data visualization, alerting, and reporting. The package is designed to be modular and extensible, allowing for easy integration with other system components and third-party services.
+#### System Dashboard
 
-Key Features:
-- Real-time monitoring of system metrics
-- Customizable dashboards and widgets
-- Alerting and notification system
+Internetowy dashboard systemu oparty na Flask do monitorowania zasobów systemowych w czasie rzeczywistym.
 
-Modules:
-- metrics: Collects and processes system metrics
-- visualization: Handles the rendering of charts and graphs
-- alerts: Manages alert rules and notifications
-- reports: Generates and exports system reports #TODO
+#### Główne komponenty:
+- `app`: Serwer Flask z endpointami do monitorowania systemu i uwierzytelniania
+- `system_status`: Moduł zbierający informacje o zasobach systemowych
 
- - [modules](./system_dashboard/system_status.html)
- - [api](./system_dashboard/app.html)
+#### Funkcjonalności:
+- Monitorowanie CPU, pamięci, dysku i sieci
+- Interfejs webowy z dynamicznym odświeżaniem
+- Prostą uwierzytelnianie użytkownika
+- Endpoint JSON API do pobierania danych systemowych
 
-Usage:
-To use this package, import the necessary modules and initialize the dashboard with your configuration settings. Refer to the documentation of each module for detailed usage instructions.
+#### Użycie:
+```python
+from avena_commons.system_dashboard import run_app
+run_app()  # Uruchamia serwer Flask na porcie 5000
+```
 """
 
 from .app import run_app as run_app

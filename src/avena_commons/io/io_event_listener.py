@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional
 from avena_commons.event_listener.event import Event, Result
 from avena_commons.event_listener.event_listener import (
     EventListener,
-    EventListenerState,
 )
+from avena_commons.util import MeasureTime
 from avena_commons.util.logger import MessageLogger, debug, error, warning
 
 
@@ -33,7 +33,6 @@ class IO_server(EventListener):
                 message_logger=self._message_logger,
                 do_not_load_state=True,
             )
-            self.set_state(EventListenerState.RUNNING)
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
 
@@ -169,78 +168,88 @@ class IO_server(EventListener):
           from affecting others
         - Error handling at multiple levels (device level and method level)
         """
-        try:
-            # Process all virtual devices
-            if hasattr(self, "virtual_devices") and isinstance(
-                self.virtual_devices, dict
-            ):
-                for device_name, device in self.virtual_devices.items():
-                    if device is None:
-                        continue
+        # debug(f"Checking local data begin ---", message_logger=self._message_logger)
+        with MeasureTime(
+            label="io - checking local data",
+            max_execution_time=20.0,
+            message_logger=self._message_logger,
+        ):
+            try:
+                # Process all virtual devices
+                if hasattr(self, "virtual_devices") and isinstance(
+                    self.virtual_devices, dict
+                ):
+                    for device_name, device in self.virtual_devices.items():
+                        if device is None:
+                            continue
 
-                    # Call the tick method if it exists
-                    if hasattr(device, "tick") and callable(device.tick):
-                        try:
-                            # start_time = time.time()
-                            device.tick()
-                            # elapsed_time = (time.time() - start_time) * 1000
-                            # debug(f"Device {device_name} tick took {elapsed_time:.2f}ms", message_logger=self._message_logger)
-                        except Exception as e:
-                            error(
-                                f"Error calling tick() on virtual device {device_name}: {str(e)}, {traceback.format_exc()}",
-                                message_logger=self._message_logger,
-                            )
+                            # Call the tick method if it exists
+                        with MeasureTime(
+                            label=f"io - tick({device_name})",
+                            message_logger=self._message_logger,
+                        ):
+                            if hasattr(device, "tick") and callable(device.tick):
+                                try:
+                                    device.tick()
+                                except Exception as e:
+                                    error(
+                                        f"Error calling tick() on virtual device {device_name}: {str(e)}, {traceback.format_exc()}",
+                                        message_logger=self._message_logger,
+                                    )
 
-                    # Check if device has a finished events list
-                    # and process any finished events
-                    # if hasattr(device, "finished_events") and isinstance(device.finished_events, list):
-                    if hasattr(device, "finished_events") and callable(
-                        device.finished_events
-                    ):
-                        list_of_events = device.finished_events()
-                        if list_of_events:
-                            debug(
-                                f"Processing finished events for device {device_name}"
-                            )
-                            try:
-                                # Process finished events
-                                for event in list_of_events:
-                                    if not isinstance(event, Event):
+                            # Check if device has a finished events list and process any finished events
+                        with MeasureTime(
+                            label=f"io - finished_events({device_name})",
+                            message_logger=self._message_logger,
+                        ):
+                            if hasattr(device, "finished_events") and callable(
+                                device.finished_events
+                            ):
+                                list_of_events = device.finished_events()
+                                if list_of_events:
+                                    debug(
+                                        f"Processing finished events for device {device_name}"
+                                    )
+                                    try:
+                                        # Process finished events
+                                        for event in list_of_events:
+                                            if not isinstance(event, Event):
+                                                error(
+                                                    f"Finished event is not of type Event: {event}",
+                                                    message_logger=self._message_logger,
+                                                )
+                                                continue
+                                            # Find and remove the event from processing
+                                            event: Event = (
+                                                self._find_and_remove_processing_event(
+                                                    event_type=event.event_type,
+                                                    timestamp=event.timestamp,
+                                                )
+                                            )
+                                            if event:
+                                                await self._reply(event)
+                                                if self._debug:
+                                                    debug(
+                                                        f"Processing event for device {device_name}: {event.event_type}",
+                                                        message_logger=self._message_logger,
+                                                    )
+                                            else:
+                                                if self._debug:
+                                                    debug(
+                                                        f"Event not found in processing: {event.event_type} for device: {device_name}",
+                                                        message_logger=self._message_logger,
+                                                    )
+                                    except Exception as e:
                                         error(
-                                            f"Finished event is not of type Event: {event}",
+                                            f"Error processing events for {device_name}: {str(e)}",
                                             message_logger=self._message_logger,
                                         )
-                                        continue
-                                    # Find and remove the event from processing
-                                    event: Event = (
-                                        self._find_and_remove_processing_event(
-                                            event_type=event.event_type,
-                                            timestamp=event.timestamp,
-                                        )
-                                    )
-                                    if event:
-                                        await self._reply(event)
-                                        if self._debug:
-                                            debug(
-                                                f"Processing event for device {device_name}: {event.event_type}",
-                                                message_logger=self._message_logger,
-                                            )
-                                    else:
-                                        if self._debug:
-                                            debug(
-                                                f"Event not found in processing: {event.event_type} for device: {device_name}",
-                                                message_logger=self._message_logger,
-                                            )
-                            except Exception as e:
-                                error(
-                                    f"Error processing events for {device_name}: {str(e)}",
-                                    message_logger=self._message_logger,
-                                )
-        except Exception as e:
-            error(
-                f"Error in _check_local_data: {str(e)}",
-                message_logger=self._message_logger,
-            )
+            except Exception as e:
+                error(
+                    f"Error in _check_local_data: {str(e)}",
+                    message_logger=self._message_logger,
+                )
+        # debug(f"Checking local data end ---", message_logger=self._message_logger)
 
     def _load_device_configuration(
         self, configuration_file: str, general_config_file: str = None
@@ -680,11 +689,10 @@ class IO_server(EventListener):
                 test_module_path = (
                     f"lib.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
                 )
-                module_path = f"avena_commons.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
 
                 if self._debug:
                     debug(
-                        f"Importing {actual_class_name} from path {test_module_path}",
+                        f"Importing {actual_class_name} from path {module_path}",
                         message_logger=self._message_logger,
                     )
 
