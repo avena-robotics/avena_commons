@@ -7,8 +7,8 @@ from avena_commons.event_listener.event import Event, Result
 from avena_commons.event_listener.event_listener import (
     EventListener,
 )
-from avena_commons.util import MeasureTime
 from avena_commons.util.logger import MessageLogger, debug, error, warning
+from avena_commons.util.measure_time import MeasureTime
 
 
 class IO_server(EventListener):

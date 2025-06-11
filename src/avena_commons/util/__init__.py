@@ -98,5 +98,4 @@ __all__ = [
     "rotation_matrix_to_rvec",
     "string_to_float_list",
     "update_similar_attr",
-    "MeasureTime",
 ]
