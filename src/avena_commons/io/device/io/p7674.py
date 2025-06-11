@@ -172,8 +172,8 @@ class P7674:
         """Reset all coils to OFF (0)"""
         try:
             with self.__lock:
-                self.coil_state = [0] * 8  # Update buffer
-                self.__previous_coil_state = [0] * 8
+                self.coil_state = [0] * 16  # Update buffer
+                self.__previous_coil_state = [0] * 16
                 self._coil_state_changed = True  # Force immediate write
             if self.__debug:
                 debug(

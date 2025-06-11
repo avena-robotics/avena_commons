@@ -675,7 +675,7 @@ class EventListener:
         try:
             info(
                 f"Zamykanie {self.__class__.__name__}...",
-                message_logger=self._message_logger,
+                message_logger=None,
             )
 
             # Set shutdown flag first to stop all loops
@@ -683,9 +683,10 @@ class EventListener:
 
             # Give threads time to see the shutdown flag and complete current iterations
             # import time
+            self._message_logger = None  # Wylaczamy message logger
 
             time.sleep(
-                0.1
+                0.5
             )  # Reduced from 0.5s - just enough for threads to see the flag
 
             # Stop all threads in proper order
@@ -714,6 +715,9 @@ class EventListener:
                     #     self.server.server_info = None
                     # Give server a moment to process the exit flags
                     # import time
+                    self.server.server_info = None
+                    self.server.config = None
+                    self.server.app = None
 
                     time.sleep(0.1)
                 except Exception as e:
@@ -722,7 +726,7 @@ class EventListener:
                         message_logger=self._message_logger,
                     )
                 # Don't clear self.server.config and self.server.app immediately
-
+            self.config = None
             # Clear our app reference but keep config for potential server cleanup
             self.app = None
             # Note: self.config is kept to avoid AttributeError in uvicorn shutdown
@@ -742,6 +746,7 @@ class EventListener:
 
     def __del__(self):
         try:
+            debug(f"Del event listenera", message_logger=self._message_logger)
             if not self._shutdown_requested:
                 self.__shutdown()
         except Exception:
@@ -917,6 +922,7 @@ class EventListener:
             name="check_local_data_loop",
             period=1 / self.__check_local_data_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger,
         )
 
         # # Czekamy na gotowość systemu lub shutdown
@@ -1005,6 +1011,7 @@ class EventListener:
             name="send_event_loop",
             period=1 / self.__send_queue_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger,
         )
         local_queue = []
         failed_events = []
