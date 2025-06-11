@@ -689,6 +689,7 @@ class IO_server(EventListener):
                 test_module_path = (
                     f"lib.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
                 )
+                module_path = f"avena_commons.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
 
                 if self._debug:
                     debug(
