@@ -28,53 +28,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMP_DIR = PROJECT_ROOT / "temp"
 
 
-# class SuppressUvicornErrors:
-#     """Context manager to suppress Uvicorn CancelledError messages during shutdown"""
-
-#     def __init__(self):
-#         self.original_stderr = None
-#         self.original_loggers = {}
-#         self.suppressed_loggers = [
-#             "uvicorn",
-#             "uvicorn.error",
-#             "uvicorn.access",
-#             "starlette",
-#             "starlette.routing",
-#             "asyncio",
-#         ]
-
-#     def __enter__(self):
-#         # Store original stderr
-#         self.original_stderr = sys.stderr
-
-#         # Store original logger levels and handlers
-#         for logger_name in self.suppressed_loggers:
-#             logger = logging.getLogger(logger_name)
-#             self.original_loggers[logger_name] = {
-#                 "level": logger.level,
-#                 "handlers": logger.handlers.copy(),
-#                 "propagate": logger.propagate,
-#             }
-#             # Disable the logger completely
-#             logger.disabled = True
-#             logger.propagate = False
-
-#         return self
-
-#     def __exit__(self, exc_type, exc_val, exc_tb):
-#         # Restore stderr
-#         if self.original_stderr:
-#             sys.stderr = self.original_stderr
-
-#         # Restore original logger configurations
-#         for logger_name, config in self.original_loggers.items():
-#             logger = logging.getLogger(logger_name)
-#             logger.disabled = False
-#             logger.level = config["level"]
-#             logger.handlers = config["handlers"]
-#             logger.propagate = config["propagate"]
-
-
 class EventListenerState(Enum):
     IDLE = 0
     INITIALIZED = 1
@@ -186,23 +139,6 @@ class EventListener:
             access_log=False,  # Disable access logs to reduce output
         )
 
-        # Add lifecycle event handlers to better manage shutdown
-        @self.app.on_event("startup")
-        async def app_startup():
-            info(
-                "FastAPI server started, waiting for stabilization...",
-                message_logger=message_logger,
-            )
-            await asyncio.sleep(1)  # Reduced stabilization time
-            info(
-                "System stabilized, starting processing threads...",
-                message_logger=message_logger,
-            )
-            self._system_ready.set()  # Signal threads to start
-
-        # # Removed @self.app.on_event("shutdown") to prevent CancelledError
-        # # The shutdown is handled by our shutdown() method, no need for lifespan shutdown event
-
         @self.app.post("/event")
         async def handle_event(event: Event):
             await self.__event_handler(event)
@@ -243,21 +179,6 @@ class EventListener:
 
         self.__el_state = EventListenerState.INITIALIZED
         info(f"Event listener '{name}' initialized", message_logger=message_logger)
-
-    def set_state(self, state: EventListenerState):
-        """
-        Set the current state of the event listener
-        """
-        if isinstance(state, EventListenerState):
-            self.__el_state = state
-        else:
-            error(f"Invalid state type: {type(state)}. Expected EventListenerState.")
-
-    def get_state(self):
-        """
-        Get the current state of the event listener
-        """
-        return self.__el_state
 
     @property
     def received_events(self):
@@ -849,7 +770,12 @@ class EventListener:
         #     )
         #     return
 
-        debug("Analyze_queues loop activated", message_logger=self._message_logger)
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
+        debug(
+            f"Analyze_queues loop activated {self._system_ready.is_set()} {self._shutdown_requested}",
+            message_logger=self._message_logger,
+        )
 
         while not self._shutdown_requested:
             loop.loop_begin()
@@ -1003,6 +929,8 @@ class EventListener:
         #         message_logger=self._message_logger,
         #     )
         #     return
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
         debug("Check_local_data loop activated", message_logger=self._message_logger)
 
@@ -1092,6 +1020,8 @@ class EventListener:
         #         message_logger=self._message_logger,
         #     )
         #     return
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
         debug("Send_event loop activated", message_logger=self._message_logger)
 
@@ -1243,8 +1173,24 @@ class EventListener:
         info("Starting server", message_logger=self._message_logger)
         try:
             self.server = uvicorn.Server(self.config)
+
             # Note: startup event is already defined in __init__
+            @self.app.on_event("startup")
+            async def startup_event():
+                info(
+                    "FastAPI server started, waiting for stabilization...",
+                    message_logger=self._message_logger,
+                )
+                await asyncio.sleep(2)  # Czekamy na stabilizację
+                info(
+                    "System stabilized, starting processing threads...",
+                    message_logger=self._message_logger,
+                )
+                self._system_ready.set()  # Wysyłamy sygnał do threadów
+                self.__el_state = EventListenerState.RUNNING
+
             self.server.run()
+
         except Exception as e:
             error(
                 f"Błąd podczas uruchamiania serwera: {e}",
