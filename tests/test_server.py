@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from avena_commons.event_listener import Event, EventListener, EventListenerState
+from avena_commons.event_listener import Event, EventListener
 from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
 
 
@@ -17,6 +17,8 @@ class TestServer(EventListener):
         message_logger=None,
         message_logger_queues=None,
         debug=False,
+        use_http_session=True,
+        use_parallel_send=True,
     ):
         self.check_local_data_frequency = 1
         super().__init__(
@@ -25,10 +27,11 @@ class TestServer(EventListener):
             port=port,
             do_not_load_state=True,
             message_logger=message_logger,
+            use_http_session=use_http_session,
+            use_parallel_send=use_parallel_send,
         )
         self.clients = clients
         self.message_logger_queues = message_logger_queues
-        # debug(f"!!!!! -------------- TestServer initialized", message_logger=self._message_logger)
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
@@ -67,12 +70,23 @@ if __name__ == "__main__":
         "-c",
         "--clients",
         type=int,
-        default=10,
-        help="test clients number (default: 10)",
+        default=1,
+        help="test clients number (default: 1)",
+    )
+    parser.add_argument(
+        "-s",
+        "--session",
+        action="store_false",
+        help="use http session (default: False)",
+    )
+    parser.add_argument(
+        "-p",
+        "--parallel",
+        action="store_false",
+        help="use parallel send (default: False)",
     )
     args = parser.parse_args()
-    # if not os.path.exists("temp"):
-    #     os.mkdir("temp")
+
     temp_path = os.path.abspath("temp")
     message_logger = MessageLogger(
         filename=f"{temp_path}/test_server.log",
@@ -94,6 +108,8 @@ if __name__ == "__main__":
             message_logger_queues=message_logger_queues,
             debug=True,
             clients=args.clients,
+            use_http_session=args.session,
+            use_parallel_send=args.parallel,
         )
         # app.start()
 

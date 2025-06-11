@@ -943,111 +943,114 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
 
-            # Wysyłamy eventy z lokalnej kolejki
-            failed_events.clear()
-            with MeasureTime(
-                message_logger=self._message_logger, print_info=False
-            ) as mt:
-                if self.__use_parallel_send:
+                # Wysyłamy eventy z lokalnej kolejki
+                failed_events.clear()
+                if len(local_queue) > 0:
+                    with MeasureTime(
+                        message_logger=self._message_logger, print_info=False
+                    ) as mt:
+                        if self.__use_parallel_send:
 
-                    async def send_single_event(event_data):
-                        event = event_data["event"]
-                        retry_count = event_data["retry_count"]
+                            async def send_single_event(event_data):
+                                event = event_data["event"]
+                                retry_count = event_data["retry_count"]
 
-                        if retry_count >= self.__retry_count:
-                            error(
-                                f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-                                message_logger=self._message_logger,
+                                if retry_count >= self.__retry_count:
+                                    error(
+                                        f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                        message_logger=self._message_logger,
+                                    )
+                                    return None  # Pomijamy
+
+                                try:
+                                    # Cache URL
+                                    url = url_cache.get(event.destination_port)
+                                    if url is None:
+                                        url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                        url_cache[event.destination_port] = url
+
+                                    with self._event_send_debug(event):
+                                        if self.__use_http_session:
+                                            self.__http_session.post(
+                                                url,
+                                                json=event.to_dict(),
+                                                timeout=(0.025, 0.025),
+                                            )
+                                        else:
+                                            requests.post(
+                                                url,
+                                                json=event.to_dict(),
+                                                timeout=(0.025, 0.025),
+                                            )
+
+                                    self.__sended_events += 1
+                                    return None  # Sukces
+
+                                except Exception as e:
+                                    # Zwracamy event do ponowienia
+                                    return {
+                                        "event": event,
+                                        "retry_count": retry_count + 1,
+                                    }
+
+                            # Tworzymy i uruchamiamy wszystkie zadania równolegle
+                            tasks = [send_single_event(data) for data in local_queue]
+                            results = await asyncio.gather(
+                                *tasks, return_exceptions=True
                             )
-                            return None  # Pomijamy
 
-                        try:
-                            # Cache URL
-                            url = url_cache.get(event.destination_port)
-                            if url is None:
-                                url = f"http://{event.destination_address}:{event.destination_port}/event"
-                                url_cache[event.destination_port] = url
+                            # Zbierz nieudane wysyłki
+                            for r in results:
+                                if isinstance(r, dict):  # oznacza nieudany event
+                                    failed_events.append(r)
 
-                            with self._event_send_debug(event):
-                                if self.__use_http_session:
-                                    self.__http_session.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=(0.025, 0.025),
+                        else:
+                            for event_data in local_queue:
+                                event = event_data["event"]
+                                retry_count = event_data["retry_count"]
+
+                                # Sprawdzamy czy event nie przekroczył limitu prób
+                                if retry_count >= self.__retry_count:
+                                    error(
+                                        f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                        message_logger=self._message_logger,
                                     )
-                                else:
-                                    requests.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=(0.025, 0.025),
-                                    )
+                                    continue
 
-                            self.__sended_events += 1
-                            return None  # Sukces
+                                try:
+                                    # Cache URL
+                                    url = url_cache.get(event.destination_port)
+                                    if url is None:
+                                        url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                        url_cache[event.destination_port] = url
 
-                        except Exception as e:
-                            # Zwracamy event do ponowienia
-                            return {
-                                "event": event,
-                                "retry_count": retry_count + 1,
-                            }
-
-                    # Tworzymy i uruchamiamy wszystkie zadania równolegle
-                    tasks = [send_single_event(data) for data in local_queue]
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    # Zbierz nieudane wysyłki
-                    for r in results:
-                        if isinstance(r, dict):  # oznacza nieudany event
-                            failed_events.append(r)
-
-                else:
-                    for event_data in local_queue:
-                        event = event_data["event"]
-                        retry_count = event_data["retry_count"]
-
-                        # Sprawdzamy czy event nie przekroczył limitu prób
-                        if retry_count >= self.__retry_count:
-                            error(
-                                f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-                                message_logger=self._message_logger,
-                            )
-                            continue
-
-                        try:
-                            # Cache URL
-                            url = url_cache.get(event.destination_port)
-                            if url is None:
-                                url = f"http://{event.destination_address}:{event.destination_port}/event"
-                                url_cache[event.destination_port] = url
-
-                            with self._event_send_debug(event):
-                                if self.__use_http_session:
-                                    self.__http_session.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=(0.025, 0.025),
-                                    )
-                                else:
-                                    requests.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=(0.025, 0.025),
-                                    )
-                            self.__sended_events += 1
-                        except Exception:
-                            failed_events.append({
-                                "event": event,
-                                "retry_count": retry_count + 1,
-                            })
-            debug(
-                f"Send time: {mt.elapsed:.4f} ms for {len(local_queue)} events",
-                message_logger=self._message_logger,
-            )
-            # Jeśli są nieudane eventy, dodajemy je z powrotem
-            if failed_events:
-                with self.__atomic_operation_for_events_to_send():
-                    self.__events_to_send.extend(failed_events)
+                                    with self._event_send_debug(event):
+                                        if self.__use_http_session:
+                                            self.__http_session.post(
+                                                url,
+                                                json=event.to_dict(),
+                                                timeout=(0.025, 0.025),
+                                            )
+                                        else:
+                                            requests.post(
+                                                url,
+                                                json=event.to_dict(),
+                                                timeout=(0.025, 0.025),
+                                            )
+                                    self.__sended_events += 1
+                                except Exception:
+                                    failed_events.append({
+                                        "event": event,
+                                        "retry_count": retry_count + 1,
+                                    })
+                    debug(
+                        f"Send time: {mt.elapsed:.4f} ms for {len(local_queue)} events",
+                        message_logger=self._message_logger,
+                    )
+                    # Jeśli są nieudane eventy, dodajemy je z powrotem
+                    if failed_events:
+                        with self.__atomic_operation_for_events_to_send():
+                            self.__events_to_send.extend(failed_events)
 
             local_queue.clear()
             loop.loop_end()

@@ -45,6 +45,8 @@ class TestClient(EventListener):
         name: str,
         port: int,
         address: str,
+        use_http_session=True,
+        use_parallel_send=True,
         message_logger=None,
         debug=False,
     ):
@@ -54,6 +56,8 @@ class TestClient(EventListener):
             port=port,
             do_not_load_state=True,
             message_logger=message_logger,
+            use_http_session=use_http_session,
+            use_parallel_send=use_parallel_send,
         )
         # self.logger = logging.getLogger(f"TestClient_{port}")
         # self.logger.info(f"Klient utworzony na porcie {port}")
@@ -148,6 +152,8 @@ def create_clients(
     number_of_clients: int,
     base_port: int = 9000,
     message_logger=None,
+    use_http_session=True,
+    use_parallel_send=True,
 ):
     """Tworzy określoną liczbę klientów.
 
@@ -169,6 +175,8 @@ def create_clients(
             address="127.0.0.1",
             message_logger=message_logger,
             debug=True,
+            use_http_session=use_http_session,
+            use_parallel_send=use_parallel_send,
         )
         clients.append(client)
         debug(
@@ -216,6 +224,19 @@ if __name__ == "__main__":
         default=10,
         help="test clients number (default: 10)",
     )
+    parser.add_argument(
+        "-s",
+        "--session",
+        action="store_false",
+        help="use http session (default: False)",
+    )
+    parser.add_argument(
+        "-p",
+        "--parallel",
+        action="store_false",
+        help="use parallel send (default: False)",
+    )
+
     args = parser.parse_args()
 
     temp_path = os.path.abspath("temp")
@@ -237,6 +258,8 @@ if __name__ == "__main__":
             args.clients,
             base_port=base_port,
             message_logger=message_logger,
+            use_http_session=args.session,
+            use_parallel_send=args.parallel,
         )
 
         # Rejestracja obsługi sygnału Ctrl+C
