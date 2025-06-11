@@ -1,8 +1,9 @@
-import os
-import psutil
 import json
-import time
+import os
 import socket
+import time
+
+import psutil
 
 
 def get_kernel_info():
@@ -98,9 +99,14 @@ def get_process_info():
     :return: A list of dictionaries containing process details such as CPU number, PID, name, command line, memory percentage, and CPU percentage.
     """
     process_info = []
-    for process in psutil.process_iter(
-        ["cpu_num", "pid", "name", "cmdline", "memory_percent", "cpu_percent"]
-    ):
+    for process in psutil.process_iter([
+        "cpu_num",
+        "pid",
+        "name",
+        "cmdline",
+        "memory_percent",
+        "cpu_percent",
+    ]):
         try:
             proc_info = process.info
 
@@ -113,16 +119,14 @@ def get_process_info():
                 continue
 
             # Append process info if conditions are not met
-            process_info.append(
-                {
-                    "cpu_num": proc_info["cpu_num"],
-                    "pid": proc_info["pid"],
-                    "name": proc_info["name"],
-                    "cmdline": proc_info["cmdline"],
-                    "memory_percent": proc_info["memory_percent"],
-                    "cpu_percent": proc_info["cpu_percent"],
-                }
-            )
+            process_info.append({
+                "cpu_num": proc_info["cpu_num"],
+                "pid": proc_info["pid"],
+                "name": proc_info["name"],
+                "cmdline": proc_info["cmdline"],
+                "memory_percent": proc_info["memory_percent"],
+                "cpu_percent": proc_info["cpu_percent"],
+            })
 
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             # Handle exceptions for processes that have ended or cannot be accessed

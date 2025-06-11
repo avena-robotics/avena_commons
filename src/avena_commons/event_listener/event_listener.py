@@ -28,56 +28,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMP_DIR = PROJECT_ROOT / "temp"
 
 
-# class SuppressUvicornErrors:
-#     """Context manager to suppress Uvicorn CancelledError messages during shutdown"""
-
-#     def __init__(self):
-#         self.original_stderr = None
-#         self.original_loggers = {}
-#         self.suppressed_loggers = [
-#             "uvicorn",
-#             "uvicorn.error",
-#             "uvicorn.access",
-#             "starlette",
-#             "starlette.routing",
-#             "asyncio",
-#         ]
-
-#     def __enter__(self):
-#         # Store original stderr
-#         self.original_stderr = sys.stderr
-
-#         # Store original logger levels and handlers
-#         for logger_name in self.suppressed_loggers:
-#             logger = logging.getLogger(logger_name)
-#             self.original_loggers[logger_name] = {
-#                 "level": logger.level,
-#                 "handlers": logger.handlers.copy(),
-#                 "propagate": logger.propagate,
-#             }
-#             # Disable the logger completely
-#             logger.disabled = True
-#             logger.propagate = False
-
-#         return self
-
-#     def __exit__(self, exc_type, exc_val, exc_tb):
-#         # Restore stderr
-#         if self.original_stderr:
-#             sys.stderr = self.original_stderr
-
-#         # Restore original logger configurations
-#         for logger_name, config in self.original_loggers.items():
-#             logger = logging.getLogger(logger_name)
-#             logger.disabled = False
-#             logger.level = config["level"]
-#             logger.handlers = config["handlers"]
-#             logger.propagate = config["propagate"]
-
-
 class EventListenerState(Enum):
     IDLE = 0
-    INITIALIZING = 1
+    INITIALIZED = 1
     RUNNING = 2
     ERROR = 256
 
@@ -186,23 +139,6 @@ class EventListener:
             access_log=False,  # Disable access logs to reduce output
         )
 
-        # Add lifecycle event handlers to better manage shutdown
-        @self.app.on_event("startup")
-        async def app_startup():
-            info(
-                "FastAPI server started, waiting for stabilization...",
-                message_logger=message_logger,
-            )
-            await asyncio.sleep(1)  # Reduced stabilization time
-            info(
-                "System stabilized, starting processing threads...",
-                message_logger=message_logger,
-            )
-            self._system_ready.set()  # Signal threads to start
-
-        # # Removed @self.app.on_event("shutdown") to prevent CancelledError
-        # # The shutdown is handled by our shutdown() method, no need for lifespan shutdown event
-
         @self.app.post("/event")
         async def handle_event(event: Event):
             await self.__event_handler(event)
@@ -241,7 +177,7 @@ class EventListener:
         if self.__discovery_neighbours:
             self.__start_discovering()
 
-        self.__el_state = EventListenerState.RUNNING
+        self.__el_state = EventListenerState.INITIALIZED
         info(f"Event listener '{name}' initialized", message_logger=message_logger)
 
     @property
@@ -739,7 +675,7 @@ class EventListener:
         try:
             info(
                 f"Zamykanie {self.__class__.__name__}...",
-                message_logger=self._message_logger,
+                message_logger=None,
             )
 
             # Set shutdown flag first to stop all loops
@@ -747,9 +683,10 @@ class EventListener:
 
             # Give threads time to see the shutdown flag and complete current iterations
             # import time
+            self._message_logger = None  # Wylaczamy message logger
 
             time.sleep(
-                0.1
+                0.5
             )  # Reduced from 0.5s - just enough for threads to see the flag
 
             # Stop all threads in proper order
@@ -778,6 +715,9 @@ class EventListener:
                     #     self.server.server_info = None
                     # Give server a moment to process the exit flags
                     # import time
+                    self.server.server_info = None
+                    self.server.config = None
+                    self.server.app = None
 
                     time.sleep(0.1)
                 except Exception as e:
@@ -786,7 +726,7 @@ class EventListener:
                         message_logger=self._message_logger,
                     )
                 # Don't clear self.server.config and self.server.app immediately
-
+            self.config = None
             # Clear our app reference but keep config for potential server cleanup
             self.app = None
             # Note: self.config is kept to avoid AttributeError in uvicorn shutdown
@@ -806,6 +746,7 @@ class EventListener:
 
     def __del__(self):
         try:
+            debug(f"Del event listenera", message_logger=self._message_logger)
             if not self._shutdown_requested:
                 self.__shutdown()
         except Exception:
@@ -834,7 +775,12 @@ class EventListener:
         #     )
         #     return
 
-        debug("Analyze_queues loop activated", message_logger=self._message_logger)
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
+        debug(
+            f"Analyze_queues loop activated {self._system_ready.is_set()} {self._shutdown_requested}",
+            message_logger=self._message_logger,
+        )
 
         while not self._shutdown_requested:
             loop.loop_begin()
@@ -940,7 +886,7 @@ class EventListener:
     async def __state_handler(self, event: Event):
         pass
 
-    async def __discover_handler(self, event: Event):
+    async def __discovery_handler(self, event: Event):
         pass
 
     async def __event_handler(self, event: Event):
@@ -976,6 +922,7 @@ class EventListener:
             name="check_local_data_loop",
             period=1 / self.__check_local_data_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger,
         )
 
         # # Czekamy na gotowość systemu lub shutdown
@@ -988,40 +935,46 @@ class EventListener:
         #         message_logger=self._message_logger,
         #     )
         #     return
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
         debug("Check_local_data loop activated", message_logger=self._message_logger)
 
         while not self._shutdown_requested:
             loop.loop_begin()
-            try:
-                await self._check_local_data()
-            except Exception as e:
-                error(f"Error in check_local_data: {e}")
-            if (
-                loop.loop_counter % self.__check_local_data_frequency == 0
-            ):  # co 1 sekunde
-                self.__received_events_per_second = (
-                    self.__received_events - self.__prev_received_events
-                )
-                self.__sended_events_per_second = (
-                    self.__sended_events - self.__prev_sended_events
-                )
 
-                # Aktualizacja poprzednich wartości i czasu
-                self.__prev_received_events = self.__received_events
-                self.__prev_sended_events = self.__sended_events
-
-                message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
+            if self.__el_state is EventListenerState.RUNNING:
+                try:
+                    await self._check_local_data()
+                except Exception as e:
+                    error(f"Error in check_local_data: {e}")
                 if (
-                    self.size_of_incomming_events_queue()
-                    + self.size_of_processing_events_queue()
-                    + self.size_of_events_to_send_queue()
-                    > 100
-                ):
-                    error(message, message_logger=self._message_logger)
-                else:
-                    info(message, message_logger=self._message_logger)
+                    loop.loop_counter % self.__check_local_data_frequency == 0
+                ):  # co 1 sekunde
+                    self.__received_events_per_second = (
+                        self.__received_events - self.__prev_received_events
+                    )
+                    self.__sended_events_per_second = (
+                        self.__sended_events - self.__prev_sended_events
+                    )
+
+                    # Aktualizacja poprzednich wartości i czasu
+                    self.__prev_received_events = self.__received_events
+                    self.__prev_sended_events = self.__sended_events
+
+                    message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
+                    if (
+                        self.size_of_incomming_events_queue()
+                        + self.size_of_processing_events_queue()
+                        + self.size_of_events_to_send_queue()
+                        > 100
+                    ):
+                        error(message, message_logger=self._message_logger)
+                    else:
+                        info(message, message_logger=self._message_logger)
+
             loop.loop_end()
+
         debug("Check_local_data loop ended", message_logger=self._message_logger)
 
     def __start_local_check(self):
@@ -1058,6 +1011,7 @@ class EventListener:
             name="send_event_loop",
             period=1 / self.__send_queue_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger,
         )
         local_queue = []
         failed_events = []
@@ -1073,6 +1027,8 @@ class EventListener:
         #         message_logger=self._message_logger,
         #     )
         #     return
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
         debug("Send_event loop activated", message_logger=self._message_logger)
 
@@ -1111,13 +1067,14 @@ class EventListener:
 
                     self._event_send_debug(event)
                     requests.post(
-                        url, json=event.to_dict(), timeout=(0.005, 0.005)
+                        url, json=event.to_dict(), timeout=(0.025, 0.025)
                     )  # FIXME: check why low timeout send 2 time to supervisor
                     self.__sended_events += 1
                 except Exception:
-                    failed_events.append(
-                        {"event": event, "retry_count": retry_count + 1}
-                    )
+                    failed_events.append({
+                        "event": event,
+                        "retry_count": retry_count + 1,
+                    })
 
             # Jeśli są nieudane eventy, dodajemy je z powrotem
             if failed_events:
@@ -1223,8 +1180,24 @@ class EventListener:
         info("Starting server", message_logger=self._message_logger)
         try:
             self.server = uvicorn.Server(self.config)
+
             # Note: startup event is already defined in __init__
+            @self.app.on_event("startup")
+            async def startup_event():
+                info(
+                    "FastAPI server started, waiting for stabilization...",
+                    message_logger=self._message_logger,
+                )
+                await asyncio.sleep(2)  # Czekamy na stabilizację
+                info(
+                    "System stabilized, starting processing threads...",
+                    message_logger=self._message_logger,
+                )
+                self._system_ready.set()  # Wysyłamy sygnał do threadów
+                self.__el_state = EventListenerState.RUNNING
+
             self.server.run()
+
         except Exception as e:
             error(
                 f"Błąd podczas uruchamiania serwera: {e}",

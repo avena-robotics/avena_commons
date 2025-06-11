@@ -2,7 +2,6 @@ import numpy as np
 
 
 class QuantizerLogPower:
-
     def __init__(
         self,
         x_min: float = 0.0006,
@@ -39,21 +38,26 @@ class QuantizerLogPower:
         return np.array(change_points)
 
     def _generate_dequantize_list(self) -> np.array:
-
         if self.num_intervals == 1:
             return np.array([0.0]), np.array([0.0])
         if self.num_intervals == 2:
-            return np.array([-self.x_max, self.x_max]), np.array(
-                [-self.x_max, self.x_max]
-            )
+            return np.array([-self.x_max, self.x_max]), np.array([
+                -self.x_max,
+                self.x_max,
+            ])
         if self.num_intervals == 3:
-            return np.array([-self.x_max, 0.0, self.x_max]), np.array(
-                [-self.x_max, 0.0, self.x_max]
-            )
+            return np.array([-self.x_max, 0.0, self.x_max]), np.array([
+                -self.x_max,
+                0.0,
+                self.x_max,
+            ])
         if self.num_intervals == 4:
-            return np.array(
-                [-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max]
-            ), np.array([-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max])
+            return np.array([
+                -self.x_max,
+                -self.x_max / 2,
+                self.x_max / 2,
+                self.x_max,
+            ]), np.array([-self.x_max, -self.x_max / 2, self.x_max / 2, self.x_max])
 
         # sytuacja num_intervals = 5 (pierwsza normalna sytuacja)
 
@@ -83,16 +87,21 @@ class QuantizerLogPower:
 
         midpoints_np = np.convolve(change_points, [0.5, 0.5], mode="valid")
 
-        dequantize_list = np.concatenate(
-            [-1 * change_points[::-1], srodek, change_points]
-        )
-        mid_point_list = np.concatenate(
-            [[-self.x_max], -1 * midpoints_np[::-1], srodek, midpoints_np, [self.x_max]]
-        )
+        dequantize_list = np.concatenate([
+            -1 * change_points[::-1],
+            srodek,
+            change_points,
+        ])
+        mid_point_list = np.concatenate([
+            [-self.x_max],
+            -1 * midpoints_np[::-1],
+            srodek,
+            midpoints_np,
+            [self.x_max],
+        ])
         return dequantize_list, mid_point_list
 
     def quantize(self, x: float) -> int:
-
         # sytuacja num_intervals = 1 - zawsze zwracaj 0
         if self.num_intervals == 1:
             return 0
@@ -167,7 +176,6 @@ class QuantizerLogPower:
 
 
 class QuantizerTanh:
-
     def __init__(
         self, x_min: float, x_max: float, num_intervals: int, power: float
     ) -> None:
@@ -203,7 +211,6 @@ class QuantizerTanh:
 
 
 class QuantizerLinear:
-
     def __init__(self, x_min: float, x_max: float, num_intervals: int) -> None:
         self.x_min = x_min
         self.x_max = x_max
@@ -234,7 +241,6 @@ class QuantizerLinear:
 
 
 class QuantizerPolynomial:
-
     def __init__(
         self, x_min: float, x_max: float, num_intervals: int, power: int
     ) -> None:

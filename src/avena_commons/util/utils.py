@@ -1,14 +1,8 @@
 import math
 
-import numpy as np
-from colorify import *
-from scipy.spatial.transform import Rotation
-
-try:
-    import PyAvenaTrajectory as pat
-except ImportError:
-    print("PyAvenaTrajectory not found. Please install it using '...'.")
 import cv2
+import numpy as np
+from scipy.spatial.transform import Rotation
 
 
 def interpolate(x, y, new_x):
@@ -296,9 +290,6 @@ def check_distance(current, target, fksolver=None):
     elif len(current) < 6:
         diff = [target[i] - current[i] for i in range(len(current))]
         return max(diff)
-    else:
-        pose1 = pat.rconfig_to_pose_quat(target, fksolver, 6)
-        pose2 = pat.rconfig_to_pose_quat(current, fksolver, 6)
 
     diff = [pose1[i] - pose2[i] for i in range(3)]
     distance = round(np.linalg.norm(diff), 6)  # meters
@@ -410,21 +401,23 @@ def rotate_vector_by_euler(vector, roll, pitch, yaw):
     pitch = np.radians(pitch)
     yaw = np.radians(yaw)
     # Macierz rotacji dla roll (wokół osi X)
-    R_x = np.array(
-        [[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]]
-    )
+    R_x = np.array([
+        [1, 0, 0],
+        [0, np.cos(roll), -np.sin(roll)],
+        [0, np.sin(roll), np.cos(roll)],
+    ])
     # Macierz rotacji dla pitch (wokół osi Y)
-    R_y = np.array(
-        [
-            [np.cos(pitch), 0, np.sin(pitch)],
-            [0, 1, 0],
-            [-np.sin(pitch), 0, np.cos(pitch)],
-        ]
-    )
+    R_y = np.array([
+        [np.cos(pitch), 0, np.sin(pitch)],
+        [0, 1, 0],
+        [-np.sin(pitch), 0, np.cos(pitch)],
+    ])
     # Macierz rotacji dla yaw (wokół osi Z)
-    R_z = np.array(
-        [[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]]
-    )
+    R_z = np.array([
+        [np.cos(yaw), -np.sin(yaw), 0],
+        [np.sin(yaw), np.cos(yaw), 0],
+        [0, 0, 1],
+    ])
     # Złożona macierz rotacji R (kolejność ZYX)
     R = np.dot(R_x, np.dot(R_y, R_z))
     # Obróć wektor
@@ -610,12 +603,10 @@ def rotate_points_around_center(points, center, angle):
     angle_rad = np.deg2rad(angle)
 
     # Macierz obrotu
-    rotation_matrix = np.array(
-        [
-            [np.cos(angle_rad), -np.sin(angle_rad)],
-            [np.sin(angle_rad), np.cos(angle_rad)],
-        ]
-    )
+    rotation_matrix = np.array([
+        [np.cos(angle_rad), -np.sin(angle_rad)],
+        [np.sin(angle_rad), np.cos(angle_rad)],
+    ])
 
     # Nowa lista na obrocone punkty
     rotated_points = []

@@ -39,7 +39,7 @@ class TempConnector(Connector):
         super()._connect()
 ```
 
-Next, you are going to initialize the Connector class. You will assign the core, frequency, message_logger, and overtime_printer to the class variables. Then, you will call the super() method to initialize the Connector class.  
+Next, you are going to initialize the Connector class. You will assign the core, frequency, message_logger, and overtime_printer to the class variables. Then, you will call the super() method to initialize the Connector class.
 
 Connect will start your new class _run() method. This method will start the Worker class in a new process and pass the pipe_in.
 
@@ -56,12 +56,12 @@ Overriding _run method from connector parent class is mandatory. This method is 
         worker._run(pipe_in)
 ```
 
-Next step is to create and override parent send_thru_pipe method. This method is used to send data to the worker process.  
+Next step is to create and override parent send_thru_pipe method. This method is used to send data to the worker process.
 You do not want to use this method outside of the class, so we will block it.
 
 ```python
     def _send_thru_pipe(self):  # -> Any | None:
-        try:  
+        try:
             raise NotImplementedError(
                 f"Not implemented: {self._send_thru_pipe.__name__}"
             )
@@ -78,7 +78,7 @@ Last step is to create a destructor method. This method is called when the objec
             return True
 ```
 
-Outside of mandatory methods, you can create your own methods and properties. In this example, we have created a property state that is read-only. It is used to get the state of the worker process.  
+Outside of mandatory methods, you can create your own methods and properties. In this example, we have created a property state that is read-only. It is used to get the state of the worker process.
 
 Connector has in-built read-only decorator that will block any attempt to change the value of the property.
 
@@ -117,7 +117,7 @@ class TempWorker(Worker):
         self.overtime_printer = overtime_printer
 ```
 
-Next step is to create and override parent _run method. This method is the main loop of the worker process. It will run until it receives a stop command. It will also receive and send data to the main process.  
+Next step is to create and override parent _run method. This method is the main loop of the worker process. It will run until it receives a stop command. It will also receive and send data to the main process.
 
 Every task that you would like to perform is in the worker process. You can create new getters and setters which will be used as a flags to start something or just to get some data.
 
@@ -135,7 +135,7 @@ Every task that you would like to perform is in the worker process. You can crea
 
             while True:
                 cl.loop_begin()
-                if pipe_in.poll(1 / self._pipe_loop_freq):  # default is 0.001 
+                if pipe_in.poll(1 / self._pipe_loop_freq):  # default is 0.001
                     # info(f"Received data from pipe")
                     data = pipe_in.recv()
                     match data[0]:
@@ -150,7 +150,7 @@ Every task that you would like to perform is in the worker process. You can crea
                             pipe_in.send(self.state)
 
                         # SETTERS
-                        
+
                         # if unknown message
                         case _:
                             warning(
@@ -173,11 +173,11 @@ Every task that you would like to perform is in the worker process. You can crea
             debug(f"Exiting TempWorker subprocess", message_logger=self._message_logger)
 ```
 
-Worker should not be used to perform any heavy calculations. If anything has to wait for something to happen, Worker should start new thread which perform the task.  
+Worker should not be used to perform any heavy calculations. If anything has to wait for something to happen, Worker should start new thread which perform the task.
 
-In this example you can start a camera in new thread because it will take few seconds to initialize.  
+In this example you can start a camera in new thread because it will take few seconds to initialize.
 
-You can change state of the worker to like: "Getting data from camera" or "Processing data from camera" etc.  
+You can change state of the worker to like: "Getting data from camera" or "Processing data from camera" etc.
 
 ```python
 def start_camera(self, data) -> None:
@@ -246,15 +246,15 @@ if __name__ == "__main__":
 """
 
 import multiprocessing
-import time
-import psutil
 import threading
+import time
 
-from .logger import MessageLogger, info, debug, warning, error
+import psutil
+
+from .logger import debug, error, warning
 
 
 def run_info(func):
-
     def inner1(*args, **kwargs):
         debug(f"Started {func.__qualname__}()")
 
@@ -378,7 +378,7 @@ class Connector:
             if self._pipe_out is not None:
                 if self._process.is_alive():
                     debug(
-                        f"Zamykanie procesu worker", message_logger=self._message_logger
+                        "Zamykanie procesu worker", message_logger=self._message_logger
                     )
                     self._pipe_out.send(["STOP"])
                     self._process.terminate()

@@ -70,7 +70,7 @@ class Config:
 ##########################################################################################
 ##########################################################################################
 # sys.path.append(os.path.expanduser('~') + '/controller/')
-# from lib.util.logger import LogLevelType
+# from avena_commons.util.logger import LogLevelType
 
 # CONTROLLER_PATH=f"/home/{os.environ.get('USER')}/controller"
 # RESOURCES_PATH=f"{CONTROLLER_PATH}/resources"

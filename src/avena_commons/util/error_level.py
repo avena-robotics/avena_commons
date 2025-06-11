@@ -8,38 +8,38 @@ This module provides a utility for managing error levels and taking actions base
 1. ErrorManager:
     1.1 Initialization:
         error_manager = ErrorManager(message_logger, suffix)
-        
+
     1.2 Set error:
         error_manager.set_error(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
-        
+
     1.3 Acknowledge errors:
         error_manager.ack_errors()
-        
+
     1.4 Acknowledge specific error:
         error_manager.ack_error(ErrorCodes.SOME_ERROR)
-        
+
     1.5 Check current group:
         bool(true/false) = error_manager.check_current_group(ErrorGroups.CRITICAL)
-        
+
     1.6 Check current error:
         bool(true/false) = error_manager.check_current_error(ErrorCodes.CONNECTION_ERROR)
-        
+
     1.7 Get error history:
         error_history = error_manager.get_error_history()
 
 2. ErrorInfo - every error is stored as an ErrorInfo object:
     2.1 Initialization:
         error = ErrorInfo(ErrorCodes.CONNECTION_ERROR, ErrorGroups.CRITICAL, "Failed to connect to the server")
-        
+
     2.2 Get error code:
         error_code = error.error_code
-        
+
     2.3 Get error group:
         error_group = error.error_group
-        
+
     2.4 Get message:
         message = error.message
-        
+
 3. Error codes and groups:
     Error codes:\n
         CONNECTION_ERROR: Connection error
@@ -69,15 +69,15 @@ This module provides a utility for managing error levels and taking actions base
         ERROR: Errors
         WARNING: Warnings
         INFO: Informational messages
-        
+
 4. ErrorCodeException:
     4.1 Custom exception handling:
         try:
             raise ErrorCodeException(ErrorCodes.CONNECTION_ERROR, "Failed to connect to the server")
         except ErrorCodeException as ce:
             error_code = ce.error_code
-            error_message = ce.message        
-            
+            error_message = ce.message
+
 ## Example of usage:
 ```python
 try:
@@ -117,40 +117,45 @@ from .control_loop import ControlLoop
 from .logger import error, info, warning
 
 # Check if running on Windows
-IS_WINDOWS = os.name == 'nt'
+IS_WINDOWS = os.name == "nt"
 
 if not IS_WINDOWS:
     from ..connection.shm import AvenaComm as shm
 
 if IS_WINDOWS:
     warning("ErrorManager is not supported on Windows due to POSIX IPC requirements")
-    
+
     # Dummy ErrorManager for Windows systems
     class ErrorManager:
         """Dummy ErrorManager for Windows systems - IPC functionality disabled"""
+
         def __init__(self, suffix, message_logger=None, debug=False):
-            warning("ErrorManager is not supported on Windows - using dummy implementation")
+            warning(
+                "ErrorManager is not supported on Windows - using dummy implementation"
+            )
             self._message_logger = message_logger
-            
+
         def set_error(self, error_code, msg=""):
-            warning(f"Error occurred but not propagated (Windows): {error_code} - {msg}", 
-                   self._message_logger)
-            
+            warning(
+                f"Error occurred but not propagated (Windows): {error_code} - {msg}",
+                self._message_logger,
+            )
+
         def ack_errors(self):
             pass
-            
+
         def ack_error(self, error_code):
             pass
-            
+
         def check_current_group(self, groups):
             return False
-            
+
         def check_current_error(self, error_code):
             return False
-            
+
         def get_error_history(self):
             return []
-            
+
         def stop(self):
             pass
 
@@ -177,7 +182,7 @@ else:
                 semaphore_timeout=0.01,
                 data=self.__error_interface,
                 message_logger=self.__message_logger,
-                debug=debug
+                debug=debug,
             )
 
             self.__cl = ControlLoop(
@@ -208,7 +213,6 @@ else:
                     if self.__cl.loop_counter % self.__shm_freq == 0:  # 50hz
                         check, interface = self.__comm.lock_and_read()
                         if check:
-
                             if self.__set_error:
                                 self.__set_error = False
                                 try:
@@ -235,7 +239,8 @@ else:
                 pass
             except Exception as e:
                 error(
-                    f"Error interface loop error: {e}", message_logger=self.__message_logger
+                    f"Error interface loop error: {e}",
+                    message_logger=self.__message_logger,
                 )
                 raise
             finally:
@@ -389,7 +394,6 @@ class ErrorInterface:
     """
 
     def __init__(self, log=True):
-
         self._message_logger = None
         self._log = log
         self.__error_groups = {

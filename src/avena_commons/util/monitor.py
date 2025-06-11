@@ -1,7 +1,8 @@
-import psutil
-import time
-import curses
 import argparse
+import curses
+import time
+
+import psutil
 
 
 class PCMonitor:

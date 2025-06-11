@@ -244,7 +244,11 @@ class Sequence(BaseModel):
         step_status.fsm_state = StepState.DONE
         self._log_state_change(StepState.DONE, message_logger)
 
-    def _do_error(self, step_status: SequenceStepStatus, message_logger: MessageLogger | None = None) -> None:
+    def _do_error(
+        self,
+        step_status: SequenceStepStatus,
+        message_logger: MessageLogger | None = None,
+    ) -> None:
         """Zakończenie kroku."""
         step_status.fsm_state = StepFsmState.ERROR
         self._log_state_change(StepFsmState.ERROR, message_logger)

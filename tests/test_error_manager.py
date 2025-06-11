@@ -1,11 +1,10 @@
-import sys, os
 import unittest
+
 from avena_commons.util.error_level import (
-    ErrorInterface,
-    ErrorInfo,
+    ErrorCodeException,
     ErrorCodes,
     ErrorGroups,
-    ErrorCodeException,
+    ErrorInterface,
     InvalidError,
 )
 

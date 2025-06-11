@@ -1,9 +1,23 @@
+# Runtime dependencies
 uvicorn
 pydantic
 fastapi
+dotenv
+pysoem
 requests
 numpy
-colorify
 scipy
 opencv-python
 psutil
+pymodbus
+httpx
+posix-ipc; platform_system=="Linux"
+
+# Development dependencies
+build
+pytest>=7.0
+pytest-cov
+tox
+ruff
+black
+mypy

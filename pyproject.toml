@@ -1,30 +1,54 @@
 [build-system]
-requires = ["setuptools>=75.1.0", "setuptools_scm"]
+requires = ["setuptools>=75.1.0", "setuptools_scm", "pytest>=7.0", "pytest-cov"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "avena_commons"
-version = "1.4.0"
+version = "1.4.8"
 description = "A small utility library for working with Avena Robotics"
 authors = [
     { name = "Avena Robotics", email = "lukasz.lecki@pomagier.info" },
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "psutil>=7.0.0",
-    "colorify>=1.1.0",
-    "numpy>=2.2.5",
-    "scipy>=1.15.2",
-    "opencv-python>=4.11.0.86",
-    "pydantic>=2.11.2",
-    "requests>=2.32.3",
-    "uvicorn>=0.34.0"
-]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent"
+]
+dependencies = [
+    "psutil",
+    "numpy",
+    "scipy",
+    'posix-ipc; platform_system=="Linux"',
+    "opencv-python",
+    "pydantic",
+    "requests",
+    "uvicorn",
+    "httpx",
+    "fastapi",
+    "flask",
+    "dotenv",
+    "pysoem",
+    "pymodbus",
+    "ruff"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "pytest-asyncio",
+    "ruff",
+    "black",
+    "mypy",
+    "build",
+    "tox"
+]
+test = [
+    "pytest>=7.0", 
+    "pytest-cov",
+    "pytest-asyncio"
 ]
 
 [project.scripts]
@@ -32,3 +56,35 @@ run_system_dashboard = "avena_commons.system_dashboard.app:run_app"
 
 [project.urls]
 Homepage = "https://github.com/avena-robotics/avena_commons"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "--cov=avena_commons --cov-report=term-missing --cov-fail-under=90"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["src/avena_commons"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError"
+]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "W", "F", "I"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 88

@@ -3,10 +3,10 @@ This application is a web-based system dashboard built using the Flask framework
 
 #Key Features
 1. User Authentication:
--  
+-
 
 2. Static File Serving:
--  
+-
 
 - System Data Endpoint: The /data route returns system information in JSON format. This includes CPU, memory, disk, and process information. It also provides a status message (OK or Warning) based on resource usage thresholds.
 
@@ -39,18 +39,14 @@ This application is a web-based system dashboard built using the Flask framework
 
 from flask import (
     Flask,
-    render_template,
-    send_from_directory,
     jsonify,
-    request,
     redirect,
-    session,
+    render_template,
 )
-from flask_session.__init__ import Session
 
 # from waitress import serve
-import os, sys
 from .system_status import *
+
 # from multiprocessing import Process, Pipe
 # from avena_commons.controller import Controller
 
@@ -133,7 +129,7 @@ def run_app():
     def cpu_info():
         """Renders the CPU static page.
         :return: The CPU page template with cpu_info."""
-        
+
         cpu_info = get_cpu_info()
         return render_template("cpu.html", cpu_info=cpu_info)
 
@@ -150,7 +146,7 @@ def run_app():
     @app.route("/login")
     def login():
         return redirect("/")
-    
+
     # @app.route("/control_loop_1")
     # def control_loop_1():
     #     """Renders the control loop 1 data. Not USED"""

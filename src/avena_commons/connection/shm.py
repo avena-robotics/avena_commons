@@ -1,7 +1,8 @@
-import pickle
-import posix_ipc
 import mmap
 import os
+import pickle
+
+import posix_ipc
 
 
 class AvenaComm:

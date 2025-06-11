@@ -1,6 +1,7 @@
-import time
 import gc
-from .logger import Logger, info, debug, warning, error
+import time
+
+from .logger import Logger, warning
 
 
 class ControlLoop:
@@ -80,12 +81,12 @@ class ControlLoop:
                 self.overtime_counter += 1
                 if gc.isenabled():
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period*1000:.5}ms exceed: {(period - self.period)*1000:.5}ms GC ENABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC ENABLED",
                         message_logger=self.message_logger,
                     )
                 else:
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period*1000:.5}ms exceed: {(period - self.period)*1000:.5}ms GC DISABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC DISABLED",
                         message_logger=self.message_logger,
                     )
             elif self.fill_idle_time:
@@ -124,4 +125,4 @@ class ControlLoop:
         return logger
 
     def __str__(self):
-        return f"{self.name.upper()}, loops: {self.loop_counter}, overtime: {self.overtime_counter}, min: {self.min_period*1000:.5}ms, max: {self.max_period*1000:.5}ms, avg: {self.avg_period*1000:.5}ms"
+        return f"{self.name.upper()}, loops: {self.loop_counter}, overtime: {self.overtime_counter}, min: {self.min_period * 1000:.5}ms, max: {self.max_period * 1000:.5}ms, avg: {self.avg_period * 1000:.5}ms"
