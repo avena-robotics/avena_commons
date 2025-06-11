@@ -1,0 +1,109 @@
+import argparse
+import os
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+from avena_commons.event_listener import Event, EventListener, EventListenerState
+from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
+
+
+class TestServer(EventListener):
+    def __init__(
+        self,
+        name: str,
+        port: int,
+        address: str,
+        clients: int,
+        message_logger=None,
+        message_logger_queues=None,
+        debug=False,
+    ):
+        self.check_local_data_frequency = 1
+        super().__init__(
+            name=name,
+            address=address,
+            port=port,
+            do_not_load_state=True,
+            message_logger=message_logger,
+        )
+        self.clients = clients
+        self.message_logger_queues = message_logger_queues
+        # debug(f"!!!!! -------------- TestServer initialized", message_logger=self._message_logger)
+        self.start()
+
+    async def _analyze_event(self, event: Event) -> bool:
+        self._find_and_remove_processing_event(
+            event.event_type, event.id, event.timestamp
+        )
+        return True
+
+    async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
+        for client in range(1, self.clients + 1):
+            client_port = 9000 + client + 1
+            event = await self._event(
+                f"test_client_{client_port}",
+                destination_address=self._EventListener__address,
+                destination_port=client_port,
+                event_type=f"test_from_{self._EventListener__port}",
+                data={"message": "test"},
+                to_be_processed=True,
+            )
+            self._add_to_processing(event)
+        debug(
+            f"incommming = {self.size_of_incomming_events_queue()}, processing = {self.size_of_processing_events_queue()}, to_send = {self.size_of_events_to_send_queue()}, [{self.sended_events}, {self.received_events}, {self.sended_events - self.received_events}]",
+            message_logger=self.message_logger_queues,
+        )
+        pass
+
+    def _clear_before_shutdown(self):
+        __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
+        # Ustaw na None aby inne wątki nie próbowały używać
+        self._message_logger = None
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="supervisor server")
+    parser.add_argument(
+        "-c",
+        "--clients",
+        type=int,
+        default=10,
+        help="test clients number (default: 10)",
+    )
+    args = parser.parse_args()
+    # if not os.path.exists("temp"):
+    #     os.mkdir("temp")
+    temp_path = os.path.abspath("temp")
+    message_logger = MessageLogger(
+        filename=f"{temp_path}/test_server.log",
+        period=LoggerPolicyPeriod.LAST_15_MINUTES,
+    )
+    # message_logger = None
+    message_logger_queues = MessageLogger(
+        filename=f"{temp_path}/test_server_queues.log",
+        period=LoggerPolicyPeriod.LAST_15_MINUTES,
+    )
+    # message_logger = None
+    port = 9000
+    try:
+        app = TestServer(
+            name=f"test_server_{port}",
+            address="127.0.0.1",
+            port=port,
+            message_logger=message_logger,
+            message_logger_queues=message_logger_queues,
+            debug=True,
+            clients=args.clients,
+        )
+        # app.start()
+
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+    finally:
+        try:
+            # supervisor.cleanup()
+            pass
+        except NameError:
+            pass

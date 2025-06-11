@@ -81,6 +81,7 @@ class EventListener:
         do_not_load_state: bool = False,
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
+        use_http_session: bool = True,
     ):
         """
         Initializes a new EventListener object.
@@ -111,6 +112,7 @@ class EventListener:
         self.__received_events_per_second = 0
         self.__sended_events_per_second = 0
         self._shutdown_requested = False
+        self.__use_http_session = use_http_session
         self._message_logger = message_logger
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
@@ -125,6 +127,13 @@ class EventListener:
         # Dodanie obsługi sygnałów
         signal.signal(signal.SIGINT, self.__signal_handler)
         signal.signal(signal.SIGTERM, self.__signal_handler)
+
+        if self.__use_http_session:
+            self.__http_session = requests.Session()
+            self.__http_session.headers.update({
+                "Connection": "keep-alive",
+                "Content-Type": "application/json",
+            })
 
         self.app = FastAPI(
             docs_url="/",
@@ -441,11 +450,21 @@ class EventListener:
             message_logger=self._message_logger,
         )
 
+    @contextmanager
     def _event_send_debug(self, event: Event):
-        debug(
-            f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
-            message_logger=self._message_logger,
-        )
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = (time.perf_counter() - start) * 1000
+            debug(
+                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                message_logger=self._message_logger,
+            )
+            # debug(
+            #     f"Send time: {elapsed:.2f} ms for event_type='{event.event_type}' to {event.destination}",
+            #     message_logger=self._message_logger,
+            # )
 
     def _event_receive_debug(self, event: Event):
         debug(
@@ -719,6 +738,9 @@ class EventListener:
                     self.server.config = None
                     self.server.app = None
 
+                    if self.__http_session:  # zamykanie sesji http
+                        self.__http_session.close()
+
                     time.sleep(0.1)
                 except Exception as e:
                     error(
@@ -762,6 +784,7 @@ class EventListener:
             name="analyze_queues_loop",
             period=1 / self.__analyze_queue_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger
         )
 
         # Czekamy na gotowość systemu lub shutdown
@@ -855,6 +878,7 @@ class EventListener:
             name="analyze_queues_loop",
             period=1 / self.__discovery_frequency,
             warning_printer=False,
+            message_logger=self._message_logger,
         )
 
         # Czekamy na gotowość systemu lub shutdown
@@ -1046,17 +1070,19 @@ class EventListener:
             # Wysyłamy eventy z lokalnej kolejki
             failed_events.clear()
 
-            for event_data in local_queue:
+            # ... w __send_event_loop:
+            failed_events = []
+
+            async def send_single_event(event_data):
                 event = event_data["event"]
                 retry_count = event_data["retry_count"]
 
-                # Sprawdzamy czy event nie przekroczył limitu prób
                 if retry_count >= self.__retry_count:
                     error(
                         f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
                         message_logger=self._message_logger,
                     )
-                    continue
+                    return None  # Pomijamy
 
                 try:
                     # Cache URL
@@ -1065,21 +1091,78 @@ class EventListener:
                         url = f"http://{event.destination_address}:{event.destination_port}/event"
                         url_cache[event.destination_port] = url
 
-                    self._event_send_debug(event)
-                    requests.post(
-                        url, json=event.to_dict(), timeout=(0.025, 0.025)
-                    )  # FIXME: check why low timeout send 2 time to supervisor
+                    with self._event_send_debug(event):
+                        if self.__use_http_session:
+                            self.__http_session.post(
+                                url, json=event.to_dict(), timeout=(0.025, 0.025)
+                            )
+                        else:
+                            requests.post(
+                                url, json=event.to_dict(), timeout=(0.025, 0.025)
+                            )
+
                     self.__sended_events += 1
-                except Exception:
-                    failed_events.append({
+                    return None  # Sukces
+
+                except Exception as e:
+                    # Zwracamy event do ponowienia
+                    return {
                         "event": event,
                         "retry_count": retry_count + 1,
-                    })
+                    }
 
-            # Jeśli są nieudane eventy, dodajemy je z powrotem
+            # Tworzymy i uruchamiamy wszystkie zadania równolegle
+            tasks = [send_single_event(data) for data in local_queue]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Zbierz nieudane wysyłki
+            for r in results:
+                if isinstance(r, dict):  # oznacza nieudany event
+                    failed_events.append(r)
+
             if failed_events:
                 with self.__atomic_operation_for_events_to_send():
                     self.__events_to_send.extend(failed_events)
+
+            # for event_data in local_queue:
+            #     event = event_data["event"]
+            #     retry_count = event_data["retry_count"]
+
+            #     # Sprawdzamy czy event nie przekroczył limitu prób
+            #     if retry_count >= self.__retry_count:
+            #         error(
+            #             f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+            #             message_logger=self._message_logger,
+            #         )
+            #         continue
+
+            #     try:
+            #         # Cache URL
+            #         url = url_cache.get(event.destination_port)
+            #         if url is None:
+            #             url = f"http://{event.destination_address}:{event.destination_port}/event"
+            #             url_cache[event.destination_port] = url
+
+            #         with self._event_send_debug(event):
+            #             if self.__use_http_session:
+            #                 self.__http_session.post(
+            #                     url, json=event.to_dict(), timeout=(0.025, 0.025)
+            #                 )
+            #             else:
+            #                 requests.post(
+            #                     url, json=event.to_dict(), timeout=(0.025, 0.025)
+            #                 )
+            #         self.__sended_events += 1
+            #     except Exception:
+            #         failed_events.append({
+            #             "event": event,
+            #             "retry_count": retry_count + 1,
+            #         })
+
+            # # Jeśli są nieudane eventy, dodajemy je z powrotem
+            # if failed_events:
+            #     with self.__atomic_operation_for_events_to_send():
+            #         self.__events_to_send.extend(failed_events)
             local_queue.clear()
             loop.loop_end()
         debug("Send_data loop ended", message_logger=self._message_logger)
