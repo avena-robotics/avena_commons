@@ -3,7 +3,6 @@ Module implementing an event system for event-driven architecture.
 
 This module provides fundamental classes for handling events in the system:
 - Result: represents the outcome of an operation or event
-- EventPriority: defines event priorities
 - Event: represents a system event
 
 Events are used for communication between different system components,

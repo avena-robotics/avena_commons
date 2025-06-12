@@ -24,7 +24,7 @@ from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 from avena_commons.util.measure_time import MeasureTime
 
-from .event import Event, EventPriority
+from .event import Event
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMP_DIR = PROJECT_ROOT / "temp"
@@ -361,7 +361,6 @@ class EventListener:
 
             # Konwersja danych na obiekty Event
             for event_data in queues_data.get("incoming_events", []):
-                event_data["priority"] = EventPriority(event_data["priority"])
                 event = Event(**event_data)
                 self.__incoming_events.append(event)
 
@@ -1112,7 +1111,6 @@ class EventListener:
             event_type=event_type,
             data=data,
             id=id,
-            priority=EventPriority.LOW,
             to_be_processed=to_be_processed,
             is_processing=False,
             maximum_processing_time=maximum_processing_time,
