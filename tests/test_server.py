@@ -17,8 +17,8 @@ class TestServer(EventListener):
         message_logger=None,
         message_logger_queues=None,
         debug=False,
-        use_http_session=True,
-        use_parallel_send=True,
+        # use_http_session=True,
+        # use_parallel_send=True,
     ):
         self.check_local_data_frequency = 1
         super().__init__(
@@ -27,8 +27,8 @@ class TestServer(EventListener):
             port=port,
             do_not_load_state=True,
             message_logger=message_logger,
-            use_http_session=use_http_session,
-            use_parallel_send=use_parallel_send,
+            # use_http_session=use_http_session,
+            # use_parallel_send=use_parallel_send,
         )
         self.clients = clients
         self.message_logger_queues = message_logger_queues
@@ -108,8 +108,8 @@ if __name__ == "__main__":
             message_logger_queues=message_logger_queues,
             debug=True,
             clients=args.clients,
-            use_http_session=args.session,
-            use_parallel_send=args.parallel,
+            # use_http_session=args.session,
+            # use_parallel_send=args.parallel,
         )
         # app.start()
 

@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 from avena_commons.util.measure_time import MeasureTime
 
 from .event import Event, EventPriority
@@ -83,7 +83,7 @@ class EventListener:
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
         use_http_session: bool = True,
-        use_parallel_send: bool = True,
+        use_parallel_send: bool = False,
     ):
         """
         Initializes a new EventListener object.
@@ -137,6 +137,15 @@ class EventListener:
                 "Connection": "keep-alive",
                 "Content-Type": "application/json",
             })
+
+        debug(
+            f"Using HTTP session: {self.__use_http_session}",
+            message_logger=self._message_logger,
+        )
+        debug(
+            f"Using parallel send: {self.__use_parallel_send}",
+            message_logger=self._message_logger,
+        )
 
         self.app = FastAPI(
             docs_url="/",
@@ -994,6 +1003,10 @@ class EventListener:
                                     }
 
                             # Tworzymy i uruchamiamy wszystkie zadania równolegle
+                            warning(
+                                f"Sending {len(local_queue)} events in parallel",
+                                message_logger=self._message_logger,
+                            )
                             tasks = [send_single_event(data) for data in local_queue]
                             results = await asyncio.gather(
                                 *tasks, return_exceptions=True
