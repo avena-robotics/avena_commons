@@ -79,24 +79,6 @@ class Result(BaseModel):
     error_message: Optional[str] = None  # np "error message"
 
 
-class EventPriority(Enum):
-    """
-    Enum defining priority levels for events.
-
-    The priority system allows for proper event handling sequencing,
-    ensuring that critical events are processed before less important ones.
-
-    Attributes:
-        LOW (int): Low priority (value: 0)
-        MEDIUM (int): Medium priority (value: 1)
-        HIGH (int): High priority (value: 2)
-    """
-
-    LOW = 0
-    MEDIUM = 1
-    HIGH = 2
-
-
 class Event(BaseModel):
     """
     Model representing an event in the system.
@@ -110,11 +92,11 @@ class Event(BaseModel):
         destination (str): Name of the event destination
         destination_port (int): Port number of the destination
         event_type (str): Event type defining its nature
-        priority (EventPriority): Event priority (LOW/MEDIUM/HIGH)
         timestamp (datetime): Event creation timestamp
         data (dict): Event-related data
         result (Optional[Result]): Optional event processing result
         is_processing (bool): Flag indicating if the event is currently being processed
+        is_cumulative (bool): Flag indicating if the event is cumulative
         maximum_processing_time (Optional[int]): Maximum processing time in seconds
 
     The Event class is thread-safe and can be safely used in concurrent processing
@@ -128,13 +110,13 @@ class Event(BaseModel):
     destination_address: str
     destination_port: int
     event_type: str
-    priority: EventPriority
     timestamp: datetime = Field(default_factory=datetime.now)
     data: dict
     id: Optional[int] = None
     result: Optional[Result] = None
     to_be_processed: bool = False
     is_processing: bool = False
+    is_cumulative: bool = False
     maximum_processing_time: Optional[float] = None  # w sekundach
 
     def __init__(
@@ -150,8 +132,8 @@ class Event(BaseModel):
         id: Optional[int] = None,
         to_be_processed: bool = False,
         is_processing: bool = False,
+        is_cumulative: bool = False,
         result: Optional[Result] = None,
-        priority: EventPriority = EventPriority.MEDIUM,
         maximum_processing_time: Optional[float] = 20,
         timestamp: Optional[datetime] = None,  # Dodajemy opcjonalny parametr timestamp
     ):
@@ -166,7 +148,6 @@ class Event(BaseModel):
             event_type (str): Event type
             data (dict): Event-related data
             result (Optional[Result], optional): Event processing result. Defaults to None
-            priority (EventPriority, optional): Event priority. Defaults to MEDIUM
 
         Note:
             The timestamp is automatically set to the current time
@@ -180,12 +161,12 @@ class Event(BaseModel):
             destination_address=destination_address,
             destination_port=destination_port,
             event_type=event_type,
-            priority=priority,
             data=data,
             id=id,
             result=result,
             to_be_processed=to_be_processed,
             is_processing=is_processing,
+            is_cumulative=is_cumulative,
             maximum_processing_time=maximum_processing_time,
             timestamp=timestamp
             if timestamp is not None
@@ -198,7 +179,6 @@ class Event(BaseModel):
 
         Returns:
             dict: A dictionary containing all event data, where:
-                - priority is converted to its numeric value
                 - result is serialized to JSON format if it exists
         """
         return {
@@ -208,12 +188,12 @@ class Event(BaseModel):
             "destination": self.destination,
             "destination_address": self.destination_address,
             "destination_port": self.destination_port,
-            "priority": self.priority.value,
             "event_type": self.event_type,
             "data": self.data,
             "id": self.id,
             "to_be_processed": self.to_be_processed,
             "is_processing": self.is_processing,
+            "is_cumulative": self.is_cumulative,
             "maximum_processing_time": self.maximum_processing_time,
             "timestamp": str(self.timestamp),
             "result": self.result.model_dump() if self.result is not None else None,
@@ -227,4 +207,4 @@ class Event(BaseModel):
             str: Formatted text containing basic event information:
                 source, destination, event type, data and result
         """
-        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
+        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, cumulative={self.is_cumulative}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
