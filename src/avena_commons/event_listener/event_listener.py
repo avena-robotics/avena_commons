@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import aiohttp
 import requests
 import uvicorn
 import uvicorn.config
@@ -20,7 +21,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.logger import MessageLogger, debug, error, info, warning
+from avena_commons.util.measure_time import MeasureTime
 
 from .event import Event, EventPriority
 
@@ -71,6 +73,7 @@ class EventListener:
     config: uvicorn.Config = None
     app: FastAPI = None
     _system_ready = threading.Event()
+    __session = None  # Will be initialized in start()
 
     def __init__(
         self,
@@ -81,6 +84,7 @@ class EventListener:
         do_not_load_state: bool = False,
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
+        use_parallel_send: bool = True,
     ):
         """
         Initializes a new EventListener object.
@@ -111,6 +115,7 @@ class EventListener:
         self.__received_events_per_second = 0
         self.__sended_events_per_second = 0
         self._shutdown_requested = False
+        self.__use_parallel_send = use_parallel_send
         self._message_logger = message_logger
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
@@ -125,6 +130,11 @@ class EventListener:
         # Dodanie obsługi sygnałów
         signal.signal(signal.SIGINT, self.__signal_handler)
         signal.signal(signal.SIGTERM, self.__signal_handler)
+
+        debug(
+            f"Using parallel send: {self.__use_parallel_send}",
+            message_logger=self._message_logger,
+        )
 
         self.app = FastAPI(
             docs_url="/",
@@ -153,21 +163,6 @@ class EventListener:
         async def discovery(event: Event):
             await self.__discovery_handler(event)
             return {"status": "ok"}
-
-        # @self.app.get("/health")
-        # async def health_check():
-        #     return {
-        #         "status": "healthy" if not self.is_shutting_down() else "shutting_down",
-        #         "queues": {
-        #             "incoming": self.size_of_incomming_events_queue(),
-        #             "processing": self.size_of_processing_events_queue(),
-        #             "sending": self.size_of_events_to_send_queue(),
-        #         },
-        #         "events": {
-        #             "received": self.received_events,
-        #             "sent": self.sended_events,
-        #         },
-        #     }
 
         # Startujemy thready - będą czekać na sygnał
         self.__start_analysis()
@@ -212,36 +207,6 @@ class EventListener:
 
     def size_of_events_to_send_queue(self):
         return len(self.__events_to_send)
-
-    # def is_shutting_down(self) -> bool:
-    #     """
-    #     Check if the EventListener is currently shutting down.
-
-    #     Returns:
-    #         bool: True if shutdown has been requested, False otherwise
-    #     """
-    #     return self._shutdown_requested
-
-    # def start_without_server(self):
-    #     """
-    #     Starts EventListener processing threads without starting the HTTP server.
-
-    #     Useful for testing or when you only need the internal processing capabilities
-    #     without the web interface.
-    #     """
-    #     info(
-    #         f"Starting {self.__class__.__name__} without HTTP server...",
-    #         message_logger=self._message_logger,
-    #     )
-
-    #     # Simulate startup event
-    #     time.sleep(0.1)  # Brief delay to simulate startup
-    #     self._system_ready.set()  # Signal threads to start
-
-    #     info(
-    #         f"{self.__class__.__name__} started without server",
-    #         message_logger=self._message_logger,
-    #     )
 
     def __signal_handler(self, signum, frame):
         info(
@@ -441,11 +406,17 @@ class EventListener:
             message_logger=self._message_logger,
         )
 
+    @contextmanager
     def _event_send_debug(self, event: Event):
-        debug(
-            f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
-            message_logger=self._message_logger,
-        )
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = (time.perf_counter() - start) * 1000
+            debug(
+                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                message_logger=self._message_logger,
+            )
 
     def _event_receive_debug(self, event: Event):
         debug(
@@ -539,7 +510,7 @@ class EventListener:
     def _execute_before_shutdown(self):
         pass
 
-    def shutdown(self, suppress_uvicorn_errors: bool = True):
+    def shutdown(self):
         """
         Public method for graceful shutdown of the EventListener.
 
@@ -552,46 +523,7 @@ class EventListener:
         Returns:
             bool: True if shutdown was successful, False if already shutting down
         """
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Shutdown already requested, ignoring",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return False
-
-        # info(
-        #     f"Initiating graceful shutdown of {self.__class__.__name__}...",
-        #     message_logger=self._message_logger,
-        # )
-
-        # if suppress_uvicorn_errors:
-        #     with SuppressUvicornErrors():
-        #         return self.__shutdown()
-        # else:
-        #
         return self.__shutdown()
-
-    # def silent_shutdown(self):
-    #     """
-    #     Completely silent shutdown - suppresses all output including our own logs.
-
-    #     Useful for automated testing or when you want zero output during shutdown.
-
-    #     Returns:
-    #         bool: True if shutdown was successful, False if already shutting down
-    #     """
-    #     if self._shutdown_requested:
-    #         return False
-
-    #     # Temporarily disable our own logging
-    #     original_logger = self._message_logger
-    #     self._message_logger = None
-
-    #     try:
-    #         with SuppressUvicornErrors():
-    #             return self.__shutdown()
-    #     finally:
-    #         self._message_logger = original_logger
 
     def __stop_local_check(self):
         """
@@ -669,9 +601,6 @@ class EventListener:
         Returns:
             bool: True if shutdown completed successfully
         """
-        # if self._shutdown_requested:
-        #     return True
-
         try:
             info(
                 f"Zamykanie {self.__class__.__name__}...",
@@ -682,7 +611,6 @@ class EventListener:
             self._shutdown_requested = True
 
             # Give threads time to see the shutdown flag and complete current iterations
-            # import time
             self._message_logger = None  # Wylaczamy message logger
 
             time.sleep(
@@ -701,6 +629,17 @@ class EventListener:
             # Allow subclasses to perform custom cleanup
             self._execute_before_shutdown()
 
+            # Close aiohttp session
+            if self.__session:
+                info("Closing aiohttp session...", message_logger=self._message_logger)
+                try:
+                    asyncio.run(self.__session.close())
+                except Exception as e:
+                    error(
+                        f"Error closing aiohttp session: {e}",
+                        message_logger=self._message_logger,
+                    )
+
             # Shutdown FastAPI server
             if hasattr(self, "server") and self.server:
                 info(
@@ -710,29 +649,18 @@ class EventListener:
                     self.server.should_exit = True
                     if hasattr(self.server, "force_exit"):
                         self.server.force_exit = True
-                    # Only clear safe references - don't clear config as uvicorn needs it for graceful shutdown
-                    # if hasattr(self.server, "server_info"):
-                    #     self.server.server_info = None
-                    # Give server a moment to process the exit flags
-                    # import time
                     self.server.server_info = None
                     self.server.config = None
                     self.server.app = None
-
                     time.sleep(0.1)
                 except Exception as e:
                     error(
                         f"Error during server shutdown: {e}",
                         message_logger=self._message_logger,
                     )
-                # Don't clear self.server.config and self.server.app immediately
-            self.config = None
-            # Clear our app reference but keep config for potential server cleanup
-            self.app = None
-            # Note: self.config is kept to avoid AttributeError in uvicorn shutdown
 
-            # Disable message logger last to capture all shutdown messages
-            # self._message_logger = None
+            self.config = None
+            self.app = None
 
             info(
                 f"{self.__class__.__name__} został bezpiecznie zamknięty.",
@@ -762,23 +690,13 @@ class EventListener:
             name="analyze_queues_loop",
             period=1 / self.__analyze_queue_frequency,
             warning_printer=self.__raport_overtime,
+            message_logger=self._message_logger,
         )
-
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Analyze_queues loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
 
         # Czekamy na gotowość systemu
         self._system_ready.wait()
         debug(
-            f"Analyze_queues loop activated {self._system_ready.is_set()} {self._shutdown_requested}",
+            f"Analyze_queues loop activated...",
             message_logger=self._message_logger,
         )
 
@@ -855,20 +773,13 @@ class EventListener:
             name="analyze_queues_loop",
             period=1 / self.__discovery_frequency,
             warning_printer=False,
+            message_logger=self._message_logger,
         )
 
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
 
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Discovery loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
-
-        debug("Discovery loop activated", message_logger=self._message_logger)
+        debug("Discovery loop activated...", message_logger=self._message_logger)
 
         while not self._shutdown_requested:
             loop.loop_begin()
@@ -925,20 +836,10 @@ class EventListener:
             message_logger=self._message_logger,
         )
 
-        # # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Check_local_data loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
         # Czekamy na gotowość systemu
         self._system_ready.wait()
 
-        debug("Check_local_data loop activated", message_logger=self._message_logger)
+        debug("Check_local_data loop activated...", message_logger=self._message_logger)
 
         while not self._shutdown_requested:
             loop.loop_begin()
@@ -992,97 +893,196 @@ class EventListener:
     def __start_send_event(self):
         """
         Starts the event sending thread.
-
-        Initializes the __is_sending_event flag and starts send_event_thread
-        for handling event dispatch.
         """
         info("Starting send_event", message_logger=self._message_logger)
         self.send_event_thread = threading.Thread(
-            target=lambda: asyncio.run(self.__send_event_loop()), daemon=True
+            target=self._run_send_event_loop, daemon=True
         )
         self.send_event_thread.start()
+
+    def _run_send_event_loop(self):
+        """Run the send event loop in a separate thread"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self.__send_event_loop())
+        finally:
+            loop.close()
 
     async def __send_event_loop(self):
         """
         Main loop for sending events from the dispatch queue.
         """
         debug("Starting send_event loop", message_logger=self._message_logger)
-        loop = ControlLoop(
+        control_loop = ControlLoop(
             name="send_event_loop",
             period=1 / self.__send_queue_frequency,
             warning_printer=self.__raport_overtime,
             message_logger=self._message_logger,
         )
-        local_queue = []
-        failed_events = []
-        url_cache = {}
 
-        # Czekamy na gotowość systemu lub shutdown
-        # while not self._shutdown_requested and not self._system_ready.is_set():
-        #     time.sleep(0.1)
-
-        # if self._shutdown_requested:
-        #     debug(
-        #         "Send_event loop cancelled during startup",
-        #         message_logger=self._message_logger,
-        #     )
-        #     return
         # Czekamy na gotowość systemu
         self._system_ready.wait()
 
-        debug("Send_event loop activated", message_logger=self._message_logger)
+        debug("Send_event loop activated...", message_logger=self._message_logger)
 
-        while not self._shutdown_requested:
-            loop.loop_begin()
-            with self.__atomic_operation_for_events_to_send():
-                local_queue = self.__events_to_send.copy()
-                self.__events_to_send.clear()
-            if len(local_queue) > 0:
-                debug(
-                    f"Sending events: {len(local_queue)}",
-                    message_logger=self._message_logger,
-                )
+        # Initialize aiohttp session
+        async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                limit=0,  # No connection limit
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+                force_close=False,
+            )
+        ) as session:
+            while not self._shutdown_requested:
+                control_loop.loop_begin()
 
-            # Wysyłamy eventy z lokalnej kolejki
-            failed_events.clear()
+                with self.__atomic_operation_for_events_to_send():
+                    local_queue = self.__events_to_send.copy()
+                    self.__events_to_send.clear()
 
-            for event_data in local_queue:
-                event = event_data["event"]
-                retry_count = event_data["retry_count"]
-
-                # Sprawdzamy czy event nie przekroczył limitu prób
-                if retry_count >= self.__retry_count:
-                    error(
-                        f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                if local_queue:
+                    debug(
+                        f"Sending events: {len(local_queue)}",
                         message_logger=self._message_logger,
                     )
-                    continue
 
-                try:
-                    # Cache URL
-                    url = url_cache.get(event.destination_port)
-                    if url is None:
-                        url = f"http://{event.destination_address}:{event.destination_port}/event"
-                        url_cache[event.destination_port] = url
+                    start_time = time.perf_counter()
 
-                    self._event_send_debug(event)
-                    requests.post(
-                        url, json=event.to_dict(), timeout=(0.025, 0.025)
-                    )  # FIXME: check why low timeout send 2 time to supervisor
-                    self.__sended_events += 1
-                except Exception:
-                    failed_events.append({
-                        "event": event,
-                        "retry_count": retry_count + 1,
-                    })
+                    if self.__use_parallel_send:
 
-            # Jeśli są nieudane eventy, dodajemy je z powrotem
-            if failed_events:
-                with self.__atomic_operation_for_events_to_send():
-                    self.__events_to_send.extend(failed_events)
-            local_queue.clear()
-            loop.loop_end()
-        debug("Send_data loop ended", message_logger=self._message_logger)
+                        async def send_single_event(event_data):
+                            event = event_data["event"]
+                            retry_count = event_data["retry_count"]
+
+                            if retry_count >= self.__retry_count:
+                                error(
+                                    f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                    message_logger=self._message_logger,
+                                )
+                                return None
+
+                            try:
+                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                event_start_time = time.perf_counter()
+
+                                try:
+                                    async with session.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=aiohttp.ClientTimeout(total=0.1),
+                                    ) as response:
+                                        if response.status == 200:
+                                            self.__sended_events += 1
+                                            elapsed = (
+                                                time.perf_counter() - event_start_time
+                                            ) * 1000
+                                            debug(
+                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                                                message_logger=self._message_logger,
+                                            )
+                                            return None
+                                except asyncio.TimeoutError:
+                                    error(
+                                        f"Timeout sending event to {url}",
+                                        message_logger=self._message_logger,
+                                    )
+                                    return {
+                                        "event": event,
+                                        "retry_count": retry_count + 1,
+                                    }
+
+                            except Exception as e:
+                                error(
+                                    f"Error sending event: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                return {
+                                    "event": event,
+                                    "retry_count": retry_count + 1,
+                                }
+
+                        # Create and run all tasks in parallel
+                        tasks = [send_single_event(data) for data in local_queue]
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                        # Collect failed events
+                        failed_events = []
+                        for r in results:
+                            if isinstance(r, dict):  # means failed event
+                                failed_events.append(r)
+
+                        # If there are failed events, add them back
+                        if failed_events:
+                            with self.__atomic_operation_for_events_to_send():
+                                self.__events_to_send.extend(failed_events)
+
+                    else:
+                        # Sequential sending
+                        failed_events = []
+                        for event_data in local_queue:
+                            event = event_data["event"]
+                            retry_count = event_data["retry_count"]
+
+                            if retry_count >= self.__retry_count:
+                                error(
+                                    f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                    message_logger=self._message_logger,
+                                )
+                                continue
+
+                            try:
+                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                event_start_time = time.perf_counter()
+
+                                try:
+                                    async with session.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=aiohttp.ClientTimeout(total=0.1),
+                                    ) as response:
+                                        if response.status == 200:
+                                            self.__sended_events += 1
+                                            elapsed = (
+                                                time.perf_counter() - event_start_time
+                                            ) * 1000
+                                            debug(
+                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                                                message_logger=self._message_logger,
+                                            )
+                                except asyncio.TimeoutError:
+                                    error(
+                                        f"Timeout sending event to {url}",
+                                        message_logger=self._message_logger,
+                                    )
+                                    failed_events.append({
+                                        "event": event,
+                                        "retry_count": retry_count + 1,
+                                    })
+                            except Exception as e:
+                                error(
+                                    f"Error sending event: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                failed_events.append({
+                                    "event": event,
+                                    "retry_count": retry_count + 1,
+                                })
+
+                        # If there are failed events, add them back
+                        if failed_events:
+                            with self.__atomic_operation_for_events_to_send():
+                                self.__events_to_send.extend(failed_events)
+
+                    total_elapsed = (time.perf_counter() - start_time) * 1000
+                    debug(
+                        f"Send time: {total_elapsed:.4f} ms for {len(local_queue)} events",
+                        message_logger=self._message_logger,
+                    )
+
+                control_loop.loop_end()
+            debug("Send_data loop ended", message_logger=self._message_logger)
 
     async def _analyze_event(self, event: Event) -> bool:
         return True  # domyślnie usuwamy event po przetworzeniu
@@ -1188,7 +1188,16 @@ class EventListener:
                     "FastAPI server started, waiting for stabilization...",
                     message_logger=self._message_logger,
                 )
-                await asyncio.sleep(2)  # Czekamy na stabilizację
+                # Initialize aiohttp session
+                self.__session = aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(
+                        limit=0,  # No connection limit
+                        ttl_dns_cache=300,
+                        use_dns_cache=True,
+                        force_close=False,
+                    )
+                )
+                await asyncio.sleep(1)  # Czekamy na stabilizację
                 info(
                     "System stabilized, starting processing threads...",
                     message_logger=self._message_logger,
@@ -1203,10 +1212,6 @@ class EventListener:
                 f"Błąd podczas uruchamiania serwera: {e}",
                 message_logger=self._message_logger,
             )
-            # Ensure cleanup on startup failure
-            # if not self._shutdown_requested:
-            #     self.shutdown()
-            # raise  # Re-raise the exception so caller knows startup failed
 
     def _add_to_processing(self, event: Event) -> bool:
         """
