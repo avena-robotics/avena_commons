@@ -48,7 +48,7 @@ class EventListener:
     __discovery_neighbours = False
 
     __incoming_events: list[Event] = []
-    _processing_events: list[Event] = []
+    _processing_events_dict: dict = {}  # Structure: {event_type: {id: {timestamp: event}}}
     __events_to_send: list[
         dict
     ] = []  # Lista słowników {event: Event, retry_count: int}
@@ -85,6 +85,7 @@ class EventListener:
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
         use_parallel_send: bool = True,
+        use_cumulative_send: bool = True,
     ):
         """
         Initializes a new EventListener object.
@@ -116,6 +117,7 @@ class EventListener:
         self.__sended_events_per_second = 0
         self._shutdown_requested = False
         self.__use_parallel_send = use_parallel_send
+        self.__use_cumulative_send = use_cumulative_send
         self._message_logger = message_logger
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
@@ -203,7 +205,7 @@ class EventListener:
         return len(self.__incoming_events)
 
     def size_of_processing_events_queue(self):
-        return len(self._processing_events)
+        return len(self._processing_events_dict)
 
     def size_of_events_to_send_queue(self):
         return len(self.__events_to_send)
@@ -294,7 +296,7 @@ class EventListener:
                 self.__incoming_events
                 or self.__events_to_send
                 or self._state
-                or self._processing_events
+                or self._processing_events_dict
             ):
                 debug(
                     "Kolejki są puste, pomijam zapis do pliku",
@@ -316,7 +318,7 @@ class EventListener:
                         event.to_dict() for event in self.__incoming_events
                     ],
                     "processing_events": [
-                        event.to_dict() for event in self._processing_events
+                        event.to_dict() for event in self._processing_events_dict
                     ],
                     "events_to_send": [
                         event_data["event"].to_dict()
@@ -413,7 +415,7 @@ class EventListener:
         finally:
             elapsed = (time.perf_counter() - start) * 1000
             debug(
-                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
                 message_logger=self._message_logger,
             )
 
@@ -632,7 +634,11 @@ class EventListener:
             if self.__session:
                 info("Closing aiohttp session...", message_logger=self._message_logger)
                 try:
-                    asyncio.run(self.__session.close())
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(self.__session.close())
+                    else:
+                        loop.run_until_complete(self.__session.close())
                 except Exception as e:
                     error(
                         f"Error closing aiohttp session: {e}",
@@ -673,7 +679,7 @@ class EventListener:
 
     def __del__(self):
         try:
-            debug(f"Del event listenera", message_logger=self._message_logger)
+            debug(f"__del__ event listenera", message_logger=self._message_logger)
             if not self._shutdown_requested:
                 self.__shutdown()
         except Exception:
@@ -814,11 +820,21 @@ class EventListener:
             self._event_receive_debug(event)
 
             with self.__atomic_operation_for_incoming_events():
-                self.__incoming_events.append(event)
-            debug(
-                f"Added event to incomming events queue: {event}",
-                message_logger=self._message_logger,
-            )
+                if event.is_cumulative and "events" in event.data:
+                    # Unpack cumulative event
+                    for event_data in event.data["events"]:
+                        unpacked_event = Event(**event_data)
+                        self.__incoming_events.append(unpacked_event)
+                    debug(
+                        f"Unpacked cumulative event into {len(event.data['events'])} events",
+                        message_logger=self._message_logger,
+                    )
+                else:
+                    self.__incoming_events.append(event)
+                    debug(
+                        f"Added event to incomming events queue: {event}",
+                        message_logger=self._message_logger,
+                    )
             self.__received_events += 1
         except Exception as e:
             error(f"__event_handler: {e}", message_logger=self._message_logger)
@@ -947,6 +963,52 @@ class EventListener:
                         message_logger=self._message_logger,
                     )
 
+                    if self.__use_cumulative_send:
+                        # Group events by destination
+                        events_by_destination = {}
+                        for event_data in local_queue:
+                            dest_key = (
+                                event_data["event"].destination_address,
+                                event_data["event"].destination_port,
+                            )
+                            if dest_key not in events_by_destination:
+                                events_by_destination[dest_key] = []
+                            events_by_destination[dest_key].append(event_data)
+
+                        # Create new queue with cumulative events where needed
+                        new_queue = []
+                        for event_group in events_by_destination.values():
+                            if len(event_group) == 1:
+                                # Single event - keep as is
+                                new_queue.append(event_group[0])
+                            else:
+                                # Multiple events - create cumulative event
+                                first_event = event_group[0]["event"]
+                                cumulative_event = Event(
+                                    source=first_event.source,
+                                    source_address=first_event.source_address,
+                                    source_port=first_event.source_port,
+                                    destination=first_event.destination,
+                                    destination_address=first_event.destination_address,
+                                    destination_port=first_event.destination_port,
+                                    event_type=first_event.event_type,
+                                    is_cumulative=True,
+                                    payload=sum(
+                                        e["event"].payload for e in event_group
+                                    ),
+                                    data={
+                                        "events": [
+                                            e["event"].to_dict() for e in event_group
+                                        ]
+                                    },
+                                )
+                                new_queue.append({
+                                    "event": cumulative_event,
+                                    "retry_count": 0,
+                                })
+
+                        local_queue = new_queue
+
                     start_time = time.perf_counter()
 
                     if self.__use_parallel_send:
@@ -978,7 +1040,7 @@ class EventListener:
                                                 time.perf_counter() - event_start_time
                                             ) * 1000
                                             debug(
-                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
                                                 message_logger=self._message_logger,
                                             )
                                             return None
@@ -1047,7 +1109,7 @@ class EventListener:
                                                 time.perf_counter() - event_start_time
                                             ) * 1000
                                             debug(
-                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
                                                 message_logger=self._message_logger,
                                             )
                                 except asyncio.TimeoutError:
@@ -1213,22 +1275,32 @@ class EventListener:
 
     def _add_to_processing(self, event: Event) -> bool:
         """
-        Moves event to processing queue.
+        Moves event to processing queue using dictionary structure for faster lookup.
 
         Args:
             event (Event): Event to move
-            source_queue (list[Event]): Source queue from which event should be removed
 
         Returns:
             bool: True if operation succeeded, False otherwise
-
-        Note:
-            Method is protected (_) to be used by inheriting classes
         """
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                self._processing_events.append(event)
+                # Add to the optimized dictionary structure
+                event_type = event.event_type
+                event_id = event.id
+                event_timestamp = event.timestamp
+
+                if event_type not in self._processing_events_dict:
+                    self._processing_events_dict[event_type] = {}
+
+                if event_id not in self._processing_events_dict[event_type]:
+                    self._processing_events_dict[event_type][event_id] = {}
+
+                self._processing_events_dict[event_type][event_id][event_timestamp] = (
+                    event
+                )
+
                 self._event_add_to_processing_debug(event)
             return True
         except TimeoutError as e:
@@ -1250,27 +1322,93 @@ class EventListener:
                 message_logger=self._message_logger,
             )
 
-            for event in self._processing_events:
-                with self.__atomic_operation_for_processing_events():
-                    event_data = event.data
-                    if not isinstance(event_data, dict):
-                        continue
+            with self.__atomic_operation_for_processing_events():
+                # Check if event_type exists in dictionary
+                if event_type not in self._processing_events_dict:
+                    error(
+                        f"Event type {event_type} not found",
+                        message_logger=self._message_logger,
+                    )
+                    return None
 
-                    if event.event_type == event_type:
-                        if timestamp is not None and event.timestamp != timestamp:
-                            debug(
-                                f"_find_and_remove_processing_event: Event timestamp mismatch: {event.timestamp} != {timestamp} event:{event}",
-                                message_logger=self._message_logger,
-                            )
-                            continue
+                # If we have an ID, use it for faster lookup
+                if id is not None:
+                    if id not in self._processing_events_dict[event_type]:
+                        error(
+                            f"Event id {id} not found",
+                            message_logger=self._message_logger,
+                        )
+                        return None
 
-                        if id is not None and event.id != id:
-                            continue
+                    # If we have a timestamp, direct lookup
+                    if timestamp is not None:
+                        if timestamp in self._processing_events_dict[event_type][id]:
+                            event = self._processing_events_dict[event_type][id][
+                                timestamp
+                            ]
+                            # Remove from dictionary
+                            del self._processing_events_dict[event_type][id][timestamp]
 
-                        # Znaleziono pasujący event
-                        self._processing_events.remove(event)
-                        self._event_find_and_remove_debug(event)
-                        return event
+                            # Cleanup empty dictionaries
+                            if not self._processing_events_dict[event_type][id]:
+                                del self._processing_events_dict[event_type][id]
+                            if not self._processing_events_dict[event_type]:
+                                del self._processing_events_dict[event_type]
+
+                            self._event_find_and_remove_debug(event)
+                            return event
+                    else:
+                        # If no timestamp, take the first event for this id
+                        timestamps = list(
+                            self._processing_events_dict[event_type][id].keys()
+                        )
+                        if timestamps:
+                            first_timestamp = timestamps[0]
+                            event = self._processing_events_dict[event_type][id][
+                                first_timestamp
+                            ]
+                            # Remove from dictionary
+                            del self._processing_events_dict[event_type][id][
+                                first_timestamp
+                            ]
+
+                            # Cleanup empty dictionaries
+                            if not self._processing_events_dict[event_type][id]:
+                                del self._processing_events_dict[event_type][id]
+                            if not self._processing_events_dict[event_type]:
+                                del self._processing_events_dict[event_type]
+
+                            self._event_find_and_remove_debug(event)
+                            return event
+                else:
+                    # No ID provided, need to search through all IDs
+                    for event_id in list(
+                        self._processing_events_dict[event_type].keys()
+                    ):
+                        for event_timestamp in list(
+                            self._processing_events_dict[event_type][event_id].keys()
+                        ):
+                            if timestamp is None or event_timestamp == timestamp:
+                                event = self._processing_events_dict[event_type][
+                                    event_id
+                                ][event_timestamp]
+                                # Remove from dictionary
+                                del self._processing_events_dict[event_type][event_id][
+                                    event_timestamp
+                                ]
+
+                                # Cleanup empty dictionaries
+                                if not self._processing_events_dict[event_type][
+                                    event_id
+                                ]:
+                                    del self._processing_events_dict[event_type][
+                                        event_id
+                                    ]
+                                if not self._processing_events_dict[event_type]:
+                                    del self._processing_events_dict[event_type]
+
+                                self._event_find_and_remove_debug(event)
+                                return event
 
             error(
                 f"Event not found: id={id} event_type={event_type} timestamp={timestamp}",

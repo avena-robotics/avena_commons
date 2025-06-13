@@ -111,6 +111,7 @@ class Event(BaseModel):
     event_type: str
     timestamp: datetime = Field(default_factory=datetime.now)
     data: dict
+    payload: int = 1
     id: Optional[int] = None
     result: Optional[Result] = None
     to_be_processed: bool = False
@@ -132,6 +133,7 @@ class Event(BaseModel):
         to_be_processed: bool = False,
         is_processing: bool = False,
         is_cumulative: bool = False,
+        payload: int = 1,
         result: Optional[Result] = None,
         maximum_processing_time: Optional[float] = 20,
         timestamp: Optional[datetime] = None,  # Dodajemy opcjonalny parametr timestamp
@@ -162,6 +164,7 @@ class Event(BaseModel):
             event_type=event_type,
             data=data,
             id=id,
+            payload=payload,
             result=result,
             to_be_processed=to_be_processed,
             is_processing=is_processing,
@@ -190,6 +193,7 @@ class Event(BaseModel):
             "event_type": self.event_type,
             "data": self.data,
             "id": self.id,
+            "payload": self.payload,
             "to_be_processed": self.to_be_processed,
             "is_processing": self.is_processing,
             "is_cumulative": self.is_cumulative,
@@ -206,4 +210,4 @@ class Event(BaseModel):
             str: Formatted text containing basic event information:
                 source, destination, event type, data and result
         """
-        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, cumulative={self.is_cumulative}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
+        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, cumulative={self.is_cumulative}, payload={self.payload}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
