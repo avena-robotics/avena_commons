@@ -44,7 +44,7 @@ class TestServer(EventListener):
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         for client in range(1, self.clients + 1):
-            client_port = 9000 + client + 1
+            client_port = self._EventListener__port + client + 1
             for i in range(self.payload):
                 event = await self._event(
                     f"test_client_{client_port}",
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
     # message_logger = None
-    port = 9000
+    port = 9200
     try:
         app = TestServer(
             name=f"test_server_{port}",

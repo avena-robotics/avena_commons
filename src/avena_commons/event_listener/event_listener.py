@@ -44,7 +44,7 @@ class EventListener:
     __port: int
     __queue_file_path: str = None
     __config_file_path: str = None
-    __retry_count: int = 10
+    __retry_count: int = 100000000
     __discovery_neighbours = False
 
     __incoming_events: list[Event] = []
@@ -414,14 +414,28 @@ class EventListener:
             yield
         finally:
             elapsed = (time.perf_counter() - start) * 1000
+            if event.is_cumulative:
+                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}] (cumulative) payload={event.payload} in {elapsed:.2f} ms:\n"
+                for e in event.data["events"]:
+                    message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
+            else:
+                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
             debug(
-                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
+                message,
                 message_logger=self._message_logger,
             )
 
     def _event_receive_debug(self, event: Event):
+        if event.is_cumulative:
+            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}] (cumulative) payload={event.payload}:\n"
+            # for e in event.data["events"]:
+            #     message += f"  event_type='{e['event_type']}' result={e['result'].result if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
+            for e in event.data["events"]:
+                message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
+        else:
+            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
         debug(
-            f"Event received from {event.source} [{event.source_address}:{event.source_port}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
+            message,
             message_logger=self._message_logger,
         )
 
@@ -991,7 +1005,7 @@ class EventListener:
                                     destination=first_event.destination,
                                     destination_address=first_event.destination_address,
                                     destination_port=first_event.destination_port,
-                                    event_type=first_event.event_type,
+                                    event_type="cumulative",
                                     is_cumulative=True,
                                     payload=sum(
                                         e["event"].payload for e in event_group
@@ -1029,21 +1043,19 @@ class EventListener:
                                 event_start_time = time.perf_counter()
 
                                 try:
-                                    async with session.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=aiohttp.ClientTimeout(total=0.1),
-                                    ) as response:
-                                        if response.status == 200:
-                                            self.__sended_events += 1
-                                            elapsed = (
-                                                time.perf_counter() - event_start_time
-                                            ) * 1000
-                                            debug(
-                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
-                                                message_logger=self._message_logger,
-                                            )
-                                            return None
+                                    with self._event_send_debug(event):
+                                        async with session.post(
+                                            url,
+                                            json=event.to_dict(),
+                                            timeout=aiohttp.ClientTimeout(total=0.1),
+                                        ) as response:
+                                            if response.status == 200:
+                                                self.__sended_events += 1
+                                                elapsed = (
+                                                    time.perf_counter()
+                                                    - event_start_time
+                                                ) * 1000
+                                                return None
                                 except asyncio.TimeoutError:
                                     error(
                                         f"Timeout sending event to {url}",
@@ -1098,20 +1110,18 @@ class EventListener:
                                 event_start_time = time.perf_counter()
 
                                 try:
-                                    async with session.post(
-                                        url,
-                                        json=event.to_dict(),
-                                        timeout=aiohttp.ClientTimeout(total=0.1),
-                                    ) as response:
-                                        if response.status == 200:
-                                            self.__sended_events += 1
-                                            elapsed = (
-                                                time.perf_counter() - event_start_time
-                                            ) * 1000
-                                            debug(
-                                                f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]{' (cumulative) ' + str(event.payload) + ' ' if event.is_cumulative else ''}: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms",
-                                                message_logger=self._message_logger,
-                                            )
+                                    with self._event_send_debug(event):
+                                        async with session.post(
+                                            url,
+                                            json=event.to_dict(),
+                                            timeout=aiohttp.ClientTimeout(total=0.1),
+                                        ) as response:
+                                            if response.status == 200:
+                                                self.__sended_events += 1
+                                                elapsed = (
+                                                    time.perf_counter()
+                                                    - event_start_time
+                                                ) * 1000
                                 except asyncio.TimeoutError:
                                     error(
                                         f"Timeout sending event to {url}",

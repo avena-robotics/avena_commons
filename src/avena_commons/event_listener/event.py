@@ -111,7 +111,7 @@ class Event(BaseModel):
     event_type: str
     timestamp: datetime = Field(default_factory=datetime.now)
     data: dict
-    payload: int = 1
+    payload: int = 1  # ile pakietów jest w tym pakiecie
     id: Optional[int] = None
     result: Optional[Result] = None
     to_be_processed: bool = False
