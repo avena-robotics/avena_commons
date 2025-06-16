@@ -14,12 +14,14 @@ class TestServer(EventListener):
         port: int,
         address: str,
         clients: int,
+        payload: int,
         message_logger=None,
         message_logger_queues=None,
         debug=False,
         # use_http_session=True,
         # use_parallel_send=True,
     ):
+        self.payload = payload
         self.check_local_data_frequency = 1
         super().__init__(
             name=name,
@@ -42,16 +44,17 @@ class TestServer(EventListener):
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         for client in range(1, self.clients + 1):
-            client_port = 9000 + client + 1
-            event = await self._event(
-                f"test_client_{client_port}",
-                destination_address=self._EventListener__address,
-                destination_port=client_port,
-                event_type=f"test_from_{self._EventListener__port}",
-                data={"message": "test"},
-                to_be_processed=True,
-            )
-            self._add_to_processing(event)
+            client_port = self._EventListener__port + client + 1
+            for i in range(self.payload):
+                event = await self._event(
+                    f"test_client_{client_port}",
+                    destination_address=self._EventListener__address,
+                    destination_port=client_port,
+                    event_type=f"test_from_{self._EventListener__port}",
+                    data={"message": f"test {i}"},
+                    to_be_processed=True,
+                )
+                self._add_to_processing(event)
         debug(
             f"incommming = {self.size_of_incomming_events_queue()}, processing = {self.size_of_processing_events_queue()}, to_send = {self.size_of_events_to_send_queue()}, [{self.sended_events}, {self.received_events}, {self.sended_events - self.received_events}]",
             message_logger=self.message_logger_queues,
@@ -74,16 +77,11 @@ if __name__ == "__main__":
         help="test clients number (default: 1)",
     )
     parser.add_argument(
-        "-s",
-        "--session",
-        action="store_false",
-        help="use http session (default: False)",
-    )
-    parser.add_argument(
         "-p",
-        "--parallel",
-        action="store_false",
-        help="use parallel send (default: False)",
+        "--payload",
+        type=int,
+        default=1,
+        help="payload size (default: 1)",
     )
     args = parser.parse_args()
 
@@ -98,7 +96,7 @@ if __name__ == "__main__":
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
     # message_logger = None
-    port = 9000
+    port = 9200
     try:
         app = TestServer(
             name=f"test_server_{port}",
@@ -108,6 +106,7 @@ if __name__ == "__main__":
             message_logger_queues=message_logger_queues,
             debug=True,
             clients=args.clients,
+            payload=args.payload,
             # use_http_session=args.session,
             # use_parallel_send=args.parallel,
         )

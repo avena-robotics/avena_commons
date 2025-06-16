@@ -30,16 +30,6 @@ from avena_commons.util.logger import (
     warning,
 )
 
-# Dodanie pomocniczej funkcji do bezpiecznego logowania
-# def safe_log(log_func, message, message_logger=None):
-#     """Bezpieczna funkcja logująca, obsługująca BrokenPipeError."""
-#     try:
-#         log_func(message, message_logger=message_logger)
-#     except BrokenPipeError:
-#         print(f"{message} (pipe zamknięty)")
-#     except Exception as e:
-#         print(f"Błąd podczas logowania '{message}': {e}")
-
 
 class TestClient(EventListener):
     def __init__(
@@ -210,35 +200,6 @@ class TestClient(EventListener):
         self._is_running = False
 
 
-def create_clients(
-    number_of_clients: int,
-    base_port: int = 9000,
-    message_logger=None,
-):
-    """Tworzy instancje klientów."""
-    info(
-        f"Tworzenie {number_of_clients} instancji klientów, port bazowy: {base_port}",
-        message_logger=message_logger,
-    )
-    clients = []
-    for i in range(1, number_of_clients + 1):
-        client_number = i + 1
-        port = base_port + client_number
-        client = TestClient(
-            name=f"test_{port}",
-            port=port,
-            address="127.0.0.1",
-            message_logger=message_logger,
-            debug=True,
-        )
-        clients.append(client)
-        debug(
-            f"Utworzono instancję klienta {client_number} na porcie {port}",
-            message_logger=message_logger,
-        )
-    return clients
-
-
 def shutdown_client(client):
     """Funkcja pomocnicza do zamykania instancji klienta."""
     info(
@@ -310,12 +271,16 @@ def run_client_process(name, port, address, debug_mode):
             f"Client process started for port {port} (PID: {os.getpid()}). Using process-specific logger.",
             message_logger=process_logger,
         )
+        client_message_logger = MessageLogger(
+            filename=f"temp/test_client_{port}.log",
+            period=LoggerPolicyPeriod.LAST_15_MINUTES,
+        )
 
         client = TestClient(
             name=name,
             port=port,
             address=address,
-            message_logger=process_logger,
+            message_logger=client_message_logger,
             debug=debug_mode,
         )
 
@@ -407,7 +372,7 @@ if __name__ == "__main__":
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
 
-    base_port = 9000
+    base_port = 9200
 
     client_processes = []
 
