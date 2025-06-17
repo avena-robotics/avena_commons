@@ -1,6 +1,7 @@
 import datetime
 import multiprocessing
 import os
+import pickle as _pickle
 import time
 from enum import Enum
 from pathlib import Path
@@ -107,7 +108,11 @@ class Logger_Receiver:
                 logger_file.parent.mkdir(exist_ok=True, parents=True)
 
                 with open(current_filename, "a") as file:
-                    data = pipe_in.recv()
+                    try:
+                        data = pipe_in.recv()
+                    except (EOFError, BrokenPipeError, _pickle.UnpicklingError) as e:
+                        print(f"Błąd odczytu z pipe: {e}")
+                        continue
 
                     if data == "STOP":
                         break
@@ -294,18 +299,27 @@ class MessageLogger(Logger):
         )
         self.__debug = debug
 
+    def truncate_message_end(
+        self, message: str, max_length: int = 10000, indicator: str = "..."
+    ) -> str:
+        """Przycina koniec wiadomości"""
+        message = str(message)
+        if len(message) <= max_length:
+            return message
+        return f"{message[: max_length - len(indicator)]}{indicator}"
+
     def error(self, message):
-        self.pipe_out.send([LogLevelType.error, message])
+        self.pipe_out.send([LogLevelType.error, self.truncate_message_end(message)])
 
     def warning(self, message):
-        self.pipe_out.send([LogLevelType.warning, message])
+        self.pipe_out.send([LogLevelType.warning, self.truncate_message_end(message)])
 
     def info(self, message):
-        self.pipe_out.send([LogLevelType.info, message])
+        self.pipe_out.send([LogLevelType.info, self.truncate_message_end(message)])
 
     def debug(self, message):
         if self.__debug:
-            self.pipe_out.send([LogLevelType.debug, message])
+            self.pipe_out.send([LogLevelType.debug, self.truncate_message_end(message)])
 
     def set_debug(self, debug: bool):
         self.__debug = debug
