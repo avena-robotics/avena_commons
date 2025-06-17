@@ -414,7 +414,7 @@ class EventListener:
             yield
         finally:
             elapsed = (time.perf_counter() - start) * 1000
-            if event.is_cumulative:
+            if event.event_type == "cumulative":
                 message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}] (cumulative) payload={event.payload} in {elapsed:.2f} ms:\n"
                 for e in event.data["events"]:
                     message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
@@ -426,10 +426,8 @@ class EventListener:
             )
 
     def _event_receive_debug(self, event: Event):
-        if event.is_cumulative:
+        if event.event_type == "cumulative":
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}] (cumulative) payload={event.payload}:\n"
-            # for e in event.data["events"]:
-            #     message += f"  event_type='{e['event_type']}' result={e['result'].result if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
             for e in event.data["events"]:
                 message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
         else:
@@ -834,7 +832,7 @@ class EventListener:
             self._event_receive_debug(event)
 
             with self.__atomic_operation_for_incoming_events():
-                if event.is_cumulative and "events" in event.data:
+                if event.event_type == "cumulative":
                     # Unpack cumulative event
                     for event_data in event.data["events"]:
                         unpacked_event = Event(**event_data)
@@ -980,7 +978,29 @@ class EventListener:
                     if self.__use_cumulative_send:
                         # Group events by destination
                         events_by_destination = {}
+                        send_queue = []  # Initialize send_queue here
+
                         for event_data in local_queue:
+                            # Skip events that are already cumulative - they should be unpacked
+                            if (
+                                event_data["event"].event_type == "cumulative"
+                                and "events" in event_data["event"].data
+                            ):
+                                # Unpack cumulative event and add its events directly to the send_queue
+                                for event_dict in event_data["event"].data["events"]:
+                                    individual_event = Event(**event_dict)
+                                    dest_key = (
+                                        individual_event.destination_address,
+                                        individual_event.destination_port,
+                                    )
+                                    if dest_key not in events_by_destination:
+                                        events_by_destination[dest_key] = []
+                                    events_by_destination[dest_key].append({
+                                        "event": individual_event,
+                                        "retry_count": event_data["retry_count"],
+                                    })
+                                continue
+
                             dest_key = (
                                 event_data["event"].destination_address,
                                 event_data["event"].destination_port,
@@ -989,14 +1009,13 @@ class EventListener:
                                 events_by_destination[dest_key] = []
                             events_by_destination[dest_key].append(event_data)
 
-                        # Create new queue with cumulative events where needed
-                        new_queue = []
+                        # Create temporary queue with cumulative events for sending
                         for event_group in events_by_destination.values():
                             if len(event_group) == 1:
                                 # Single event - keep as is
-                                new_queue.append(event_group[0])
+                                send_queue.append(event_group[0])
                             else:
-                                # Multiple events - create cumulative event
+                                # Multiple events - create cumulative event only for sending
                                 first_event = event_group[0]["event"]
                                 cumulative_event = Event(
                                     source=first_event.source,
@@ -1006,7 +1025,6 @@ class EventListener:
                                     destination_address=first_event.destination_address,
                                     destination_port=first_event.destination_port,
                                     event_type="cumulative",
-                                    is_cumulative=True,
                                     payload=sum(
                                         e["event"].payload for e in event_group
                                     ),
@@ -1016,12 +1034,13 @@ class EventListener:
                                         ]
                                     },
                                 )
-                                new_queue.append({
+                                send_queue.append({
                                     "event": cumulative_event,
                                     "retry_count": 0,
+                                    "original_events": event_group,  # Store original events for retry
                                 })
 
-                        local_queue = new_queue
+                        local_queue = send_queue
 
                     start_time = time.perf_counter()
 
@@ -1061,6 +1080,15 @@ class EventListener:
                                         f"Timeout sending event to {url}",
                                         message_logger=self._message_logger,
                                     )
+                                    # If this was a cumulative event, return original events
+                                    if event.event_type == "cumulative":
+                                        return [
+                                            {
+                                                "event": Event(**e),
+                                                "retry_count": retry_count + 1,
+                                            }
+                                            for e in event.data["events"]
+                                        ]
                                     return {
                                         "event": event,
                                         "retry_count": retry_count + 1,
@@ -1071,6 +1099,15 @@ class EventListener:
                                     f"Error sending event: {e}",
                                     message_logger=self._message_logger,
                                 )
+                                # If this was a cumulative event, return original events
+                                if event.event_type == "cumulative":
+                                    return [
+                                        {
+                                            "event": Event(**e),
+                                            "retry_count": retry_count + 1,
+                                        }
+                                        for e in event.data["events"]
+                                    ]
                                 return {
                                     "event": event,
                                     "retry_count": retry_count + 1,
@@ -1083,8 +1120,13 @@ class EventListener:
                         # Collect failed events
                         failed_events = []
                         for r in results:
-                            if isinstance(r, dict):  # means failed event
-                                failed_events.append(r)
+                            if isinstance(r, (dict, list)):  # means failed event(s)
+                                if isinstance(
+                                    r, list
+                                ):  # original events from failed cumulative
+                                    failed_events.extend(r)
+                                else:  # single failed event
+                                    failed_events.append(r)
 
                         # If there are failed events, add them back
                         if failed_events:
@@ -1127,19 +1169,37 @@ class EventListener:
                                         f"Timeout sending event to {url}",
                                         message_logger=self._message_logger,
                                     )
-                                    failed_events.append({
+                                    # If this was a cumulative event, return original events
+                                    if event.event_type == "cumulative":
+                                        return [
+                                            {
+                                                "event": Event(**e),
+                                                "retry_count": retry_count + 1,
+                                            }
+                                            for e in event.data["events"]
+                                        ]
+                                    return {
                                         "event": event,
                                         "retry_count": retry_count + 1,
-                                    })
+                                    }
                             except Exception as e:
                                 error(
                                     f"Error sending event: {e}",
                                     message_logger=self._message_logger,
                                 )
-                                failed_events.append({
+                                # If this was a cumulative event, return original events
+                                if event.event_type == "cumulative":
+                                    return [
+                                        {
+                                            "event": Event(**e),
+                                            "retry_count": retry_count + 1,
+                                        }
+                                        for e in event.data["events"]
+                                    ]
+                                return {
                                     "event": event,
                                     "retry_count": retry_count + 1,
-                                })
+                                }
 
                         # If there are failed events, add them back
                         if failed_events:
