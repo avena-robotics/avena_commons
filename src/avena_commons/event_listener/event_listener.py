@@ -25,7 +25,7 @@ from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 from avena_commons.util.measure_time import MeasureTime
 
-from .event import Event
+from .event import Event, Result
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMP_DIR = PROJECT_ROOT / "temp"
@@ -58,6 +58,7 @@ class EventListener:
     __lock_for_incoming_events = threading.Lock()
     __lock_for_processing_events = threading.Lock()
     __lock_for_events_to_send = threading.Lock()
+    __lock_for_state_data = threading.Lock()
 
     __send_queue_frequency: int = 50
     __analyze_queue_frequency: int = 100
@@ -75,6 +76,11 @@ class EventListener:
     app: FastAPI = None
     _system_ready = threading.Event()
     __session = None  # Will be initialized in start()
+
+    # For background state calculation
+    _latest_state_data: dict = {}
+    __state_update_frequency: int = 1  # Hz
+    __state_update_thread: threading.Thread = None
 
     def __init__(
         self,
@@ -102,6 +108,9 @@ class EventListener:
             f"Initializing event listener '{name}' on {address}:{port}",
             message_logger=message_logger,
         )
+        # For non-blocking CPU calculation
+        self.__last_proc_cpu_times: dict = {}
+        self.__last_cpu_calc_time: float = 0.0
         self.__queue_file_path = TEMP_DIR / f"{name}_state.json"
         self.__config_file_path = f"{name}_config.json"
         self.__name = name.lower()
@@ -171,6 +180,7 @@ class EventListener:
         self.__start_analysis()
         self.__start_send_event()
         self.__start_local_check()
+        self.__start_state_update_thread()
 
         if self.__discovery_neighbours:
             self.__start_discovering()
@@ -609,6 +619,26 @@ class EventListener:
                 message_logger=self._message_logger,
             )
 
+    def __stop_state_update_thread(self):
+        try:
+            info("Stopping state update thread", message_logger=self._message_logger)
+            if (
+                hasattr(self, "__state_update_thread")
+                and self.__state_update_thread
+                and self.__state_update_thread.is_alive()
+            ):
+                self.__state_update_thread.join(timeout=1.0)
+                if self.__state_update_thread.is_alive():
+                    error(
+                        "State update thread did not terminate within timeout",
+                        message_logger=self._message_logger,
+                    )
+        except Exception as e:
+            error(
+                f"Error stopping state update thread: {e}",
+                message_logger=self._message_logger,
+            )
+
     def __shutdown(self):
         """
         Safely shuts down all components.
@@ -636,6 +666,7 @@ class EventListener:
             )  # Reduced from 0.5s - just enough for threads to see the flag
 
             # Stop all threads in proper order
+            self.__stop_state_update_thread()
             self.__stop_local_check()
             self.__stop_analysis()
             self.__stop_send_event()
@@ -817,55 +848,24 @@ class EventListener:
         self.discovering_thread.start()
 
     async def __state_handler(self, event: Event):
-        """
-        Handles state requests by collecting and returning process metrics.
-
-        This method uses `psutil` to gather information about the current
-        process and all its descendant processes (children). It calculates
-        the total number of processes, the combined CPU utilization, and
-        the total memory usage (RSS and VMS).
-
-        The collected data is sent back as a reply to the originating event.
-
-        Args:
-            event (Event): The event that triggered the state request.
-        """
         try:
-            main_process = psutil.Process(os.getpid())
-            children = main_process.children(recursive=True)
-
-            total_cpu_percent = main_process.cpu_percent(interval=0.1)
-            total_memory_info = main_process.memory_info()
-            total_memory_rss = total_memory_info.rss
-            total_memory_vms = total_memory_info.vms
-
-            for child in children:
-                try:
-                    total_cpu_percent += child.cpu_percent()
-                    child_memory_info = child.memory_info()
-                    total_memory_rss += child_memory_info.rss
-                    total_memory_vms += child_memory_info.vms
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
-            state_data = {
-                "process_count": 1 + len(children),
-                "cpu_percent": round(total_cpu_percent, 2),
-                "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
-                "memory_vms_mb": round(total_memory_vms / (1024 * 1024), 2),
-            }
+            # Instantly get the latest pre-calculated state
+            with self.__lock_for_state_data:
+                state_data = self._latest_state_data
 
             event.result = Result(result="success", data=state_data)
             await self._reply(event)
 
         except Exception as e:
-            error(f"Error in __state_handler: {e}", message_logger=self._message_logger)
-            event.result = Result(
-                result="failure", error_message=f"Failed to get state: {e}"
+            error(
+                f"Error in state handler: {e}, {traceback.format_exc()}",
+                message_logger=self._message_logger,
             )
+            event.result = Result(result="error", error_message=str(e))
             await self._reply(event)
 
     async def __discovery_handler(self, event: Event):
+        # TODO: dodać logikę wykrywania sąsiadów
         pass
 
     async def __event_handler(self, event: Event):
@@ -946,15 +946,10 @@ class EventListener:
         debug("Check_local_data loop ended", message_logger=self._message_logger)
 
     def __start_local_check(self):
-        """
-        Starts the local data check loop.
-
-        Initializes the local check flag and starts a new thread for local data monitoring.
-        """
-        info("Starting local data check", message_logger=self._message_logger)
         self.local_check_thread = threading.Thread(
-            target=lambda: asyncio.run(self.__check_local_data_loop()), daemon=True
+            target=self._run_local_check_loop, name="local_check_thread"
         )
+        self.local_check_thread.daemon = True
         self.local_check_thread.start()
 
     def __start_send_event(self):
@@ -966,6 +961,13 @@ class EventListener:
             target=self._run_send_event_loop, daemon=True
         )
         self.send_event_thread.start()
+
+    def __start_state_update_thread(self):
+        self.__state_update_thread = threading.Thread(
+            target=self.__update_system_state_loop, name="state_update_thread"
+        )
+        self.__state_update_thread.daemon = True
+        self.__state_update_thread.start()
 
     def _run_send_event_loop(self):
         """Run the send event loop in a separate thread"""
@@ -1560,3 +1562,81 @@ class EventListener:
                 message_logger=self._message_logger,
             )
             return None
+
+    def __update_system_state_loop(self):
+        debug("Starting system state update loop", message_logger=self._message_logger)
+
+        last_proc_cpu_times = {}
+        last_cpu_calc_time = 0.0
+
+        while not self._shutdown_requested:
+            try:
+                main_process = psutil.Process(os.getpid())
+                children = main_process.children(recursive=True)
+                all_processes = [main_process] + children
+
+                # --- Non-blocking CPU and resource calculation ---
+                wall_time_now = time.monotonic()
+
+                proc_cpu_times_now = {}
+                total_memory_rss = 0
+                total_memory_vms = 0
+                process_count = 0
+
+                for p in all_processes:
+                    try:
+                        proc_cpu_times_now[p.pid] = p.cpu_times()
+                        mem_info = p.memory_info()
+                        total_memory_rss += mem_info.rss
+                        total_memory_vms += mem_info.vms
+                        process_count += 1
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+
+                total_cpu_percent = 0.0
+                if last_cpu_calc_time > 0:
+                    wall_time_delta = wall_time_now - last_cpu_calc_time
+                    if wall_time_delta > 0:
+                        proc_cpu_time_delta = 0
+                        for (
+                            pid,
+                            cpu_times_now,
+                        ) in proc_cpu_times_now.items():
+                            if pid in last_proc_cpu_times:
+                                cpu_times_before = last_proc_cpu_times[pid]
+                                proc_cpu_time_delta += (
+                                    cpu_times_now.user - cpu_times_before.user
+                                ) + (cpu_times_now.system - cpu_times_before.system)
+
+                        if proc_cpu_time_delta > 0:
+                            total_cpu_percent = (
+                                proc_cpu_time_delta / wall_time_delta
+                            ) * 100
+                            # Normalize by number of cores
+                            total_cpu_percent /= psutil.cpu_count()
+
+                # Update state for the next call
+                last_proc_cpu_times = proc_cpu_times_now
+                last_cpu_calc_time = wall_time_now
+                # --- End of calculation ---
+
+                state_data = {
+                    "process_count": process_count,
+                    "cpu_percent": round(total_cpu_percent, 2),
+                    "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
+                    "memory_vms_mb": round(total_memory_vms / (1024 * 1024), 2),
+                }
+
+                with self.__lock_for_state_data:
+                    self._latest_state_data = state_data
+
+            except Exception as e:
+                error(
+                    f"Error in state update thread: {e}",
+                    message_logger=self._message_logger,
+                )
+
+            # Sleep for the desired interval
+            time.sleep(1.0 / self.__state_update_frequency)
+
+        debug("System state update loop ended", message_logger=self._message_logger)
