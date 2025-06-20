@@ -1,0 +1,20 @@
+{
+    "clients": {
+        "client_1": {
+            "address": "127.0.0.1",
+            "port": 9201
+        },
+        "client_2": {
+            "address": "127.0.0.1",
+            "port": 9202
+        },
+        "client_3": {
+            "address": "127.0.0.1",
+            "port": 9203
+        },
+        "server": {
+            "address": "127.0.0.1",
+            "port": 9200
+        }
+    }
+}

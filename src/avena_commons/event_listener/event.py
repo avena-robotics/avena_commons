@@ -60,6 +60,7 @@ class Result(BaseModel):
         result (Optional[str]): Operation status (e.g., "success", "failure")
         error_code (Optional[int]): Error code in case of failure (e.g., 1)
         error_message (Optional[str]): Detailed error description
+        data (Optional[dict]): A dictionary for carrying additional data with the result.
 
     Examples:
         >>> # Success example
@@ -71,11 +72,17 @@ class Result(BaseModel):
         ...     error_code=1,
         ...     error_message="Nieprawidłowe dane wejściowe"
         ... )
+        >>> # Success with data example
+        >>> data_result = Result(
+        ...     result="success",
+        ...     data={"info": "some details"}
+        ... )
     """
 
     result: Optional[str] = None  # np "success", "failure"
     error_code: Optional[int] = None  # np 1
     error_message: Optional[str] = None  # np "error message"
+    data: Optional[dict] = None
 
 
 class Event(BaseModel):
@@ -90,15 +97,13 @@ class Event(BaseModel):
         source_port (int): Port number of the source
         destination (str): Name of the event destination
         destination_port (int): Port number of the destination
+        destination_endpoint (str): The specific API endpoint for the event (e.g., "/event", "/heartbeat").
         event_type (str): Event type defining its nature
         timestamp (datetime): Event creation timestamp
         data (dict): Event-related data
         result (Optional[Result]): Optional event processing result
         is_processing (bool): Flag indicating if the event is currently being processed
         maximum_processing_time (Optional[int]): Maximum processing time in seconds
-
-    The Event class is thread-safe and can be safely used in concurrent processing
-    scenarios. The is_processing flag helps prevent duplicate processing of the same event.
     """
 
     source: str
@@ -107,6 +112,7 @@ class Event(BaseModel):
     destination: str
     destination_address: str
     destination_port: int
+    destination_endpoint: str = "/event"
     event_type: str
     timestamp: datetime = Field(default_factory=datetime.now)
     data: dict
@@ -125,6 +131,7 @@ class Event(BaseModel):
         destination: str = "default",
         destination_address: str = "127.0.0.1",
         destination_port: int = 0,
+        destination_endpoint: str = "/event",
         event_type: str = "default",
         data: dict = {},
         id: Optional[int] = None,
@@ -143,9 +150,10 @@ class Event(BaseModel):
             source_port (int): Port number of the source
             destination (str): Name of the event destination
             destination_port (int): Port number of the destination
+            destination_endpoint (str, optional): The API endpoint for the event. Defaults to "/event".
             event_type (str): Event type
             data (dict): Event-related data
-            result (Optional[Result], optional): Event processing result. Defaults to None
+            result (Optional[Result], optional): Event processing result. Defaults to None.
 
         Note:
             The timestamp is automatically set to the current time
@@ -158,6 +166,7 @@ class Event(BaseModel):
             destination=destination,
             destination_address=destination_address,
             destination_port=destination_port,
+            destination_endpoint=destination_endpoint,
             event_type=event_type,
             data=data,
             id=id,
@@ -186,6 +195,7 @@ class Event(BaseModel):
             "destination": self.destination,
             "destination_address": self.destination_address,
             "destination_port": self.destination_port,
+            "destination_endpoint": self.destination_endpoint,
             "event_type": self.event_type,
             "data": self.data,
             "id": self.id,
@@ -194,7 +204,9 @@ class Event(BaseModel):
             "is_processing": self.is_processing,
             "maximum_processing_time": self.maximum_processing_time,
             "timestamp": str(self.timestamp),
-            "result": self.result.model_dump() if self.result is not None else None,
+            "result": self.result.model_dump(exclude_none=True)
+            if self.result is not None
+            else None,
         }
 
     def __str__(self) -> str:
@@ -205,4 +217,4 @@ class Event(BaseModel):
             str: Formatted text containing basic event information:
                 source, destination, event type, data and result
         """
-        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, payload={self.payload}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
+        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, destination_endpoint={self.destination_endpoint}, payload={self.payload}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"

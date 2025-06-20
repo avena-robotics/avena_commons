@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
+import psutil
 import requests
 import uvicorn
 import uvicorn.config
@@ -415,11 +416,11 @@ class EventListener:
         finally:
             elapsed = (time.perf_counter() - start) * 1000
             if event.event_type == "cumulative":
-                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}] (cumulative) payload={event.payload} in {elapsed:.2f} ms:\n"
+                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}{event.destination_endpoint}] (cumulative) payload={event.payload} in {elapsed:.2f} ms:\n"
                 for e in event.data["events"]:
                     message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
             else:
-                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
+                message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}{event.destination_endpoint}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
             debug(
                 message,
                 message_logger=self._message_logger,
@@ -427,11 +428,11 @@ class EventListener:
 
     def _event_receive_debug(self, event: Event):
         if event.event_type == "cumulative":
-            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}] (cumulative) payload={event.payload}:\n"
+            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}] (cumulative) payload={event.payload}:\n"
             for e in event.data["events"]:
                 message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
         else:
-            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
+            message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
         debug(
             message,
             message_logger=self._message_logger,
@@ -499,6 +500,10 @@ class EventListener:
         If the class has a _deserialize_configuration method, uses it for deserialization.
         """
         if not os.path.exists(self.__config_file_path):
+            debug(
+                f"Plik konfiguracji {self.__config_file_path} nie istnieje, pomijam wczytywanie.",
+                message_logger=self._message_logger,
+            )
             return
 
         try:
@@ -812,7 +817,53 @@ class EventListener:
         self.discovering_thread.start()
 
     async def __state_handler(self, event: Event):
-        pass
+        """
+        Handles state requests by collecting and returning process metrics.
+
+        This method uses `psutil` to gather information about the current
+        process and all its descendant processes (children). It calculates
+        the total number of processes, the combined CPU utilization, and
+        the total memory usage (RSS and VMS).
+
+        The collected data is sent back as a reply to the originating event.
+
+        Args:
+            event (Event): The event that triggered the state request.
+        """
+        try:
+            main_process = psutil.Process(os.getpid())
+            children = main_process.children(recursive=True)
+
+            total_cpu_percent = main_process.cpu_percent(interval=0.1)
+            total_memory_info = main_process.memory_info()
+            total_memory_rss = total_memory_info.rss
+            total_memory_vms = total_memory_info.vms
+
+            for child in children:
+                try:
+                    total_cpu_percent += child.cpu_percent()
+                    child_memory_info = child.memory_info()
+                    total_memory_rss += child_memory_info.rss
+                    total_memory_vms += child_memory_info.vms
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            state_data = {
+                "process_count": 1 + len(children),
+                "cpu_percent": round(total_cpu_percent, 2),
+                "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
+                "memory_vms_mb": round(total_memory_vms / (1024 * 1024), 2),
+            }
+
+            event.result = Result(result="success", data=state_data)
+            await self._reply(event)
+
+        except Exception as e:
+            error(f"Error in __state_handler: {e}", message_logger=self._message_logger)
+            event.result = Result(
+                result="failure", error_message=f"Failed to get state: {e}"
+            )
+            await self._reply(event)
 
     async def __discovery_handler(self, event: Event):
         pass
@@ -889,17 +940,6 @@ class EventListener:
                     # Aktualizacja poprzednich wartości i czasu
                     self.__prev_received_events = self.__received_events
                     self.__prev_sended_events = self.__sended_events
-
-                    message = f"{self.__name} - Status kolejek: przychodzace = {self.size_of_incomming_events_queue()}, procesowane = {self.size_of_processing_events_queue()}, wysylane = {self.size_of_events_to_send_queue()} [in={self.__received_events_per_second}, out={self.__sended_events_per_second}] msgs/s"
-                    if (
-                        self.size_of_incomming_events_queue()
-                        + self.size_of_processing_events_queue()
-                        + self.size_of_events_to_send_queue()
-                        > 100
-                    ):
-                        error(message, message_logger=self._message_logger)
-                    else:
-                        info(message, message_logger=self._message_logger)
 
             loop.loop_end()
 
@@ -992,18 +1032,17 @@ class EventListener:
                                     dest_key = (
                                         individual_event.destination_address,
                                         individual_event.destination_port,
+                                        individual_event.destination_endpoint,
                                     )
                                     if dest_key not in events_by_destination:
                                         events_by_destination[dest_key] = []
-                                    events_by_destination[dest_key].append({
-                                        "event": individual_event,
-                                        "retry_count": event_data["retry_count"],
-                                    })
+                                    events_by_destination[dest_key].append(event_data)
                                 continue
 
                             dest_key = (
                                 event_data["event"].destination_address,
                                 event_data["event"].destination_port,
+                                event_data["event"].destination_endpoint,
                             )
                             if dest_key not in events_by_destination:
                                 events_by_destination[dest_key] = []
@@ -1024,6 +1063,7 @@ class EventListener:
                                     destination=first_event.destination,
                                     destination_address=first_event.destination_address,
                                     destination_port=first_event.destination_port,
+                                    destination_endpoint=first_event.destination_endpoint,
                                     event_type="cumulative",
                                     payload=sum(
                                         e["event"].payload for e in event_group
@@ -1058,7 +1098,7 @@ class EventListener:
                                 return None
 
                             try:
-                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                url = f"http://{event.destination_address}:{event.destination_port}{event.destination_endpoint}"
                                 event_start_time = time.perf_counter()
 
                                 try:
@@ -1148,7 +1188,7 @@ class EventListener:
                                 continue
 
                             try:
-                                url = f"http://{event.destination_address}:{event.destination_port}/event"
+                                url = f"http://{event.destination_address}:{event.destination_port}{event.destination_endpoint}"
                                 event_start_time = time.perf_counter()
 
                                 try:
@@ -1223,15 +1263,34 @@ class EventListener:
 
     async def _event(
         self,
-        destination: str,
+        *,
+        destination: str = None,
         destination_address: str = "0.0.0.0",
         destination_port: int = 8000,
+        destination_endpoint: str = "/event",
         event_type: str = "default",
         id: int = None,
         data: dict = {},
         to_be_processed: bool = True,
         maximum_processing_time: float = 20,
     ) -> Event:
+        """
+        Creates a new event and adds it to the sending queue.
+
+        Args:
+            destination (str): The name of the destination listener.
+            destination_address (str, optional): The IP address of the destination. Defaults to "0.0.0.0".
+            destination_port (int, optional): The port of the destination. Defaults to 8000.
+            destination_endpoint (str, optional): The specific API endpoint for the event. Defaults to "/event".
+            event_type (str, optional): The type of the event. Defaults to "default".
+            id (int, optional): An optional ID for the event. Defaults to None.
+            data (dict, optional): A dictionary of data to send with the event. Defaults to {}.
+            to_be_processed (bool, optional): Flag indicating if the event requires processing. Defaults to True.
+            maximum_processing_time (float, optional): Maximum time in seconds for processing. Defaults to 20.
+
+        Returns:
+            Event: The created event object, or None if an error occurred.
+        """
         current_time = datetime.now()
         event = Event(
             source=self.__name,
@@ -1240,6 +1299,7 @@ class EventListener:
             destination=destination,
             destination_address=destination_address,
             destination_port=destination_port,
+            destination_endpoint=destination_endpoint,
             event_type=event_type,
             data=data,
             id=id,
@@ -1266,19 +1326,21 @@ class EventListener:
 
     async def _reply(self, event: Event):
         """
-        Creates and adds event response to sending queue.
+        Creates and adds an event response to the sending queue.
+
+        This method ensures symmetrical communication by sending the reply
+        to the same endpoint from which the original event was received.
+        It swaps the source and destination and preserves the original
+        `destination_endpoint`.
 
         Args:
-            event (Event): Original event being responded to
-            result (Result): Event processing result to be added to response
+            event (Event): The original event being responded to.
 
         Note:
-            Creates new event with swapped source and destination addresses,
-            maintaining other parameters from original event.
-            Result is added to data.result field in new event.
+            The processing result must be set in `event.result` before calling this method.
 
         Raises:
-            ValueError: When result is None
+            ValueError: If `event.result` is None.
         """
         if event.result is None:
             raise ValueError("Result cannot be None")
@@ -1289,6 +1351,7 @@ class EventListener:
         new_event.destination = event.source
         new_event.destination_address = event.source_address
         new_event.destination_port = event.source_port
+        new_event.destination_endpoint = event.destination_endpoint
         new_event.id = event.id
         new_event.result = event.result
 

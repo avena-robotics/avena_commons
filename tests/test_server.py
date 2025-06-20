@@ -107,10 +107,7 @@ if __name__ == "__main__":
             debug=True,
             clients=args.clients,
             payload=args.payload,
-            # use_http_session=args.session,
-            # use_parallel_send=args.parallel,
         )
-        # app.start()
 
     except KeyboardInterrupt:
         pass
