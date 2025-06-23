@@ -28,9 +28,11 @@ class TestWatchdog(Watchdog):
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
-        self._find_and_remove_processing_event(
-            event.event_type, event.id, event.timestamp
-        )
+        match event.event_type:
+            case "health_check":
+                pass
+            case _:
+                pass
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
@@ -41,7 +43,6 @@ class TestWatchdog(Watchdog):
                 destination=key,
                 destination_address=client_address,
                 destination_port=client_port,
-                destination_endpoint="/state",
                 event_type="health_check",
                 data={},
                 to_be_processed=False,
@@ -70,7 +71,6 @@ if __name__ == "__main__":
             message_logger=message_logger,
             debug=True,
         )
-        # app.start()
 
     except KeyboardInterrupt:
         pass

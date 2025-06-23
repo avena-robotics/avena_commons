@@ -14,7 +14,6 @@ from typing import Any
 
 import aiohttp
 import psutil
-import requests
 import uvicorn
 import uvicorn.config
 import uvicorn.server
@@ -23,23 +22,25 @@ from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
-from avena_commons.util.measure_time import MeasureTime
 
-from .event import Event
+from .event import Event, Result
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMP_DIR = PROJECT_ROOT / "temp"
 
 
 class EventListenerState(Enum):
-    IDLE = 0
-    INITIALIZED = 1
-    RUNNING = 2
+    STOPPED = 0
+    INITIALIZING = 1
+    INITIALIZED = 2
+    STARTING = 3
+    STARTED = 4
+    STOPPING = 5
     ERROR = 256
 
 
 class EventListener:
-    __el_state: EventListenerState = EventListenerState.IDLE
+    __el_state: EventListenerState = EventListenerState.STOPPED
     __name: str
     __address: str = "0.0.0.0"
     __port: int
@@ -58,6 +59,7 @@ class EventListener:
     __lock_for_incoming_events = threading.Lock()
     __lock_for_processing_events = threading.Lock()
     __lock_for_events_to_send = threading.Lock()
+    __lock_for_health_status = threading.Lock()
 
     __send_queue_frequency: int = 50
     __analyze_queue_frequency: int = 100
@@ -123,6 +125,11 @@ class EventListener:
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
 
+        # Inicjalizacja psutil
+        self.__main_process = psutil.Process(os.getpid())
+        self.__main_process.cpu_percent()  # Inicjalizacja
+        self.__health_status = {}
+
         # Wczytanie konfiguracji
         self.__load_configuration()
 
@@ -157,20 +164,11 @@ class EventListener:
             await self.__event_handler(event)
             return {"status": "ok"}
 
-        @self.app.post("/state")
-        async def state(event: Event):
-            await self.__state_handler(event)
-            return {"status": "ok"}
-
-        @self.app.post("/discovery")
-        async def discovery(event: Event):
-            await self.__discovery_handler(event)
-            return {"status": "ok"}
-
         # Startujemy thready - będą czekać na sygnał
         self.__start_analysis()
         self.__start_send_event()
         self.__start_local_check()
+        self.__start_health_status_updater()
 
         if self.__discovery_neighbours:
             self.__start_discovering()
@@ -761,7 +759,39 @@ class EventListener:
                     f"Analyzing incoming event: {event}",
                     message_logger=self._message_logger,
                 )
-                should_remove = await self._analyze_event(event)
+                should_remove = True
+                match event.event_type:
+                    case "set_fsm_state":
+                        pass
+
+                    case "health_check":
+                        if event.result is None:
+                            try:
+                                with self.__lock_for_health_status:
+                                    health_status_copy = self.__health_status.copy()
+                                event.result = Result(
+                                    result="success", data=health_status_copy
+                                )
+                                await self._reply(event)
+
+                            except Exception as e:
+                                error(
+                                    f"Error in __state_handler: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                event.result = Result(
+                                    result="failure",
+                                    error_message=f"Failed to get state: {e}",
+                                )
+                                await self._reply(event)
+                        else:
+                            should_remove = await self._analyze_event(event)
+
+                    case "discovery":
+                        pass
+
+                    case _:
+                        should_remove = await self._analyze_event(event)
                 if not should_remove:
                     new_queue.append(event)
             except Exception as e:
@@ -816,57 +846,70 @@ class EventListener:
         )
         self.discovering_thread.start()
 
-    async def __state_handler(self, event: Event):
+    def __health_status_updater_loop(self):
         """
-        Handles state requests by collecting and returning process metrics.
-
-        This method uses `psutil` to gather information about the current
-        process and all its descendant processes (children). It calculates
-        the total number of processes, the combined CPU utilization, and
-        the total memory usage (RSS and VMS).
-
-        The collected data is sent back as a reply to the originating event.
-
-        Args:
-            event (Event): The event that triggered the state request.
+        Dedicated thread loop to periodically update the health status.
+        This runs in the background and is blocking.
         """
-        try:
-            main_process = psutil.Process(os.getpid())
-            children = main_process.children(recursive=True)
+        debug(
+            "Starting __health_status_updater_loop",
+            message_logger=self._message_logger,
+        )
+        # Czekamy na gotowość systemu
+        self._system_ready.wait()
+        debug(
+            "__health_status_updater_loop activated...",
+            message_logger=self._message_logger,
+        )
 
-            total_cpu_percent = main_process.cpu_percent(interval=0.1)
-            total_memory_info = main_process.memory_info()
-            total_memory_rss = total_memory_info.rss
-            total_memory_vms = total_memory_info.vms
+        while not self._shutdown_requested:
+            try:
+                # The interval parameter makes this a blocking call for 1 second,
+                # ensuring an accurate CPU reading over a meaningful period.
+                # This replaces the need for time.sleep(1) at the end of the loop.
+                total_cpu_percent = self.__main_process.cpu_percent(interval=1.0)
+                children = self.__main_process.children(recursive=True)
 
-            for child in children:
-                try:
-                    total_cpu_percent += child.cpu_percent()
-                    child_memory_info = child.memory_info()
-                    total_memory_rss += child_memory_info.rss
-                    total_memory_vms += child_memory_info.vms
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
+                total_memory_info = self.__main_process.memory_info()
+                total_memory_rss = total_memory_info.rss
+                total_memory_vms = total_memory_info.vms
 
-            state_data = {
-                "process_count": 1 + len(children),
-                "cpu_percent": round(total_cpu_percent, 2),
-                "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
-                "memory_vms_mb": round(total_memory_vms / (1024 * 1024), 2),
-            }
+                for child in children:
+                    try:
+                        # The line `total_cpu_percent += child.cpu_percent()` was removed
+                        # because it is incorrect. It operates on newly created Process
+                        # objects each time, which always results in 0.0.
+                        # Memory calculation for children is correct and remains.
+                        child_memory_info = child.memory_info()
+                        total_memory_rss += child_memory_info.rss
+                        total_memory_vms += child_memory_info.vms
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
 
-            event.result = Result(result="success", data=state_data)
-            await self._reply(event)
+                health_status_data = {
+                    "current_fsm": self.__el_state.value,
+                    "process_count": 1 + len(children),
+                    "cpu_percent": round(total_cpu_percent, 4),
+                    "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
+                    "memory_vms_mb": round(total_memory_vms / (1024 * 1024), 2),
+                }
+                with self.__lock_for_health_status:
+                    self.__health_status = health_status_data
 
-        except Exception as e:
-            error(f"Error in __state_handler: {e}", message_logger=self._message_logger)
-            event.result = Result(
-                result="failure", error_message=f"Failed to get state: {e}"
-            )
-            await self._reply(event)
+            except Exception as e:
+                error(
+                    f"Error updating health status: {e}",
+                    message_logger=self._message_logger,
+                )
+        debug("__health_status_updater_loop ended", message_logger=self._message_logger)
 
-    async def __discovery_handler(self, event: Event):
-        pass
+    def __start_health_status_updater(self):
+        """Starts the health status updater thread."""
+        info("Starting health status updater", message_logger=self._message_logger)
+        self.health_status_thread = threading.Thread(
+            target=self.__health_status_updater_loop, daemon=True
+        )
+        self.health_status_thread.start()
 
     async def __event_handler(self, event: Event):
         """
@@ -884,7 +927,6 @@ class EventListener:
 
             with self.__atomic_operation_for_incoming_events():
                 if event.event_type == "cumulative":
-                    # Unpack cumulative event
                     for event_data in event.data["events"]:
                         unpacked_event = Event(**event_data)
                         self.__incoming_events.append(unpacked_event)
@@ -922,7 +964,7 @@ class EventListener:
         while not self._shutdown_requested:
             loop.loop_begin()
 
-            if self.__el_state is EventListenerState.RUNNING:
+            if self.__el_state is EventListenerState.STARTED:
                 try:
                     await self._check_local_data()
                 except Exception as e:
@@ -1032,7 +1074,6 @@ class EventListener:
                                     dest_key = (
                                         individual_event.destination_address,
                                         individual_event.destination_port,
-                                        individual_event.destination_endpoint,
                                     )
                                     if dest_key not in events_by_destination:
                                         events_by_destination[dest_key] = []
@@ -1042,7 +1083,6 @@ class EventListener:
                             dest_key = (
                                 event_data["event"].destination_address,
                                 event_data["event"].destination_port,
-                                event_data["event"].destination_endpoint,
                             )
                             if dest_key not in events_by_destination:
                                 events_by_destination[dest_key] = []
@@ -1063,7 +1103,6 @@ class EventListener:
                                     destination=first_event.destination,
                                     destination_address=first_event.destination_address,
                                     destination_port=first_event.destination_port,
-                                    destination_endpoint=first_event.destination_endpoint,
                                     event_type="cumulative",
                                     payload=sum(
                                         e["event"].payload for e in event_group
@@ -1267,7 +1306,6 @@ class EventListener:
         destination: str = None,
         destination_address: str = "0.0.0.0",
         destination_port: int = 8000,
-        destination_endpoint: str = "/event",
         event_type: str = "default",
         id: int = None,
         data: dict = {},
@@ -1281,7 +1319,6 @@ class EventListener:
             destination (str): The name of the destination listener.
             destination_address (str, optional): The IP address of the destination. Defaults to "0.0.0.0".
             destination_port (int, optional): The port of the destination. Defaults to 8000.
-            destination_endpoint (str, optional): The specific API endpoint for the event. Defaults to "/event".
             event_type (str, optional): The type of the event. Defaults to "default".
             id (int, optional): An optional ID for the event. Defaults to None.
             data (dict, optional): A dictionary of data to send with the event. Defaults to {}.
@@ -1299,7 +1336,6 @@ class EventListener:
             destination=destination,
             destination_address=destination_address,
             destination_port=destination_port,
-            destination_endpoint=destination_endpoint,
             event_type=event_type,
             data=data,
             id=id,
@@ -1330,8 +1366,6 @@ class EventListener:
 
         This method ensures symmetrical communication by sending the reply
         to the same endpoint from which the original event was received.
-        It swaps the source and destination and preserves the original
-        `destination_endpoint`.
 
         Args:
             event (Event): The original event being responded to.
@@ -1351,7 +1385,6 @@ class EventListener:
         new_event.destination = event.source
         new_event.destination_address = event.source_address
         new_event.destination_port = event.source_port
-        new_event.destination_endpoint = event.destination_endpoint
         new_event.id = event.id
         new_event.result = event.result
 
@@ -1372,6 +1405,7 @@ class EventListener:
         """
         info("Starting server", message_logger=self._message_logger)
         try:
+            self.__el_state = EventListenerState.STARTING
             self.server = uvicorn.Server(self.config)
 
             # Note: startup event is already defined in __init__
@@ -1396,7 +1430,7 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
                 self._system_ready.set()  # Wysyłamy sygnał do threadów
-                self.__el_state = EventListenerState.RUNNING
+                self.__el_state = EventListenerState.STARTED
 
             self.server.run()
 
