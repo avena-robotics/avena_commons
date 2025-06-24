@@ -24,6 +24,7 @@ class SequenceStepStatus(BaseModel):
 
     step_id: int
     fsm_state: StepState = StepState.PREPARE
+    error_code: int = 0
     retry_count: int = 0
     params: dict[str, Any] = {}  # dane/parametry potrzebne do kroku
 
