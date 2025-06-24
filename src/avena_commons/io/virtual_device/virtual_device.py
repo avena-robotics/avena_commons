@@ -56,9 +56,9 @@ class VirtualDevice:
 
     def _handle_check_state_event(self, event: Event) -> Event:
         """
-        Obsługuje event "check_state" - zwraca aktualny stan urządzenia.
+        Obsługuje event "check_fsm_state" - zwraca aktualny stan urządzenia.
         Args:
-            event: event z typem "check_state"
+            event: event z typem "check_fsm_state"
         Returns:
             Event z wypełnionym polem data zawierającym stan urządzenia
         """
@@ -89,7 +89,7 @@ class VirtualDevice:
 
         except Exception as e:
             error(
-                f"{self.device_name} - Error handling check_state event: {e}",
+                f"{self.device_name} - Error handling check_fsm_state event: {e}",
                 message_logger=self._message_logger,
             )
             event.result = Result(result="error")
@@ -146,8 +146,8 @@ class VirtualDevice:
                     else:
                         result = Result(result="success")
                         event.result = result
-                        # Obsługa standardowego eventu "check_state"
-                        if event.event_type == "check_state":
+                        # Obsługa standardowego eventu "check_fsm_state"
+                        if event.event_type == "check_fsm_state":
                             return self._handle_check_state_event(event)
                         else:
                             return self._instant_execute_event(event)
