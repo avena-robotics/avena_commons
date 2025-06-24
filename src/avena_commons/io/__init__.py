@@ -9,6 +9,7 @@ i scentralizowanym sterowaniem przez IO_server.
 - `device`: Sterowniki urządzeń (I/O, silniki, sensory)
 - `IO_server`: Centralny serwer sterowany zdarzeniami
 - `VirtualDevice`: Klasa bazowa dla interfejsów urządzeń
+- `VirtualDeviceState`: Enum stanu urządzenia wirtualnego
 
 #### Przykład użycia:
 ```python
@@ -38,6 +39,6 @@ await server.start()
 
 from . import bus, device
 from .io_event_listener import IO_server
-from .virtual_device import VirtualDevice
+from .virtual_device import VirtualDevice, VirtualDeviceState
 
-__all__ = ["bus", "device", "IO_server", "VirtualDevice"]
+__all__ = ["bus", "device", "IO_server", "VirtualDevice", "VirtualDeviceState"]

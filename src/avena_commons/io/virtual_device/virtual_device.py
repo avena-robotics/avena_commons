@@ -1,9 +1,17 @@
 from abc import abstractmethod
+from enum import Enum
 from threading import Lock
 
 from avena_commons.event_listener import Event, Result
 from avena_commons.util.logger import debug, error
 from avena_commons.util.measure_time import MeasureTime
+
+
+class VirtualDeviceState(Enum):
+    UNINITIALIZED = 0
+    INITIALIZING = 1
+    WORKING = 2
+    ERROR = 3
 
 
 class VirtualDevice:
@@ -16,6 +24,78 @@ class VirtualDevice:
         self._processing_events_lock = Lock()
         self._finished_events_lock = Lock()
         self._message_logger = kwargs["message_logger"]
+
+    def set_state(self, new_state: VirtualDeviceState):
+        """
+        Ustawia nowy stan urządzenia wirtualnego.
+        Args:
+            new_state: nowy stan urządzenia
+        """
+        try:
+            old_state = self._state
+            self._state = new_state
+            debug(
+                f"{self.device_name} - State changed from {old_state} to {new_state}",
+                message_logger=self._message_logger,
+            )
+        except Exception as e:
+            error(
+                f"{self.device_name} - Error setting state: {e}",
+                message_logger=self._message_logger,
+            )
+
+    @abstractmethod
+    def get_current_state(self):
+        """
+        Abstrakcyjna metoda do pobierania aktualnego stanu urządzenia.
+        Każde urządzenie pochodne musi zaimplementować tę metodę.
+        Returns:
+            Aktualny stan urządzenia (może być VirtualDeviceState lub specyficzny enum urządzenia)
+        """
+        pass
+
+    def _handle_check_state_event(self, event: Event) -> Event:
+        """
+        Obsługuje event "check_state" - zwraca aktualny stan urządzenia.
+        Args:
+            event: event z typem "check_state"
+        Returns:
+            Event z wypełnionym polem data zawierającym stan urządzenia
+        """
+        try:
+            current_state = self.get_current_state()
+
+            # Inicjalizacja data jeśli jest None
+            if event.data is None:
+                event.data = {}
+
+            # Dodanie informacji o stanie do eventu
+            event.data["device_name"] = self.device_name
+            event.data["state"] = (
+                current_state.value
+                if hasattr(current_state, "value")
+                else str(current_state)
+            )
+            event.data["state_name"] = (
+                current_state.name
+                if hasattr(current_state, "name")
+                else str(current_state)
+            )
+
+            debug(
+                f"{self.device_name} - State check: {current_state}",
+                message_logger=self._message_logger,
+            )
+
+        except Exception as e:
+            error(
+                f"{self.device_name} - Error handling check_state event: {e}",
+                message_logger=self._message_logger,
+            )
+            event.result = Result(result="error")
+            event.result.error_message = f"Error getting device state: {e}"
+
+        return event
 
     def _move_event_to_finished(
         self, event_type: str, result: str, result_message: str | None = None
@@ -66,7 +146,11 @@ class VirtualDevice:
                     else:
                         result = Result(result="success")
                         event.result = result
-                        return self._instant_execute_event(event)
+                        # Obsługa standardowego eventu "check_state"
+                        if event.event_type == "check_state":
+                            return self._handle_check_state_event(event)
+                        else:
+                            return self._instant_execute_event(event)
 
     def finished_events(self) -> list[Event]:  # odbior zakonczonych zdarzen
         with self._finished_events_lock:

@@ -27,6 +27,7 @@ Zarządzanie urządzeniami przemysłowymi przez różne protokoły komunikacyjne
 - Typy urządzeń: moduły I/O, sterowniki silników, sensory
 - `IO_server`: Scentralizowane zarządzanie urządzeniami
 - `VirtualDevice`: Interfejsy do symulacji i testowania
+- `VirtualDeviceState`: Enum stanu urządzenia wirtualnego
 
 #### sequence - Maszyny Stanów
 Zarządzanie złożonymi operacjami sekwencyjnymi z logiką ponawiania i obsługą błędów.
