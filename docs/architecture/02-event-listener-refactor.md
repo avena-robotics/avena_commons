@@ -13,6 +13,22 @@ Zmiany koncentrują się w trzech głównych obszarach:
 
 ---
 
+### **2.0. Filozofia Sterowania Maszyną Stanów (FSM): Model Imperatywny**
+
+Przedstawiona poniżej implementacja opiera się na **Modelu Imperatywnym (Sterowanym Komendami)**. W tym podejściu:
+1.  **Orchestrator wysyła jawne komendy** (np. `CMD_INITIALIZE`, `CMD_GRACEFUL_STOP`).
+2.  **Komponent reaguje na te komendy**, wykonując przypisaną do nich logikę.
+3.  Kluczową rolę odgrywają **stany przejściowe** (np. `INITIALIZING`, `STOPPING`). Stanowią one wbudowany mechanizm synchronizacji, informując system, że komponent jest w trakcie wykonywania długotrwałej operacji i nie jest jeszcze gotowy na przyjęcie kolejnych poleceń.
+
+Wybrano ten model zamiast alternatywnego **Modelu Deklaratywnego (Sterowanego Celem)**, w którym Orchestrator ustawiałby stan docelowy (`goal_fsm`), a komponent sam dążyłby do jego osiągnięcia.
+
+**Uzasadnienie wyboru:**
+*   **Prostota:** Model imperatywny jest znacznie prostszy w implementacji i utrzymaniu w klasie bazowej `EventListener`.
+*   **Przejrzystość:** Cała logika sterowania jest jawnie zdefiniowana w scenariuszach Orchestratora, a nie ukryta wewnątrz każdego komponentu.
+*   **Wystarczalność:** Model ten w pełni adresuje problem asynchronicznej natury zmian stanu, co było kluczowym wymaganiem projektowym.
+
+---
+
 #### **2.1. Aktualizacja Maszyny Stanów (FSM)**
 
 Obecna definicja stanów w `event_listener.py` nie jest w pełni zgodna z finalną koncepcją. Należy ją ujednolicić.
@@ -20,6 +36,7 @@ Obecna definicja stanów w `event_listener.py` nie jest w pełni zgodna z finaln
 **Obecna definicja w `EventListenerState`:**
 ```python
 class EventListenerState(Enum):
+    UNKNOWN = -1
     STOPPED = 0
     INITIALIZING = 1
     INITIALIZED = 2
@@ -32,6 +49,7 @@ class EventListenerState(Enum):
 **Proponowana, zgodna z koncepcją, definicja:**
 ```python
 class EventListenerState(Enum):
+    UNKNOWN = -1        # STAN POCZĄTKOWY
     READY = 0           # Zastępuje STOPPED jako stan początkowy po rejestracji
     INITIALIZING = 1    # Bez zmian
     INIT_COMPLETE = 2   # Bardziej precyzyjna nazwa niż INITIALIZED

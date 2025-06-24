@@ -30,17 +30,18 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 
 
 class EventListenerState(Enum):
-    STOPPED = 0
-    INITIALIZING = 1
-    INITIALIZED = 2
-    STARTING = 3
-    STARTED = 4
-    STOPPING = 5
-    ERROR = 256
+    UNKNOWN = -1  # STAN POCZĄTKOWY
+    READY = 0  # Zastępuje STOPPED jako stan początkowy po rejestracji
+    INITIALIZING = 1  # Bez zmian
+    INIT_COMPLETE = 2  # Bardziej precyzyjna nazwa niż INITIALIZED
+    STARTED = 3  # Zastępuje STARTING i STARTED
+    STOPPING = 4  # Bez zmian
+    STOPPED = 5  # Stan pasywny po zatrzymaniu
+    FAULT = 6  # Zastępuje ERROR
 
 
 class EventListener:
-    __el_state: EventListenerState = EventListenerState.STOPPED
+    __fsm_state: EventListenerState = EventListenerState.UNKNOWN
     __name: str
     __address: str = "0.0.0.0"
     __port: int
@@ -173,8 +174,20 @@ class EventListener:
         if self.__discovery_neighbours:
             self.__start_discovering()
 
-        self.__el_state = EventListenerState.INITIALIZED
+        self.fsm_state = EventListenerState.READY
         info(f"Event listener '{name}' initialized", message_logger=message_logger)
+
+    @property
+    def fsm_state(self):
+        return self.__fsm_state
+
+    @fsm_state.setter
+    def fsm_state(self, value: EventListenerState):
+        debug(
+            f"FSM state changed to {value}",
+            message_logger=self._message_logger,
+        )
+        self.__fsm_state = value
 
     @property
     def received_events(self):
@@ -761,8 +774,17 @@ class EventListener:
                 )
                 should_remove = True
                 match event.event_type:
-                    case "set_fsm_state":
-                        pass
+                    case "CMD_INITIALIZE":
+                        await self._handle_initialize_command(event)
+
+                    case "CMD_START":
+                        await self._handle_start_command(event)
+
+                    case "CMD_GRACEFUL_STOP":
+                        await self._handle_stop_command(event)
+
+                    case "CMD_RESET":
+                        await self._handle_reset_command(event)
 
                     case "health_check":
                         if event.result is None:
@@ -887,7 +909,7 @@ class EventListener:
                         continue
 
                 health_status_data = {
-                    "current_fsm": self.__el_state.value,
+                    "current_fsm": self.__fsm_state.name,
                     "process_count": 1 + len(children),
                     "cpu_percent": round(total_cpu_percent, 4),
                     "memory_rss_mb": round(total_memory_rss / (1024 * 1024), 2),
@@ -964,7 +986,7 @@ class EventListener:
         while not self._shutdown_requested:
             loop.loop_begin()
 
-            if self.__el_state is EventListenerState.STARTED:
+            if self.__fsm_state is EventListenerState.STARTED:
                 try:
                     await self._check_local_data()
                 except Exception as e:
@@ -1405,7 +1427,6 @@ class EventListener:
         """
         info("Starting server", message_logger=self._message_logger)
         try:
-            self.__el_state = EventListenerState.STARTING
             self.server = uvicorn.Server(self.config)
 
             # Note: startup event is already defined in __init__
@@ -1430,7 +1451,7 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
                 self._system_ready.set()  # Wysyłamy sygnał do threadów
-                self.__el_state = EventListenerState.STARTED
+                self.__fsm_state = EventListenerState.STARTED
 
             self.server.run()
 
@@ -1594,3 +1615,88 @@ class EventListener:
                 message_logger=self._message_logger,
             )
             return None
+
+    async def _on_initialize(self):
+        """Metoda wywoływana podczas przejścia w stan INITIALIZING.
+        Tu komponent powinien nawiązywać połączenia, alokować zasoby itp."""
+        pass
+
+    async def _on_start(self):
+        """Metoda wywoływana podczas przejścia w stan STARTED.
+        Tu komponent rozpoczyna swoje główne zadania operacyjne."""
+        pass
+
+    async def _on_stop(self):
+        """Metoda wywoływana podczas przejścia w stan STOPPING.
+        Tu komponent finalizuje bieżące zadania przed zatrzymaniem."""
+        pass
+
+    async def _on_reset(self):
+        """Metoda wywoływana po otrzymaniu komendy resetu ze stanu FAULT."""
+        pass
+
+    async def _handle_initialize_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.READY:
+            self.__fsm_state = EventListenerState.INITIALIZING
+            try:
+                await self._on_initialize()
+                self.__fsm_state = EventListenerState.INIT_COMPLETE
+                # TODO: Wysłanie EVENT_INIT_SUCCESS do Orchestratora
+                # await self._event(destination="orchestrator", event_type="EVENT_INIT_SUCCESS", ...)
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                # TODO: Wysłanie EVENT_INIT_FAILURE do Orchestratora
+                error(
+                    f"Initialization failed: {e}", message_logger=self._message_logger
+                )
+        else:
+            warning(
+                f"Received CMD_INITIALIZE in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_start_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.INIT_COMPLETE:
+            self.__fsm_state = EventListenerState.STARTED
+            try:
+                await self._on_start()
+                # TODO: Wysłanie EVENT_START_SUCCESS
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                error(f"Start failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_START in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_stop_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.STARTED:
+            self.__fsm_state = EventListenerState.STOPPING
+            try:
+                await self._on_stop()
+                self.__fsm_state = EventListenerState.STOPPED
+                # TODO: Wysłanie EVENT_STOP_SUCCESS
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                error(f"Stop failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_GRACEFUL_STOP in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_reset_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.FAULT:
+            try:
+                await self._on_reset()
+                self.__fsm_state = EventListenerState.READY
+                # TODO: Wysłanie EVENT_RESET_SUCCESS
+            except Exception as e:
+                # Pozostajemy w stanie FAULT
+                error(f"Reset failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_RESET in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
