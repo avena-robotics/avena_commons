@@ -11,7 +11,7 @@ from avena_commons.util.logger import MessageLogger, debug, error, warning
 from avena_commons.util.measure_time import MeasureTime
 
 
-class Watchdog(EventListener):
+class Orchestrator(EventListener):
     def __init__(
         self,
         name: str,
@@ -20,9 +20,7 @@ class Watchdog(EventListener):
         message_logger: MessageLogger | None = None,
         do_not_load_state: bool = True,
         debug: bool = True,
-        
     ):
-        # TODO: mergowanie konfiguracji generycznej i lokalnych zmian w konfiguracji
         self._message_logger = message_logger
         self._debug = debug
         try:
