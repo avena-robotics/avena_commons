@@ -23,6 +23,7 @@ class VirtualDevice:
         self._finished_events = []
         self._processing_events_lock = Lock()
         self._finished_events_lock = Lock()
+        self._state = VirtualDeviceState.UNINITIALIZED
         self._message_logger = kwargs["message_logger"]
 
     def set_state(self, new_state: VirtualDeviceState):
