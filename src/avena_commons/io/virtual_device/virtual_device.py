@@ -147,8 +147,9 @@ class VirtualDevice:
                     else:
                         result = Result(result="success")
                         event.result = result
+
                         # Obsługa standardowego eventu "check_fsm_state"
-                        if event.event_type == "check_fsm_state":
+                        if event.event_type.endswith("_check_fsm_state"):
                             return self._handle_check_state_event(event)
                         else:
                             return self._instant_execute_event(event)
