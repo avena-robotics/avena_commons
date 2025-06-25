@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "avena_commons"
-version = "1.5.7"
+version = "1.5.8"
 description = "A small utility library for working with Avena Robotics"
 authors = [
     { name = "Avena Robotics", email = "lukasz.lecki@pomagier.info" },
