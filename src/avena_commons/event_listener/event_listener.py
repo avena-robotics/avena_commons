@@ -956,10 +956,11 @@ class EventListener:
         # Initialize aiohttp session
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
-                limit=0,  # No connection limit
-                ttl_dns_cache=300,
-                use_dns_cache=True,
-                force_close=False,
+                limit=100,  # Maksymalnie 100 połączeń łącznie
+                limit_per_host=30,  # Maksymalnie 30 do jednego hosta
+                keepalive_timeout=5,  # Utrzymuj połączenia przez 5s
+                force_close=False,  # Reuse connections
+                enable_cleanup_closed=True,  # Automatyczne czyszczenie
             )
         ) as session:
             while not self._shutdown_requested:
@@ -1066,7 +1067,7 @@ class EventListener:
                                         async with session.post(
                                             url,
                                             json=event.to_dict(),
-                                            timeout=aiohttp.ClientTimeout(total=0.1),
+                                            timeout=aiohttp.ClientTimeout(total=0.025),
                                         ) as response:
                                             if response.status == 200:
                                                 self.__sended_events += 1
