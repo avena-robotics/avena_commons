@@ -27,8 +27,7 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 # from avena_commons.util.measure_time import MeasureTime
 from .event import Event
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-TEMP_DIR = PROJECT_ROOT / "temp"
+TEMP_DIR = Path("temp")  # Relatywna ścieżka do bieżącego katalogu roboczego
 
 
 class EventListenerState(Enum):
@@ -102,6 +101,9 @@ class EventListener:
             f"Initializing event listener '{name}' on {address}:{port}",
             message_logger=message_logger,
         )
+        # Upewnij się, że katalog temp istnieje
+        TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
         self.__queue_file_path = TEMP_DIR / f"{name}_state.json"
         self.__config_file_path = f"{name}_config.json"
         self.__name = name.lower()
@@ -273,7 +275,7 @@ class EventListener:
             Any: Serialized value ready for JSON format
 
         Note:
-            Handles serialization of Pydantic objects, dictionaries, and lists
+            Handles serialization of Pydantic objects, dictionaries, and lists, datetime objects, and Enum values
         """
 
         if isinstance(value, BaseModel):
@@ -282,7 +284,10 @@ class EventListener:
             return {k: self._serialize_value(v) for k, v in value.items()}
         elif isinstance(value, list):
             return [self._serialize_value(item) for item in value]
-
+        elif isinstance(value, datetime):
+            return value.isoformat()
+        elif isinstance(value, Enum):
+            return value.value
         return value
 
     def __save_queues(self):
@@ -314,13 +319,18 @@ class EventListener:
                     "State serialization completed", message_logger=self._message_logger
                 )
 
+                # Flatten processing_events_dict to a list of events
+                processing_events_list = []
+                for event_type_dict in self._processing_events_dict.values():
+                    for id_dict in event_type_dict.values():
+                        for event in id_dict.values():
+                            processing_events_list.append(event.to_dict())
+
                 queues_data = {
                     "incoming_events": [
                         event.to_dict() for event in self.__incoming_events
                     ],
-                    "processing_events": [
-                        event.to_dict() for event in self._processing_events_dict
-                    ],
+                    "processing_events": processing_events_list,
                     "events_to_send": [
                         event_data["event"].to_dict()
                         for event_data in self.__events_to_send
@@ -340,7 +350,7 @@ class EventListener:
 
         except Exception as e:
             error(
-                f"Błąd podczas zapisywania kolejek: {e}",
+                f"Błąd podczas zapisywania kolejek: {e} {self.__incoming_events} {self._processing_events_dict} {self.__events_to_send}",
                 message_logger=self._message_logger,
             )
             error(
@@ -366,6 +376,37 @@ class EventListener:
             for event_data in queues_data.get("incoming_events", []):
                 event = Event(**event_data)
                 self.__incoming_events.append(event)
+
+            # Rekonstrukcja processing_events_dict
+            for event_data in queues_data.get("processing_events", []):
+                event = Event(**event_data)
+                event_type = event.event_type
+                event_id = event.id
+                event_timestamp = event.timestamp.isoformat()
+
+                if event_type not in self._processing_events_dict:
+                    self._processing_events_dict[event_type] = {}
+                if event_id not in self._processing_events_dict[event_type]:
+                    self._processing_events_dict[event_type][event_id] = {}
+
+                self._processing_events_dict[event_type][event_id][event_timestamp] = (
+                    event
+                )
+
+            # Rekonstrukcja events_to_send
+            for event_data in queues_data.get("events_to_send", []):
+                if isinstance(event_data, dict) and "event" in event_data:
+                    # Nowy format z retry_count
+                    event = Event(**event_data["event"])
+                    retry_count = event_data.get("retry_count", 0)
+                    self.__events_to_send.append({
+                        "event": event,
+                        "retry_count": retry_count,
+                    })
+                else:
+                    # Stary format - tylko event
+                    event = Event(**event_data)
+                    self.__events_to_send.append({"event": event, "retry_count": 0})
 
             # Wczytywanie stanu
             state_data = queues_data.get("state", {})
@@ -1234,7 +1275,6 @@ class EventListener:
         to_be_processed: bool = True,
         maximum_processing_time: float = 20,
     ) -> Event:
-        current_time = datetime.now()
         event = Event(
             source=self.__name,
             source_address=self.__address,
@@ -1248,7 +1288,6 @@ class EventListener:
             to_be_processed=to_be_processed,
             is_processing=False,
             maximum_processing_time=maximum_processing_time,
-            timestamp=current_time,
         )
 
         try:
@@ -1358,20 +1397,11 @@ class EventListener:
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                # Add to the optimized dictionary structure
                 event_type = event.event_type
                 event_id = event.id
-                event_timestamp = event.timestamp
+                event_timestamp = event.timestamp.isoformat()
 
-                if event_type not in self._processing_events_dict:
-                    self._processing_events_dict[event_type] = {}
-
-                if event_id not in self._processing_events_dict[event_type]:
-                    self._processing_events_dict[event_type][event_id] = {}
-
-                self._processing_events_dict[event_type][event_id][event_timestamp] = (
-                    event
-                )
+                self._processing_events_dict[event_timestamp] = event
 
                 self._event_add_to_processing_debug(event)
             return True
@@ -1389,98 +1419,19 @@ class EventListener:
         self, event_type: str, id: int = None, timestamp: datetime = None
     ) -> Event | None:
         try:
+            # Obsługa zarówno datetime jak i string timestamp
+            timestamp_key = timestamp.isoformat()
+
             debug(
                 f"Searching for event for remove in processing queue: id={id} event_type={event_type} timestamp={timestamp}",
                 message_logger=self._message_logger,
             )
 
             with self.__atomic_operation_for_processing_events():
-                # Check if event_type exists in dictionary
-                if event_type not in self._processing_events_dict:
-                    error(
-                        f"Event type {event_type} not found",
-                        message_logger=self._message_logger,
-                    )
-                    return None
-
-                # If we have an ID, use it for faster lookup
-                if id is not None:
-                    if id not in self._processing_events_dict[event_type]:
-                        error(
-                            f"Event id {id} not found",
-                            message_logger=self._message_logger,
-                        )
-                        return None
-
-                    # If we have a timestamp, direct lookup
-                    if timestamp is not None:
-                        if timestamp in self._processing_events_dict[event_type][id]:
-                            event = self._processing_events_dict[event_type][id][
-                                timestamp
-                            ]
-                            # Remove from dictionary
-                            del self._processing_events_dict[event_type][id][timestamp]
-
-                            # Cleanup empty dictionaries
-                            if not self._processing_events_dict[event_type][id]:
-                                del self._processing_events_dict[event_type][id]
-                            if not self._processing_events_dict[event_type]:
-                                del self._processing_events_dict[event_type]
-
-                            self._event_find_and_remove_debug(event)
-                            return event
-                    else:
-                        # If no timestamp, take the first event for this id
-                        timestamps = list(
-                            self._processing_events_dict[event_type][id].keys()
-                        )
-                        if timestamps:
-                            first_timestamp = timestamps[0]
-                            event = self._processing_events_dict[event_type][id][
-                                first_timestamp
-                            ]
-                            # Remove from dictionary
-                            del self._processing_events_dict[event_type][id][
-                                first_timestamp
-                            ]
-
-                            # Cleanup empty dictionaries
-                            if not self._processing_events_dict[event_type][id]:
-                                del self._processing_events_dict[event_type][id]
-                            if not self._processing_events_dict[event_type]:
-                                del self._processing_events_dict[event_type]
-
-                            self._event_find_and_remove_debug(event)
-                            return event
-                else:
-                    # No ID provided, need to search through all IDs
-                    for event_id in list(
-                        self._processing_events_dict[event_type].keys()
-                    ):
-                        for event_timestamp in list(
-                            self._processing_events_dict[event_type][event_id].keys()
-                        ):
-                            if timestamp is None or event_timestamp == timestamp:
-                                event = self._processing_events_dict[event_type][
-                                    event_id
-                                ][event_timestamp]
-                                # Remove from dictionary
-                                del self._processing_events_dict[event_type][event_id][
-                                    event_timestamp
-                                ]
-
-                                # Cleanup empty dictionaries
-                                if not self._processing_events_dict[event_type][
-                                    event_id
-                                ]:
-                                    del self._processing_events_dict[event_type][
-                                        event_id
-                                    ]
-                                if not self._processing_events_dict[event_type]:
-                                    del self._processing_events_dict[event_type]
-
-                                self._event_find_and_remove_debug(event)
-                                return event
+                event = self._processing_events_dict[timestamp_key]
+                del self._processing_events_dict[timestamp_key]
+                self._event_find_and_remove_debug(event)
+                return event
 
             error(
                 f"Event not found: id={id} event_type={event_type} timestamp={timestamp}",

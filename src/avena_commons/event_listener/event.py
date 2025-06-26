@@ -205,4 +205,4 @@ class Event(BaseModel):
             str: Formatted text containing basic event information:
                 source, destination, event type, data and result
         """
-        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, payload={self.payload}, event_type={self.event_type}, data={self.data}, timestamp={self.timestamp}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
+        return f"Event(source={self.source}, source_address={self.source_address}, source_port={self.source_port}, destination={self.destination}, destination_address={self.destination_address}, destination_port={self.destination_port}, payload={self.payload}, event_type={self.event_type}, data={self.data}, timestamp={str(self.timestamp)}, MPT={self.maximum_processing_time:.2f}) result={self.result}"
