@@ -61,14 +61,10 @@ class IO_server(EventListener):
                 f"Analyzing event {event.event_type} from {event.source}",
                 message_logger=self._message_logger,
             )
-        match event.source:
-            case "munchies_algo":
-                add_to_processing = await self.device_selector(event)
-                if add_to_processing:
-                    self._add_to_processing(event)
-                return True
-            case _:
-                raise ValueError(f"Invalid event source: {event.source}")
+        add_to_processing = await self.device_selector(event)
+        if add_to_processing:
+            self._add_to_processing(event)
+        return True
 
     async def device_selector(self, event: Event) -> bool:
         """
@@ -222,8 +218,7 @@ class IO_server(EventListener):
                                             # Find and remove the event from processing
                                             event: Event = (
                                                 self._find_and_remove_processing_event(
-                                                    event_type=event.event_type,
-                                                    timestamp=event.timestamp,
+                                                    event
                                                 )
                                             )
                                             if event:

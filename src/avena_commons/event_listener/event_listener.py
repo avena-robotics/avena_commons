@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
-import requests
+
+# import requests
 import uvicorn
 import uvicorn.config
 import uvicorn.server
@@ -21,9 +22,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
-from avena_commons.util.logger import MessageLogger, debug, error, info, warning
-from avena_commons.util.measure_time import MeasureTime
+from avena_commons.util.logger import MessageLogger, debug, error, info
 
+# from avena_commons.util.measure_time import MeasureTime
 from .event import Event
 
 TEMP_DIR = Path("temp")  # Relatywna ścieżka do bieżącego katalogu roboczego
@@ -1396,19 +1397,9 @@ class EventListener:
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                event_type = event.event_type
-                event_id = event.id
                 event_timestamp = event.timestamp.isoformat()
 
-                if event_type not in self._processing_events_dict:
-                    self._processing_events_dict[event_type] = {}
-
-                if event_id not in self._processing_events_dict[event_type]:
-                    self._processing_events_dict[event_type][event_id] = {}
-
-                self._processing_events_dict[event_type][event_id][event_timestamp] = (
-                    event
-                )
+                self._processing_events_dict[event_timestamp] = event
 
                 self._event_add_to_processing_debug(event)
             return True
@@ -1422,124 +1413,34 @@ class EventListener:
             )
             return False
 
-    def _find_and_remove_processing_event(
-        self, event_type: str, id: int = None, timestamp: datetime = None
-    ) -> Event | None:
+    # def _find_and_remove_processing_event(
+    #     self, event_type: str, id: int = None, timestamp: datetime = None
+    # ) -> Event | None:
+    def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
-            timestamp_key = timestamp.isoformat() if timestamp else None
+            # Obsługa zarówno datetime jak i string timestamp
+            timestamp_key = event.timestamp.isoformat()
 
             debug(
-                f"Searching for event for remove in processing queue: id={id} event_type={event_type} timestamp={timestamp}",
+                f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
                 message_logger=self._message_logger,
             )
 
             with self.__atomic_operation_for_processing_events():
-                # Check if event_type exists in dictionary
-                if event_type not in self._processing_events_dict:
-                    error(
-                        f"Event type {event_type} not found",
-                        message_logger=self._message_logger,
-                    )
-                    return None
+                event = self._processing_events_dict[timestamp_key]
+                del self._processing_events_dict[timestamp_key]
+                self._event_find_and_remove_debug(event)
+                return event
 
-                # If we have an ID, use it for faster lookup
-                if id is not None:
-                    if id not in self._processing_events_dict[event_type]:
-                        error(
-                            f"Event id {id} not found",
-                            message_logger=self._message_logger,
-                        )
-                        return None
-
-                    # If we have a timestamp, direct lookup
-
-                    if timestamp_key is not None:
-                        if (
-                            timestamp_key
-                            in self._processing_events_dict[event_type][id]
-                        ):
-                            event = self._processing_events_dict[event_type][id][
-                                timestamp_key
-                            ]
-                            del self._processing_events_dict[event_type][id][
-                                timestamp_key
-                            ]
-
-                            # Cleanup empty dictionaries
-                            if not self._processing_events_dict[event_type][id]:
-                                del self._processing_events_dict[event_type][id]
-                            if not self._processing_events_dict[event_type]:
-                                del self._processing_events_dict[event_type]
-
-                            self._event_find_and_remove_debug(event)
-                            return event
-                    else:
-                        # If no timestamp, take the first event for this id
-                        timestamps = list(
-                            self._processing_events_dict[event_type][id].keys()
-                        )
-                        if timestamps:
-                            first_timestamp = timestamps[0]
-                            event = self._processing_events_dict[event_type][id][
-                                first_timestamp
-                            ]
-                            # Remove from dictionary
-                            del self._processing_events_dict[event_type][id][
-                                first_timestamp
-                            ]
-
-                            # Cleanup empty dictionaries
-                            if not self._processing_events_dict[event_type][id]:
-                                del self._processing_events_dict[event_type][id]
-                            if not self._processing_events_dict[event_type]:
-                                del self._processing_events_dict[event_type]
-
-                            self._event_find_and_remove_debug(event)
-                            return event
-                else:
-                    # No ID provided, need to search through all IDs
-                    for event_id in list(
-                        self._processing_events_dict[event_type].keys()
-                    ):
-                        for event_timestamp in list(
-                            self._processing_events_dict[event_type][event_id].keys()
-                        ):
-                            if timestamp is None or event_timestamp == timestamp:
-                                event = self._processing_events_dict[event_type][
-                                    event_id
-                                ][event_timestamp]
-                                # Remove from dictionary
-                                del self._processing_events_dict[event_type][event_id][
-                                    event_timestamp
-                                ]
-
-                                # Cleanup empty dictionaries
-                                if not self._processing_events_dict[event_type][
-                                    event_id
-                                ]:
-                                    del self._processing_events_dict[event_type][
-                                        event_id
-                                    ]
-                                if not self._processing_events_dict[event_type]:
-                                    del self._processing_events_dict[event_type]
-
-                                self._event_find_and_remove_debug(event)
-                                return event
-
-            error(
-                f"Event not found: id={id} event_type={event_type} timestamp={timestamp}",
-                message_logger=self._message_logger,
-            )
-            return None
         except TimeoutError as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception TimeoutError: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None
         except Exception as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None

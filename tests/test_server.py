@@ -37,9 +37,7 @@ class TestServer(EventListener):
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
-        self._find_and_remove_processing_event(
-            event.event_type, event.id, event.timestamp
-        )
+        self._find_and_remove_processing_event(event)
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
