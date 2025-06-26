@@ -14,7 +14,6 @@ from typing import Any
 
 import aiohttp
 import psutil
-import requests
 import uvicorn
 import uvicorn.config
 import uvicorn.server
@@ -23,7 +22,6 @@ from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
-from avena_commons.util.measure_time import MeasureTime
 
 from .event import Event, Result
 
@@ -32,14 +30,18 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 
 
 class EventListenerState(Enum):
-    IDLE = 0
-    INITIALIZED = 1
-    RUNNING = 2
-    ERROR = 256
+    UNKNOWN = -1  # STAN POCZĄTKOWY
+    READY = 0  # Zastępuje STOPPED jako stan początkowy po rejestracji
+    INITIALIZING = 1  # Bez zmian
+    INIT_COMPLETE = 2  # Bardziej precyzyjna nazwa niż INITIALIZED
+    STARTED = 3  # Zastępuje STARTING i STARTED
+    STOPPING = 4  # Bez zmian
+    STOPPED = 5  # Stan pasywny po zatrzymaniu
+    FAULT = 6  # Zastępuje ERROR
 
 
 class EventListener:
-    __el_state: EventListenerState = EventListenerState.IDLE
+    __fsm_state: EventListenerState = EventListenerState.UNKNOWN
     __name: str
     __address: str = "0.0.0.0"
     __port: int
@@ -132,6 +134,11 @@ class EventListener:
         self._system_ready = threading.Event()
         self.__discovery_neighbours = discovery_neighbours
 
+        # Inicjalizacja psutil
+        self.__main_process = psutil.Process(os.getpid())
+        self.__main_process.cpu_percent()  # Inicjalizacja
+        self.__health_status = {}
+
         # Wczytanie konfiguracji
         self.__load_configuration()
 
@@ -166,16 +173,6 @@ class EventListener:
             await self.__event_handler(event)
             return {"status": "ok"}
 
-        @self.app.post("/state")
-        async def state(event: Event):
-            await self.__state_handler(event)
-            return {"status": "ok"}
-
-        @self.app.post("/discovery")
-        async def discovery(event: Event):
-            await self.__discovery_handler(event)
-            return {"status": "ok"}
-
         # Startujemy thready - będą czekać na sygnał
         self.__start_analysis()
         self.__start_send_event()
@@ -185,8 +182,20 @@ class EventListener:
         if self.__discovery_neighbours:
             self.__start_discovering()
 
-        self.__el_state = EventListenerState.INITIALIZED
+        self.fsm_state = EventListenerState.READY
         info(f"Event listener '{name}' initialized", message_logger=message_logger)
+
+    @property
+    def fsm_state(self):
+        return self.__fsm_state
+
+    @fsm_state.setter
+    def fsm_state(self, value: EventListenerState):
+        debug(
+            f"FSM state changed to {value}",
+            message_logger=self._message_logger,
+        )
+        self.__fsm_state = value
 
     @property
     def received_events(self):
@@ -792,7 +801,48 @@ class EventListener:
                     f"Analyzing incoming event: {event}",
                     message_logger=self._message_logger,
                 )
-                should_remove = await self._analyze_event(event)
+                should_remove = True
+                match event.event_type:
+                    case "CMD_INITIALIZE":
+                        await self._handle_initialize_command(event)
+
+                    case "CMD_START":
+                        await self._handle_start_command(event)
+
+                    case "CMD_GRACEFUL_STOP":
+                        await self._handle_stop_command(event)
+
+                    case "CMD_RESET":
+                        await self._handle_reset_command(event)
+
+                    case "health_check":
+                        if event.result is None:
+                            try:
+                                with self.__lock_for_health_status:
+                                    health_status_copy = self.__health_status.copy()
+                                event.result = Result(
+                                    result="success", data=health_status_copy
+                                )
+                                await self._reply(event)
+
+                            except Exception as e:
+                                error(
+                                    f"Error in __state_handler: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                event.result = Result(
+                                    result="failure",
+                                    error_message=f"Failed to get state: {e}",
+                                )
+                                await self._reply(event)
+                        else:
+                            should_remove = await self._analyze_event(event)
+
+                    case "discovery":
+                        pass
+
+                    case _:
+                        should_remove = await self._analyze_event(event)
                 if not should_remove:
                     new_queue.append(event)
             except Exception as e:
@@ -884,7 +934,6 @@ class EventListener:
 
             with self.__atomic_operation_for_incoming_events():
                 if event.event_type == "cumulative":
-                    # Unpack cumulative event
                     for event_data in event.data["events"]:
                         unpacked_event = Event(**event_data)
                         self.__incoming_events.append(unpacked_event)
@@ -922,7 +971,7 @@ class EventListener:
         while not self._shutdown_requested:
             loop.loop_begin()
 
-            if self.__el_state is EventListenerState.RUNNING:
+            if self.__fsm_state is EventListenerState.STARTED:
                 try:
                     await self._check_local_data()
                 except Exception as e:
@@ -1034,7 +1083,6 @@ class EventListener:
                                     dest_key = (
                                         individual_event.destination_address,
                                         individual_event.destination_port,
-                                        individual_event.destination_endpoint,
                                     )
                                     if dest_key not in events_by_destination:
                                         events_by_destination[dest_key] = []
@@ -1044,7 +1092,6 @@ class EventListener:
                             dest_key = (
                                 event_data["event"].destination_address,
                                 event_data["event"].destination_port,
-                                event_data["event"].destination_endpoint,
                             )
                             if dest_key not in events_by_destination:
                                 events_by_destination[dest_key] = []
@@ -1065,7 +1112,6 @@ class EventListener:
                                     destination=first_event.destination,
                                     destination_address=first_event.destination_address,
                                     destination_port=first_event.destination_port,
-                                    destination_endpoint=first_event.destination_endpoint,
                                     event_type="cumulative",
                                     payload=sum(
                                         e["event"].payload for e in event_group
@@ -1269,7 +1315,6 @@ class EventListener:
         destination: str = None,
         destination_address: str = "0.0.0.0",
         destination_port: int = 8000,
-        destination_endpoint: str = "/event",
         event_type: str = "default",
         id: int = None,
         data: dict = {},
@@ -1283,7 +1328,6 @@ class EventListener:
             destination (str): The name of the destination listener.
             destination_address (str, optional): The IP address of the destination. Defaults to "0.0.0.0".
             destination_port (int, optional): The port of the destination. Defaults to 8000.
-            destination_endpoint (str, optional): The specific API endpoint for the event. Defaults to "/event".
             event_type (str, optional): The type of the event. Defaults to "default".
             id (int, optional): An optional ID for the event. Defaults to None.
             data (dict, optional): A dictionary of data to send with the event. Defaults to {}.
@@ -1301,7 +1345,6 @@ class EventListener:
             destination=destination,
             destination_address=destination_address,
             destination_port=destination_port,
-            destination_endpoint=destination_endpoint,
             event_type=event_type,
             data=data,
             id=id,
@@ -1332,8 +1375,6 @@ class EventListener:
 
         This method ensures symmetrical communication by sending the reply
         to the same endpoint from which the original event was received.
-        It swaps the source and destination and preserves the original
-        `destination_endpoint`.
 
         Args:
             event (Event): The original event being responded to.
@@ -1353,7 +1394,6 @@ class EventListener:
         new_event.destination = event.source
         new_event.destination_address = event.source_address
         new_event.destination_port = event.source_port
-        new_event.destination_endpoint = event.destination_endpoint
         new_event.id = event.id
         new_event.result = event.result
 
@@ -1398,7 +1438,7 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
                 self._system_ready.set()  # Wysyłamy sygnał do threadów
-                self.__el_state = EventListenerState.RUNNING
+                self.__fsm_state = EventListenerState.STARTED
 
             self.server.run()
 
@@ -1640,3 +1680,88 @@ class EventListener:
             time.sleep(1.0 / self.__state_update_frequency)
 
         debug("System state update loop ended", message_logger=self._message_logger)
+
+    async def _on_initialize(self):
+        """Metoda wywoływana podczas przejścia w stan INITIALIZING.
+        Tu komponent powinien nawiązywać połączenia, alokować zasoby itp."""
+        pass
+
+    async def _on_start(self):
+        """Metoda wywoływana podczas przejścia w stan STARTED.
+        Tu komponent rozpoczyna swoje główne zadania operacyjne."""
+        pass
+
+    async def _on_stop(self):
+        """Metoda wywoływana podczas przejścia w stan STOPPING.
+        Tu komponent finalizuje bieżące zadania przed zatrzymaniem."""
+        pass
+
+    async def _on_reset(self):
+        """Metoda wywoływana po otrzymaniu komendy resetu ze stanu FAULT."""
+        pass
+
+    async def _handle_initialize_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.READY:
+            self.__fsm_state = EventListenerState.INITIALIZING
+            try:
+                await self._on_initialize()
+                self.__fsm_state = EventListenerState.INIT_COMPLETE
+                # TODO: Wysłanie EVENT_INIT_SUCCESS do Orchestratora
+                # await self._event(destination="orchestrator", event_type="EVENT_INIT_SUCCESS", ...)
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                # TODO: Wysłanie EVENT_INIT_FAILURE do Orchestratora
+                error(
+                    f"Initialization failed: {e}", message_logger=self._message_logger
+                )
+        else:
+            warning(
+                f"Received CMD_INITIALIZE in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_start_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.INIT_COMPLETE:
+            self.__fsm_state = EventListenerState.STARTED
+            try:
+                await self._on_start()
+                # TODO: Wysłanie EVENT_START_SUCCESS
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                error(f"Start failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_START in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_stop_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.STARTED:
+            self.__fsm_state = EventListenerState.STOPPING
+            try:
+                await self._on_stop()
+                self.__fsm_state = EventListenerState.STOPPED
+                # TODO: Wysłanie EVENT_STOP_SUCCESS
+            except Exception as e:
+                self.__fsm_state = EventListenerState.FAULT
+                error(f"Stop failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_GRACEFUL_STOP in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )
+
+    async def _handle_reset_command(self, event: Event):
+        if self.__fsm_state == EventListenerState.FAULT:
+            try:
+                await self._on_reset()
+                self.__fsm_state = EventListenerState.READY
+                # TODO: Wysłanie EVENT_RESET_SUCCESS
+            except Exception as e:
+                # Pozostajemy w stanie FAULT
+                error(f"Reset failed: {e}", message_logger=self._message_logger)
+        else:
+            warning(
+                f"Received CMD_RESET in unexpected state: {self.__fsm_state.name}",
+                message_logger=self._message_logger,
+            )

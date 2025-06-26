@@ -4,11 +4,11 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from avena_commons.event_listener import Event, EventListener
+from avena_commons.orchestrator.orchestrator import Orchestrator
 from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
-from avena_commons.watchdog.watchdog import Watchdog
 
 
-class TestWatchdog(Watchdog):
+class TestOrchestrator(Orchestrator):
     def __init__(
         self,
         name: str,
@@ -28,9 +28,11 @@ class TestWatchdog(Watchdog):
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
-        self._find_and_remove_processing_event(
-            event.event_type, event.id, event.timestamp
-        )
+        match event.event_type:
+            case "health_check":
+                pass
+            case _:
+                pass
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
@@ -41,7 +43,6 @@ class TestWatchdog(Watchdog):
                 destination=key,
                 destination_address=client_address,
                 destination_port=client_port,
-                destination_endpoint="/state",
                 event_type="health_check",
                 data={},
                 to_be_processed=False,
@@ -57,20 +58,19 @@ class TestWatchdog(Watchdog):
 if __name__ == "__main__":
     temp_path = os.path.abspath("temp")
     message_logger = MessageLogger(
-        filename=f"{temp_path}/test_watchdog.log",
+        filename=f"{temp_path}/test_orchestrator.log",
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
     # message_logger = None
     port = 9500
     try:
-        app = TestWatchdog(
-            name=f"test_watchdog",
+        app = TestOrchestrator(
+            name=f"test_orchestrator",
             address="127.0.0.1",
             port=port,
             message_logger=message_logger,
             debug=True,
         )
-        # app.start()
 
     except KeyboardInterrupt:
         pass

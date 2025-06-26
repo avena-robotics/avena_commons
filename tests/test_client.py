@@ -347,7 +347,7 @@ if __name__ == "__main__":
         "--clients",
         type=int,
         default=3,
-        help="test clients number (default: 10)",
+        help="test clients number (default: 3)",
     )
 
     args = parser.parse_args()
