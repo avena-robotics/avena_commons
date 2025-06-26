@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from avena_commons.event_listener import Result
 from avena_commons.util.logger import MessageLogger, error, info
 
 from .step_state import StepState
@@ -23,6 +24,7 @@ class SequenceStepStatus(BaseModel):
 
     step_id: int
     fsm_state: StepState = StepState.PREPARE
+    error_code: int = 0
     retry_count: int = 0
     params: dict[str, Any] = {}  # dane/parametry potrzebne do kroku
 
@@ -194,7 +196,7 @@ class Sequence(BaseModel):
     def process_event(
         self,
         produkt_id: int,
-        result_value: str,
+        result: Result,
         message_logger: MessageLogger | None = None,
     ) -> None:
         """Obsługa zdarzeń dla sekwencji."""
@@ -202,11 +204,16 @@ class Sequence(BaseModel):
         old_state = step_status.fsm_state
 
         # Obsługa różnych typów zdarzeń
-        if result_value == "success":
+        if result.result == "success":
             step_status.fsm_state = StepState.DONE
-        elif result_value == "failure":
+        elif result.result == "failure":
             step_status.fsm_state = StepState.ERROR
-        elif result_value == "test_failed":
+            step_status.error_code = result.error_code
+            error(
+                f"Wystapil blad podczas wykonywania kroku {step_status.step_id} sekwencji {self.sequence_enum}. Produkt ID: {produkt_id}. Error code: {result.error_code}",
+                message_logger=message_logger,
+            )
+        elif result.result == "test_failed":
             step_status.fsm_state = StepState.TEST_FAILED
         if produkt_id != self.produkt_id:
             error(
@@ -250,8 +257,8 @@ class Sequence(BaseModel):
         message_logger: MessageLogger | None = None,
     ) -> None:
         """Zakończenie kroku."""
-        step_status.fsm_state = StepFsmState.ERROR
-        self._log_state_change(StepFsmState.ERROR, message_logger)
+        step_status.fsm_state = StepState.ERROR
+        self._log_state_change(StepState.ERROR, message_logger)
 
     def _log_state_change(
         self, state: StepState, message_logger: MessageLogger | None = None

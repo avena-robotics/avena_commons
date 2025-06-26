@@ -1,14 +1,15 @@
 import argparse
 import asyncio
-import logging
+
+# import logging
 import os
 import signal
 import sys
 import threading
 import time
-from multiprocessing import Event, Process, Queue
+from multiprocessing import Event, Process
 
-import uvicorn
+# import uvicorn
 
 # Konfiguracja logowania
 # logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -18,7 +19,6 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 from avena_commons.event_listener import (
     Event,
     EventListener,
-    EventListenerState,
     Result,
 )
 from avena_commons.util.logger import (
