@@ -218,8 +218,7 @@ class IO_server(EventListener):
                                             # Find and remove the event from processing
                                             event: Event = (
                                                 self._find_and_remove_processing_event(
-                                                    event_type=event.event_type,
-                                                    timestamp=event.timestamp,
+                                                    event
                                                 )
                                             )
                                             if event:

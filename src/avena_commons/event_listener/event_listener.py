@@ -1397,8 +1397,6 @@ class EventListener:
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                event_type = event.event_type
-                event_id = event.id
                 event_timestamp = event.timestamp.isoformat()
 
                 self._processing_events_dict[event_timestamp] = event
@@ -1415,15 +1413,16 @@ class EventListener:
             )
             return False
 
-    def _find_and_remove_processing_event(
-        self, event_type: str, id: int = None, timestamp: datetime = None
-    ) -> Event | None:
+    # def _find_and_remove_processing_event(
+    #     self, event_type: str, id: int = None, timestamp: datetime = None
+    # ) -> Event | None:
+    def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
             # Obsługa zarówno datetime jak i string timestamp
-            timestamp_key = timestamp.isoformat()
+            timestamp_key = event.timestamp.isoformat()
 
             debug(
-                f"Searching for event for remove in processing queue: id={id} event_type={event_type} timestamp={timestamp}",
+                f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
                 message_logger=self._message_logger,
             )
 
@@ -1433,20 +1432,15 @@ class EventListener:
                 self._event_find_and_remove_debug(event)
                 return event
 
-            error(
-                f"Event not found: id={id} event_type={event_type} timestamp={timestamp}",
-                message_logger=self._message_logger,
-            )
-            return None
         except TimeoutError as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception TimeoutError: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None
         except Exception as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None

@@ -201,9 +201,7 @@ class TestEventListener:
         assert len(listener._processing_events) == 1
 
         # Find and remove by event_type and id
-        found_event = listener._find_and_remove_processing_event(
-            event_type="test_remove", id=12345
-        )
+        found_event = listener._find_and_remove_processing_event(test_event)
 
         assert found_event == test_event
         assert len(listener._processing_events) == 0
@@ -215,7 +213,7 @@ class TestEventListener:
 
         # Try to find non-existent event
         found_event = listener._find_and_remove_processing_event(
-            event_type="non_existent", id=99999
+            Event(event_type="non_existent", id=99999)
         )
 
         assert found_event is None
