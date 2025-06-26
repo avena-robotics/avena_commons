@@ -50,7 +50,7 @@ class EventListener:
     __discovery_neighbours = False
 
     __incoming_events: list[Event] = []
-    _processing_events_dict: dict = {}  # Structure: {event_type: {id: {timestamp: event}}}
+    _processing_events_dict: dict = {}  # Structure: {timestamp: event}
     __events_to_send: list[
         dict
     ] = []  # Lista słowników {event: Event, retry_count: int}
@@ -340,10 +340,8 @@ class EventListener:
 
                 # Flatten processing_events_dict to a list of events
                 processing_events_list = []
-                for event_type_dict in self._processing_events_dict.values():
-                    for id_dict in event_type_dict.values():
-                        for event in id_dict.values():
-                            processing_events_list.append(event.to_dict())
+                for event in self._processing_events_dict.values():
+                    processing_events_list.append(event.to_dict())
 
                 queues_data = {
                     "incoming_events": [
@@ -399,18 +397,8 @@ class EventListener:
             # Rekonstrukcja processing_events_dict
             for event_data in queues_data.get("processing_events", []):
                 event = Event(**event_data)
-                event_type = event.event_type
-                event_id = event.id
                 event_timestamp = event.timestamp.isoformat()
-
-                if event_type not in self._processing_events_dict:
-                    self._processing_events_dict[event_type] = {}
-                if event_id not in self._processing_events_dict[event_type]:
-                    self._processing_events_dict[event_type][event_id] = {}
-
-                self._processing_events_dict[event_type][event_id][event_timestamp] = (
-                    event
-                )
+                self._processing_events_dict[event_timestamp] = event
 
             # Rekonstrukcja events_to_send
             for event_data in queues_data.get("events_to_send", []):
@@ -452,7 +440,7 @@ class EventListener:
     def _event_find_and_remove_debug(self, event: Event):
         processing_time = time.time() - event.timestamp.timestamp()
         if processing_time < event.maximum_processing_time:
-            info(
+            debug(
                 f"Event find and remove from processing: source={event.source} destination={event.destination} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} processing_time={processing_time:.2f}s.",
                 message_logger=self._message_logger,
             )
@@ -481,7 +469,7 @@ class EventListener:
                     message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
             else:
                 message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}{event.destination_endpoint}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
-            debug(
+            info(
                 message,
                 message_logger=self._message_logger,
             )
@@ -493,7 +481,7 @@ class EventListener:
                 message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
         else:
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
-        debug(
+        info(
             message,
             message_logger=self._message_logger,
         )
