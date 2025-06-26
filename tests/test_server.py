@@ -73,14 +73,14 @@ if __name__ == "__main__":
         "-c",
         "--clients",
         type=int,
-        default=1,
+        default=3,
         help="test clients number (default: 1)",
     )
     parser.add_argument(
         "-p",
         "--payload",
         type=int,
-        default=1,
+        default=3,
         help="payload size (default: 1)",
     )
     args = parser.parse_args()
@@ -90,12 +90,6 @@ if __name__ == "__main__":
         filename=f"{temp_path}/test_server.log",
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
-    # message_logger = None
-    message_logger_queues = MessageLogger(
-        filename=f"{temp_path}/test_server_queues.log",
-        period=LoggerPolicyPeriod.LAST_15_MINUTES,
-    )
-    # message_logger = None
     port = 9200
     try:
         app = TestServer(
@@ -103,14 +97,10 @@ if __name__ == "__main__":
             address="127.0.0.1",
             port=port,
             message_logger=message_logger,
-            message_logger_queues=message_logger_queues,
             debug=True,
             clients=args.clients,
             payload=args.payload,
-            # use_http_session=args.session,
-            # use_parallel_send=args.parallel,
         )
-        # app.start()
 
     except KeyboardInterrupt:
         pass

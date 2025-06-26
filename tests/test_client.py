@@ -346,21 +346,9 @@ if __name__ == "__main__":
         "-c",
         "--clients",
         type=int,
-        default=10,
-        help="test clients number (default: 10)",
+        default=3,
+        help="test clients number (default: 3)",
     )
-    # parser.add_argument(
-    #     "-s",
-    #     "--session",
-    #     action="store_false",
-    #     help="use http session (default: False)",
-    # )
-    # parser.add_argument(
-    #     "-p",
-    #     "--parallel",
-    #     action="store_false",
-    #     help="use parallel send (default: False)",
-    # )
 
     args = parser.parse_args()
 
@@ -378,7 +366,7 @@ if __name__ == "__main__":
 
     clients_params = []
     for i in range(1, args.clients + 1):
-        client_number = i + 1
+        client_number = i
         port = base_port + client_number
         clients_params.append({
             "name": f"test_{port}",
