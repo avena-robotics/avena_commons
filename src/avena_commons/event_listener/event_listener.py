@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
-import requests
+
+# import requests
 import uvicorn
 import uvicorn.config
 import uvicorn.server
@@ -21,9 +22,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
-from avena_commons.util.logger import MessageLogger, debug, error, info, warning
-from avena_commons.util.measure_time import MeasureTime
+from avena_commons.util.logger import MessageLogger, debug, error, info
 
+# from avena_commons.util.measure_time import MeasureTime
 from .event import Event
 
 TEMP_DIR = Path("temp")  # Relatywna ścieżka do bieżącego katalogu roboczego
