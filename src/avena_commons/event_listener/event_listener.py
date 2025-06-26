@@ -92,7 +92,7 @@ class EventListener:
         do_not_load_state: bool = False,
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
-        use_parallel_send: bool = True,
+        # use_parallel_send: bool = True,
         use_cumulative_send: bool = True,
     ):
         """
@@ -130,7 +130,7 @@ class EventListener:
         self.__received_events_per_second = 0
         self.__sended_events_per_second = 0
         self._shutdown_requested = False
-        self.__use_parallel_send = use_parallel_send
+        # self.__use_parallel_send = use_parallel_send
         self.__use_cumulative_send = use_cumulative_send
         self._message_logger = message_logger
         self._system_ready = threading.Event()
@@ -152,10 +152,10 @@ class EventListener:
         signal.signal(signal.SIGINT, self.__signal_handler)
         signal.signal(signal.SIGTERM, self.__signal_handler)
 
-        debug(
-            f"Using parallel send: {self.__use_parallel_send}",
-            message_logger=self._message_logger,
-        )
+        # debug(
+        #     f"Using parallel send: {self.__use_parallel_send}",
+        #     message_logger=self._message_logger,
+        # )
 
         self.app = FastAPI(
             docs_url="/",
@@ -859,12 +859,7 @@ class EventListener:
                     case "health_check":
                         if event.result is None:
                             try:
-                                with self.__lock_for_health_status:
-                                    health_status_copy = self.__health_status.copy()
-                                event.result = Result(
-                                    result="success", data=health_status_copy
-                                )
-                                await self._reply(event)
+                                await self.__state_handler(event)
 
                             except Exception as e:
                                 error(
@@ -1037,7 +1032,8 @@ class EventListener:
 
     def __start_local_check(self):
         self.local_check_thread = threading.Thread(
-            target=self._run_local_check_loop, name="local_check_thread"
+            target=lambda: asyncio.run(self.__check_local_data_loop()),
+            name="local_check_thread",
         )
         self.local_check_thread.daemon = True
         self.local_check_thread.start()
@@ -1174,59 +1170,39 @@ class EventListener:
 
                     start_time = time.perf_counter()
 
-                    if self.__use_parallel_send:
+                    # if self.__use_parallel_send:
 
-                        async def send_single_event(event_data):
-                            event = event_data["event"]
-                            retry_count = event_data["retry_count"]
+                    async def send_single_event(event_data):
+                        event = event_data["event"]
+                        retry_count = event_data["retry_count"]
 
-                            if retry_count >= self.__retry_count:
-                                error(
-                                    f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-                                    message_logger=self._message_logger,
-                                )
-                                return None
+                        if retry_count >= self.__retry_count:
+                            error(
+                                f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
+                                message_logger=self._message_logger,
+                            )
+                            return None
+
+                        try:
+                            url = f"http://{event.destination_address}:{event.destination_port}{event.destination_endpoint}"
+                            event_start_time = time.perf_counter()
 
                             try:
-                                url = f"http://{event.destination_address}:{event.destination_port}{event.destination_endpoint}"
-                                event_start_time = time.perf_counter()
-
-                                try:
-                                    with self._event_send_debug(event):
-                                        async with session.post(
-                                            url,
-                                            json=event.to_dict(),
-                                            timeout=aiohttp.ClientTimeout(total=0.025),
-                                        ) as response:
-                                            if response.status == 200:
-                                                self.__sended_events += 1
-                                                elapsed = (
-                                                    time.perf_counter()
-                                                    - event_start_time
-                                                ) * 1000
-                                                return None
-                                except asyncio.TimeoutError:
-                                    error(
-                                        f"Timeout sending event to {url}",
-                                        message_logger=self._message_logger,
-                                    )
-                                    # If this was a cumulative event, return original events
-                                    if event.event_type == "cumulative":
-                                        return [
-                                            {
-                                                "event": Event(**e),
-                                                "retry_count": retry_count + 1,
-                                            }
-                                            for e in event.data["events"]
-                                        ]
-                                    return {
-                                        "event": event,
-                                        "retry_count": retry_count + 1,
-                                    }
-
-                            except Exception as e:
+                                with self._event_send_debug(event):
+                                    async with session.post(
+                                        url,
+                                        json=event.to_dict(),
+                                        timeout=aiohttp.ClientTimeout(total=0.025),
+                                    ) as response:
+                                        if response.status == 200:
+                                            self.__sended_events += 1
+                                            elapsed = (
+                                                time.perf_counter() - event_start_time
+                                            ) * 1000
+                                            return None
+                            except asyncio.TimeoutError:
                                 error(
-                                    f"Error sending event: {e}",
+                                    f"Timeout sending event to {url}",
                                     message_logger=self._message_logger,
                                 )
                                 # If this was a cumulative event, return original events
@@ -1243,98 +1219,44 @@ class EventListener:
                                     "retry_count": retry_count + 1,
                                 }
 
-                        # Create and run all tasks in parallel
-                        tasks = [send_single_event(data) for data in local_queue]
-                        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                        # Collect failed events
-                        failed_events = []
-                        for r in results:
-                            if isinstance(r, (dict, list)):  # means failed event(s)
-                                if isinstance(
-                                    r, list
-                                ):  # original events from failed cumulative
-                                    failed_events.extend(r)
-                                else:  # single failed event
-                                    failed_events.append(r)
-
-                        # If there are failed events, add them back
-                        if failed_events:
-                            with self.__atomic_operation_for_events_to_send():
-                                self.__events_to_send.extend(failed_events)
-
-                    else:
-                        # Sequential sending
-                        failed_events = []
-                        for event_data in local_queue:
-                            event = event_data["event"]
-                            retry_count = event_data["retry_count"]
-
-                            if retry_count >= self.__retry_count:
-                                error(
-                                    f"Event {event.event_type} failed after {self.__retry_count} retries - dropping",
-                                    message_logger=self._message_logger,
-                                )
-                                continue
-
-                            try:
-                                url = f"http://{event.destination_address}:{event.destination_port}{event.destination_endpoint}"
-                                event_start_time = time.perf_counter()
-
-                                try:
-                                    with self._event_send_debug(event):
-                                        async with session.post(
-                                            url,
-                                            json=event.to_dict(),
-                                            timeout=aiohttp.ClientTimeout(total=0.1),
-                                        ) as response:
-                                            if response.status == 200:
-                                                self.__sended_events += 1
-                                                elapsed = (
-                                                    time.perf_counter()
-                                                    - event_start_time
-                                                ) * 1000
-                                except asyncio.TimeoutError:
-                                    error(
-                                        f"Timeout sending event to {url}",
-                                        message_logger=self._message_logger,
-                                    )
-                                    # If this was a cumulative event, return original events
-                                    if event.event_type == "cumulative":
-                                        return [
-                                            {
-                                                "event": Event(**e),
-                                                "retry_count": retry_count + 1,
-                                            }
-                                            for e in event.data["events"]
-                                        ]
-                                    return {
-                                        "event": event,
+                        except Exception as e:
+                            error(
+                                f"Error sending event: {e}",
+                                message_logger=self._message_logger,
+                            )
+                            # If this was a cumulative event, return original events
+                            if event.event_type == "cumulative":
+                                return [
+                                    {
+                                        "event": Event(**e),
                                         "retry_count": retry_count + 1,
                                     }
-                            except Exception as e:
-                                error(
-                                    f"Error sending event: {e}",
-                                    message_logger=self._message_logger,
-                                )
-                                # If this was a cumulative event, return original events
-                                if event.event_type == "cumulative":
-                                    return [
-                                        {
-                                            "event": Event(**e),
-                                            "retry_count": retry_count + 1,
-                                        }
-                                        for e in event.data["events"]
-                                    ]
-                                return {
-                                    "event": event,
-                                    "retry_count": retry_count + 1,
-                                }
+                                    for e in event.data["events"]
+                                ]
+                            return {
+                                "event": event,
+                                "retry_count": retry_count + 1,
+                            }
 
-                        # If there are failed events, add them back
-                        if failed_events:
-                            with self.__atomic_operation_for_events_to_send():
-                                self.__events_to_send.extend(failed_events)
+                    # Create and run all tasks in parallel
+                    tasks = [send_single_event(data) for data in local_queue]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # Collect failed events
+                    failed_events = []
+                    for r in results:
+                        if isinstance(r, (dict, list)):  # means failed event(s)
+                            if isinstance(
+                                r, list
+                            ):  # original events from failed cumulative
+                                failed_events.extend(r)
+                            else:  # single failed event
+                                failed_events.append(r)
+
+                    # If there are failed events, add them back
+                    if failed_events:
+                        with self.__atomic_operation_for_events_to_send():
+                            self.__events_to_send.extend(failed_events)
 
                     total_elapsed = (time.perf_counter() - start_time) * 1000
                     debug(
@@ -1363,8 +1285,6 @@ class EventListener:
         to_be_processed: bool = True,
         maximum_processing_time: float = 20,
     ) -> Event:
-<<<<<<< ac_1_6_0
-=======
         """
         Creates a new event and adds it to the sending queue.
 
@@ -1381,8 +1301,6 @@ class EventListener:
         Returns:
             Event: The created event object, or None if an error occurred.
         """
-        current_time = datetime.now()
->>>>>>> ll_watchdog
         event = Event(
             source=self.__name,
             source_address=self.__address,
