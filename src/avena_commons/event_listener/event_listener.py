@@ -319,18 +319,14 @@ class EventListener:
                     "State serialization completed", message_logger=self._message_logger
                 )
 
-                # Flatten processing_events_dict to a list of events
-                processing_events_list = []
-                for event_type_dict in self._processing_events_dict.values():
-                    for id_dict in event_type_dict.values():
-                        for event in id_dict.values():
-                            processing_events_list.append(event.to_dict())
-
                 queues_data = {
                     "incoming_events": [
                         event.to_dict() for event in self.__incoming_events
                     ],
-                    "processing_events": processing_events_list,
+                    "processing_events": [
+                        event.to_dict()
+                        for timestamp, event in self._processing_events_dict.items()
+                    ],
                     "events_to_send": [
                         event_data["event"].to_dict()
                         for event_data in self.__events_to_send
@@ -1413,9 +1409,6 @@ class EventListener:
             )
             return False
 
-    # def _find_and_remove_processing_event(
-    #     self, event_type: str, id: int = None, timestamp: datetime = None
-    # ) -> Event | None:
     def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
             # Obsługa zarówno datetime jak i string timestamp
