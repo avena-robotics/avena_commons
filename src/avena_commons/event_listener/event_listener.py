@@ -845,7 +845,10 @@ class EventListener:
                         await self._handle_reset_command(event)
 
                     case "CMD_GET_STATE":
-                        await self._handle_get_state_command(event)
+                        if event.result is None:
+                            await self._handle_get_state_command(event)
+                        else:
+                            should_remove = await self._analyze_event(event)
 
                     case "CMD_HEALTH_CHECK":
                         if event.result is None:
@@ -1610,16 +1613,13 @@ class EventListener:
             )
 
     async def _handle_get_state_command(self, event: Event):
-        if self.__fsm_state == EventListenerState.STARTED:
-            # await self._on_get_state()
-            event.data = self._latest_state_data
-            event.result = Result(result="success")
-            self._reply(event)
-        else:
-            warning(
-                f"Received CMD_GET_STATE in unexpected state: {self.__fsm_state.name}",
-                message_logger=self._message_logger,
-            )
+        debug(
+            f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
+            message_logger=self._message_logger,
+        )
+        event.data = self._state
+        event.result = Result(result="success")
+        await self._reply(event)
 
     async def _handle_reset_command(self, event: Event):
         if self.__fsm_state == EventListenerState.FAULT:

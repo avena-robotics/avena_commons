@@ -39,11 +39,7 @@ class Orchestrator(EventListener):
             case "health_check":
                 if event.result is not None:
                     # Event ma result - usuń go z processing
-                    self._find_and_remove_processing_event(
-                        event_type=event.event_type,
-                        id=event.id,
-                        timestamp=event.timestamp,
-                    )
+                    self._find_and_remove_processing_event(event)
             case _:
                 pass
         return True
