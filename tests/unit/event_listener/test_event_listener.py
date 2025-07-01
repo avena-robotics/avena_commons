@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from avena_commons.event_listener.event import Event, EventPriority, Result
+from avena_commons.event_listener.event import Event, Result
 from avena_commons.event_listener.event_listener import (
     EventListener,
     EventListenerState,
@@ -47,7 +47,6 @@ class TestEventListener:
             destination_port=8002,
             event_type="test_event",
             data={"test_key": "test_value"},
-            priority=EventPriority.MEDIUM,
         )
 
     @pytest.fixture

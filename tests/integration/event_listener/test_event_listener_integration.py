@@ -29,7 +29,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from avena_commons.event_listener.event import Event, EventPriority, Result, ResultValue
+from avena_commons.event_listener.event import Event, Result
 from avena_commons.event_listener.event_listener import EventListener
 from avena_commons.event_listener.types.io import IoAction, IoSignal
 from avena_commons.event_listener.types.kds import KdsAction
@@ -84,7 +84,7 @@ class TestEventListenerHTTPEndpoints:
             "destination_address": "127.0.0.1",
             "destination_port": 8001,
             "event_type": "test_event",
-            "priority": 1,  # EventPriority.MEDIUM
+            "priority": 1,
             "data": {"message": "test message", "value": 42},
             "timestamp": datetime.now().isoformat(),
             "to_be_processed": True,
@@ -350,7 +350,6 @@ class TestEventProcessingWorkflows:
             source="priority_test",
             destination="processing_test_listener",
             event_type="high_priority",
-            priority=EventPriority.HIGH,
             data={"priority": "high"},
         )
 
@@ -358,7 +357,6 @@ class TestEventProcessingWorkflows:
             source="priority_test",
             destination="processing_test_listener",
             event_type="low_priority",
-            priority=EventPriority.LOW,
             data={"priority": "low"},
         )
 
@@ -459,7 +457,7 @@ class TestConfigurationPersistence:
             "boolean_setting": True,
             "complex_setting": {"nested": "value", "list": [1, 2, 3]},
         }
-        listener1._configuration = test_config
+        listener1._default_configuration = test_config
 
         # Save configuration
         listener1._EventListener__save_configuration()
@@ -477,10 +475,10 @@ class TestConfigurationPersistence:
         )
 
         # Verify configuration was loaded
-        assert listener2._configuration == test_config
-        assert listener2._configuration["test_setting"] == "test_value"
-        assert listener2._configuration["numeric_setting"] == 42
-        assert listener2._configuration["complex_setting"]["nested"] == "value"
+        assert listener2._default_configuration == test_config
+        assert listener2._default_configuration["test_setting"] == "test_value"
+        assert listener2._default_configuration["numeric_setting"] == 42
+        assert listener2._default_configuration["complex_setting"]["nested"] == "value"
 
         # Cleanup
         listener2._EventListener__shutdown()
@@ -576,7 +574,7 @@ class TestConfigurationPersistence:
             "system_config": {"frequency": 100, "retry_count": 5, "timeout": 30.0},
         }
 
-        listener._configuration = complex_config
+        listener._default_configuration = complex_config
 
         # Save and verify persistence works with complex data
         listener._EventListener__save_configuration()
@@ -739,7 +737,6 @@ class TestThreadSafetyAndConcurrency:
                     destination="concurrent_test_listener",
                     event_type="high_load_event",
                     data={"event_number": i},
-                    priority=EventPriority.MEDIUM,
                 )
                 events.append(event)
                 asyncio.run(

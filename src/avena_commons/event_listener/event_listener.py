@@ -68,7 +68,7 @@ class EventListener:
     __get_state_frequency: int = 1
 
     _state: dict[str, Any] = {}
-    _configuration: dict[str, Any] = {}
+    _default_configuration: dict[str, Any] = {}
     _shutdown_requested: bool = False
 
     _message_logger: MessageLogger = None
@@ -488,13 +488,15 @@ class EventListener:
 
     def __save_configuration(self):
         """
-        Saves configuration to file.
+        Saves configuration to file by merging with existing file content.
 
-        Serializes and saves the current listener configuration to a JSON file.
+        Reads existing configuration file (if exists), merges current _default_configuration
+        changes into it, and saves only the modified values. This preserves manual edits
+        to the config file while updating only changed values.
         Operation is skipped if configuration is empty.
         """
         try:
-            if not self._configuration:
+            if not self._default_configuration:
                 debug(
                     "Konfiguracja jest pusta, pomijam zapis do pliku",
                     message_logger=self._message_logger,
@@ -503,28 +505,65 @@ class EventListener:
 
             with self.__lock_for_general_purpose:
                 debug(
-                    "Starting configuration serialization",
-                    message_logger=self._message_logger,
-                )
-                serialized_config = self._serialize_value(self._configuration)
-                debug(
-                    "Configuration serialization completed",
+                    "Starting configuration save with merge",
                     message_logger=self._message_logger,
                 )
 
-                debug("Writing configuration to file")
-                with open(self.__config_file_path, "w", encoding="utf-8") as f:
-                    json.dump(
-                        serialized_config,
-                        f,
-                        indent=4,
-                        sort_keys=True,
-                        ensure_ascii=False,
-                    )
-                info(
-                    "Konfiguracja zostala zapisana do pliku",
-                    message_logger=self._message_logger,
+                # Load existing configuration from file
+                existing_config = {}
+                if os.path.exists(self.__config_file_path):
+                    try:
+                        with open(self.__config_file_path, "r", encoding="utf-8") as f:
+                            existing_config = json.load(f)
+                        debug(
+                            "Loaded existing configuration for merge",
+                            message_logger=self._message_logger,
+                        )
+                    except Exception as e:
+                        warning(
+                            f"Could not load existing config file for merge: {e}. Creating new file.",
+                            message_logger=self._message_logger,
+                        )
+                        existing_config = {}
+
+                # Merge current configuration with existing file content
+                merged_config = self._merge_config_for_save(
+                    existing_config, self._default_configuration
                 )
+
+                # Only save if there are actual changes
+                if self._has_config_changes(existing_config, merged_config):
+                    debug(
+                        "Configuration changes detected, serializing",
+                        message_logger=self._message_logger,
+                    )
+                    serialized_config = self._serialize_value(merged_config)
+                    debug(
+                        "Configuration serialization completed",
+                        message_logger=self._message_logger,
+                    )
+
+                    debug(
+                        "Writing merged configuration to file",
+                        message_logger=self._message_logger,
+                    )
+                    with open(self.__config_file_path, "w", encoding="utf-8") as f:
+                        json.dump(
+                            serialized_config,
+                            f,
+                            indent=4,
+                            sort_keys=True,
+                            ensure_ascii=False,
+                        )
+                    info(
+                        "Konfiguracja zostala zapisana do pliku (merged)",
+                        message_logger=self._message_logger,
+                    )
+                else:
+                    debug(
+                        "No configuration changes detected, skipping save",
+                        message_logger=self._message_logger,
+                    )
 
         except Exception as e:
             error(
@@ -532,19 +571,21 @@ class EventListener:
                 message_logger=self._message_logger,
             )
             error(
-                f"Configuration type: {type(self._configuration)}",
+                f"Configuration type: {type(self._default_configuration)}",
                 message_logger=self._message_logger,
             )
             error(
-                f"Configuration content: {self._configuration}",
+                f"Configuration content: {self._default_configuration}",
                 message_logger=self._message_logger,
             )
 
     def __load_configuration(self):
         """
-        Loads configuration from file.
+        Loads configuration from file and merges it with default configuration.
 
-        Reads saved configuration from JSON file and assigns it to the listener.
+        Reads saved configuration from JSON file and merges it with _default_configuration.
+        Only updates existing keys in _default_configuration or adds new ones from config file.
+        Keys that exist in _default_configuration but not in config file remain unchanged.
         If the class has a _deserialize_configuration method, uses it for deserialization.
         """
         if not os.path.exists(self.__config_file_path):
@@ -561,7 +602,8 @@ class EventListener:
             if hasattr(self, "_deserialize_configuration"):
                 self._deserialize_configuration(config_data)
             else:
-                self._configuration = config_data
+                # Merge config_data with _default_configuration
+                self._merge_configuration(config_data)
 
             info(
                 f"Konfiguracja zostala wczytana z pliku: {self.__config_file_path}",
@@ -572,6 +614,61 @@ class EventListener:
                 f"Błąd podczas wczytywania konfiguracji: {e}",
                 message_logger=self._message_logger,
             )
+
+    def _merge_configuration(self, config_data: dict):
+        """
+        Merges loaded configuration data with default configuration.
+
+        Updates existing keys in _default_configuration from config_data.
+        Adds new keys from config_data that don't exist in _default_configuration.
+        Preserves keys in _default_configuration that don't exist in config_data.
+
+        Args:
+            config_data (dict): Configuration data loaded from file
+        """
+        for key, value in config_data.items():
+            if key in self._default_configuration:
+                # Update existing key
+                if isinstance(self._default_configuration[key], dict) and isinstance(
+                    value, dict
+                ):
+                    # Recursively merge nested dictionaries
+                    self._default_configuration[key] = self._merge_dict_recursive(
+                        self._default_configuration[key], value
+                    )
+                else:
+                    # Direct assignment for non-dict values
+                    self._default_configuration[key] = value
+            else:
+                # Add new key that doesn't exist in default configuration
+                self._default_configuration[key] = value
+
+    def _merge_dict_recursive(self, default_dict: dict, config_dict: dict) -> dict:
+        """
+        Recursively merges two dictionaries.
+
+        Args:
+            default_dict (dict): The default dictionary (base)
+            config_dict (dict): The configuration dictionary (overlay)
+
+        Returns:
+            dict: Merged dictionary
+        """
+        result = default_dict.copy()
+
+        for key, value in config_dict.items():
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                # Recursively merge nested dictionaries
+                result[key] = self._merge_dict_recursive(result[key], value)
+            else:
+                # Direct assignment for non-dict values or new keys
+                result[key] = value
+
+        return result
 
     def _execute_before_shutdown(self):
         pass
@@ -1627,3 +1724,62 @@ class EventListener:
                 f"Received CMD_RESET in unexpected state: {self.__fsm_state.name}",
                 message_logger=self._message_logger,
             )
+
+    def _merge_config_for_save(
+        self, existing_config: dict, current_config: dict
+    ) -> dict:
+        """
+        Merges current configuration with existing file configuration for saving.
+
+        This method prioritizes current configuration values while preserving
+        manually edited values in the existing file that don't exist in current config.
+
+        Args:
+            existing_config (dict): Configuration loaded from file
+            current_config (dict): Current _default_configuration
+
+        Returns:
+            dict: Merged configuration ready for saving
+        """
+        result = existing_config.copy()
+
+        # Update with current configuration values
+        for key, value in current_config.items():
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                # Recursively merge nested dictionaries
+                result[key] = self._merge_config_for_save(result[key], value)
+            else:
+                # Direct assignment - current config takes precedence
+                result[key] = value
+
+        return result
+
+    def _has_config_changes(self, old_config: dict, new_config: dict) -> bool:
+        """
+        Checks if there are any changes between two configuration dictionaries.
+
+        Args:
+            old_config (dict): Original configuration
+            new_config (dict): New configuration to compare
+
+        Returns:
+            bool: True if configurations differ, False if identical
+        """
+        try:
+            # Serialize both configs for comparison to handle complex nested objects
+            old_serialized = self._serialize_value(old_config)
+            new_serialized = self._serialize_value(new_config)
+
+            return old_serialized != new_serialized
+        except Exception as e:
+            warning(
+                f"Error comparing configurations, assuming changes exist: {e}",
+                message_logger=self._message_logger,
+            )
+            return True  # If comparison fails, assume there are changes to be safe
+
+    # ...existing code...
