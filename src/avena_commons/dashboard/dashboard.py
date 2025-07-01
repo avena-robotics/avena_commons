@@ -11,7 +11,7 @@ from avena_commons.util.logger import MessageLogger, debug, error, warning
 from avena_commons.util.measure_time import MeasureTime
 
 
-class Orchestrator(EventListener):
+class Dashboard(EventListener):
     def __init__(
         self,
         name: str,
@@ -36,7 +36,7 @@ class Orchestrator(EventListener):
 
     async def _analyze_event(self, event: Event) -> bool:
         match event.event_type:
-            case "health_check":
+            case "CMD_GET_STATE":
                 if event.result is not None:
                     # Event ma result - usuń go z processing
                     self._find_and_remove_processing_event(event)
@@ -52,7 +52,7 @@ class Orchestrator(EventListener):
                 destination=key,
                 destination_address=client_address,
                 destination_port=client_port,
-                event_type="health_check",
+                event_type="CMD_GET_STATE",
                 data={},
                 to_be_processed=False,
             )

@@ -941,7 +941,13 @@ class EventListener:
                     case "CMD_RESET":
                         await self._handle_reset_command(event)
 
-                    case "health_check":
+                    case "CMD_GET_STATE":
+                        if event.result is None:
+                            await self._handle_get_state_command(event)
+                        else:
+                            should_remove = await self._analyze_event(event)
+
+                    case "CMD_HEALTH_CHECK":
                         if event.result is None:
                             try:
                                 await self.__state_handler(event)
@@ -1526,15 +1532,13 @@ class EventListener:
             )
             return False
 
-    def _find_and_remove_processing_event(
-        self, event_type: str, id: int = None, timestamp: datetime = None
-    ) -> Event | None:
+    def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
             # Obsługa zarówno datetime jak i string timestamp
-            timestamp_key = timestamp.isoformat()
+            timestamp_key = event.timestamp.isoformat()
 
             debug(
-                f"Searching for event for remove in processing queue: id={id} event_type={event_type} timestamp={timestamp}",
+                f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
                 message_logger=self._message_logger,
             )
 
@@ -1544,20 +1548,15 @@ class EventListener:
                 self._event_find_and_remove_debug(event)
                 return event
 
-            error(
-                f"Event not found: id={id} event_type={event_type} timestamp={timestamp}",
-                message_logger=self._message_logger,
-            )
-            return None
         except TimeoutError as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception TimeoutError: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None
         except Exception as e:
             error(
-                f"_find_and_remove_processing_event: {e}",
+                f"Exception: _find_and_remove_processing_event: {e}",
                 message_logger=self._message_logger,
             )
             return None
@@ -1709,6 +1708,15 @@ class EventListener:
                 f"Received CMD_GRACEFUL_STOP in unexpected state: {self.__fsm_state.name}",
                 message_logger=self._message_logger,
             )
+
+    async def _handle_get_state_command(self, event: Event):
+        debug(
+            f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
+            message_logger=self._message_logger,
+        )
+        event.data = self._state
+        event.result = Result(result="success")
+        await self._reply(event)
 
     async def _handle_reset_command(self, event: Event):
         if self.__fsm_state == EventListenerState.FAULT:

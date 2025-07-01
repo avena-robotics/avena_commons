@@ -37,17 +37,15 @@ class TestServer(EventListener):
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
-        self._find_and_remove_processing_event(
-            event.event_type, event.id, event.timestamp
-        )
+        self._find_and_remove_processing_event(event=event)
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         for client in range(1, self.clients + 1):
-            client_port = self._EventListener__port + client + 1
+            client_port = self._EventListener__port + client
             for i in range(self.payload):
                 event = await self._event(
-                    f"test_client_{client_port}",
+                    destination=f"test_client_{client_port}",
                     destination_address=self._EventListener__address,
                     destination_port=client_port,
                     event_type=f"test_from_{self._EventListener__port}",
@@ -57,7 +55,7 @@ class TestServer(EventListener):
                 self._add_to_processing(event)
         debug(
             f"incommming = {self.size_of_incomming_events_queue()}, processing = {self.size_of_processing_events_queue()}, to_send = {self.size_of_events_to_send_queue()}, [{self.sended_events}, {self.received_events}, {self.sended_events - self.received_events}]",
-            message_logger=self.message_logger_queues,
+            message_logger=self._message_logger,
         )
         pass
 
@@ -74,14 +72,14 @@ if __name__ == "__main__":
         "--clients",
         type=int,
         default=3,
-        help="test clients number (default: 1)",
+        help="test clients number (default: 3)",
     )
     parser.add_argument(
         "-p",
         "--payload",
         type=int,
         default=3,
-        help="payload size (default: 1)",
+        help="payload size (default: 3)",
     )
     args = parser.parse_args()
 
