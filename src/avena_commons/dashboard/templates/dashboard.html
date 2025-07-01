@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Monitoring Serwisów{% endblock %}
+
+{% block head %}
+<!-- Dashboard-specific CSS -->
+<link href="{{ url_for('static', filename='css/dashboard-tree.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<!-- Dashboard Application Container -->
+<div x-data="dashboardApp({{ api_port }})" x-init="init()" class="dashboard-container">
+    
+    <!-- Dashboard Header Section -->
+    <header class="dashboard-header">
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="display-6 mb-2">
+                    <i class="fas fa-server text-primary me-2"></i>
+                    Monitoring Serwisów
+                </h1>
+                <p class="text-muted mb-0">Dashboard: {{ dashboard_name }}</p>
+            </div>
+            <div class="col-auto d-flex align-items-center">
+                <!-- Refresh Button -->
+                <button @click="refreshData()" 
+                        :disabled="loading"
+                        class="btn btn-outline-primary me-3">
+                    <i class="fas fa-sync-alt" :class="{'fa-spin': loading}"></i>
+                    Odśwież
+                </button>
+                <!-- Last Update Info -->
+                <small class="text-muted" x-text="lastUpdate"></small>
+            </div>
+        </div>
+    </header>
+
+    <!-- System Metrics Cards -->
+    <section class="metrics-section">
+        <div class="row mb-4">
+            <!-- Online Services Card -->
+            <div class="col-md-3">
+                <div class="metric-card card border-success text-center h-100">
+                    <div class="card-body">
+                        <div class="text-success">
+                            <i class="fas fa-check-circle fa-2x mb-2"></i>
+                            <h3 x-text="metrics.online" class="mb-0">-</h3>
+                            <small class="text-muted">Online</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Offline Services Card -->
+            <div class="col-md-3">
+                <div class="metric-card card border-danger text-center h-100">
+                    <div class="card-body">
+                        <div class="text-danger">
+                            <i class="fas fa-times-circle fa-2x mb-2"></i>
+                            <h3 x-text="metrics.offline" class="mb-0">-</h3>
+                            <small class="text-muted">Offline</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Waiting Services Card -->
+            <div class="col-md-3">
+                <div class="metric-card card border-warning text-center h-100">
+                    <div class="card-body">
+                        <div class="text-warning">
+                            <i class="fas fa-clock fa-2x mb-2"></i>
+                            <h3 x-text="metrics.waiting" class="mb-0">-</h3>
+                            <small class="text-muted">Oczekuje</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Total Services Card -->
+            <div class="col-md-3">
+                <div class="metric-card card border-info text-center h-100">
+                    <div class="card-body">
+                        <div class="text-info">
+                            <i class="fas fa-server fa-2x mb-2"></i>
+                            <h3 x-text="metrics.total" class="mb-0">-</h3>
+                            <small class="text-muted">Razem</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Filters and Controls Section -->
+    <section class="filters-section">
+        <div class="row mb-3">
+            <!-- Search Filter -->
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <input type="text" 
+                           class="form-control" 
+                           placeholder="Szukaj serwisu po nazwie..."
+                           x-model="filters.search"
+                           title="Wprowadź nazwę serwisu do wyszukania">
+                </div>
+            </div>
+            
+            <!-- Status Filter -->
+            <div class="col-md-3">
+                <select class="form-select" x-model="filters.status" title="Filtruj po statusie serwisu">
+                    <option value="">Wszystkie statusy</option>
+                    <option value="connected">Tylko online</option>
+                    <option value="no_response,timeout">Tylko offline</option>
+                    <option value="waiting">Oczekujące</option>
+                </select>
+            </div>
+            
+            <!-- Auto-refresh Toggle -->
+            <div class="col-md-3">
+                <div class="form-check form-switch d-flex align-items-center h-100">
+                    <input class="form-check-input me-2" 
+                           type="checkbox" 
+                           id="autoRefresh"
+                           x-model="autoRefresh"
+                           title="Automatyczne odświeżanie co 5 sekund">
+                    <label class="form-check-label" for="autoRefresh">
+                        Auto-odświeżanie
+                    </label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Status Messages Section -->
+    <section class="status-messages">
+        <!-- No Data Alert -->
+        <div x-show="Object.keys(services).length === 0 && !loading" 
+             class="alert alert-info text-center" role="alert">
+            <i class="fas fa-info-circle me-2"></i>
+            Brak skonfigurowanych serwisów do monitorowania.
+            <small class="d-block mt-1">Sprawdź czy klienci testowi są uruchomieni.</small>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div x-show="loading && Object.keys(services).length === 0" 
+             class="text-center py-5" role="status" aria-live="polite">
+            <div class="spinner-border text-primary mb-3">
+                <span class="visually-hidden">Ładowanie danych...</span>
+            </div>
+            <p class="text-muted">Pobieranie danych z serwisów...</p>
+        </div>
+    </section>
+
+    <!-- Services Grid Section -->
+    <section class="services-section">
+        <div class="row" id="services-container">
+            <!-- Service Cards Template (Alpine.js) -->
+            <template x-for="[serviceName, service] in filteredServices" :key="serviceName">
+                <div class="col-lg-4 col-md-6 mb-3">
+                    <article class="service-card card h-100"
+                             :class="getServiceCardClass(service)"
+                             :aria-label="`Karta serwisu ${serviceName}`">
+                        <div class="card-body">
+                            
+                            <!-- Service Header -->
+                            <header class="service-header d-flex justify-content-between align-items-start mb-3">
+                                <h5 class="card-title mb-0" x-text="serviceName"></h5>
+                                <span class="service-status badge"
+                                      :class="getStatusBadgeClass(service)"
+                                      :title="`Status: ${getStatusText(service.status)}`">
+                                    <i :class="getStatusIcon(service)"></i>
+                                    <span x-text="getStatusText(service.status)"></span>
+                                </span>
+                            </header>
+
+                            <!-- Service Information -->
+                            <div class="service-info">
+                                <!-- Address -->
+                                <p class="service-detail card-text text-muted small mb-2">
+                                    <i class="fas fa-network-wired me-1" aria-hidden="true"></i>
+                                    <span x-text="service.address"></span>
+                                </p>
+                                
+                                <!-- Last Response -->
+                                <div x-show="service.last_response">
+                                    <p class="service-detail card-text text-muted small mb-2">
+                                        <i class="fas fa-clock me-1" aria-hidden="true"></i>
+                                        Ostatnia odpowiedź: 
+                                        <span x-text="formatDate(service.last_response)"></span>
+                                    </p>
+                                </div>
+                                
+                                <!-- Response Time -->
+                                <div x-show="service.response_time_ms">
+                                    <p class="service-detail card-text text-muted small mb-2">
+                                        <i class="fas fa-stopwatch me-1" aria-hidden="true"></i>
+                                        Czas odpowiedzi: 
+                                        <span x-text="service.response_time_ms"></span>ms
+                                    </p>
+                                </div>
+
+                                <!-- Elapsed Time -->
+                                <div x-show="service.elapsed_seconds">
+                                    <p class="service-detail card-text text-muted small mb-2">
+                                        <i class="fas fa-hourglass-half me-1" aria-hidden="true"></i>
+                                        Oczekuje: 
+                                        <span x-text="service.elapsed_seconds?.toFixed(1)"></span>s
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Service Actions -->
+                            <footer class="service-actions mt-auto pt-3">
+                                <!-- Details Button -->
+                                <button @click="showServiceDetails(serviceName, service)"
+                                        class="btn btn-outline-primary btn-sm me-2"
+                                        :title="`Pokaż szczegóły serwisu ${serviceName}`">
+                                    <i class="fas fa-info-circle" aria-hidden="true"></i> 
+                                    Szczegóły
+                                </button>
+                                
+                                <!-- Data Tree Button -->
+                                <button x-show="hasServiceData(service)"
+                                        @click="showServiceData(serviceName, service.data)"
+                                        class="btn btn-outline-success btn-sm"
+                                        :title="`Pokaż dane stanu serwisu ${serviceName}`">
+                                    <i class="fas fa-sitemap" aria-hidden="true"></i> 
+                                    Dane (<span x-text="getDataKeysCount(service)"></span>)
+                                </button>
+                                
+                                <!-- No Data Info -->
+                                <small x-show="!hasServiceData(service)" 
+                                       class="text-muted">
+                                    Brak danych stanu
+                                </small>
+                            </footer>
+                        </div>
+                    </article>
+                </div>
+            </template>
+        </div>
+    </section>
+
+    <!-- Details Modal -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailsModalLabel" x-text="modal.title"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Modal content will be dynamically inserted here -->
+                    <div x-html="modal.content"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Zamknij
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Dashboard JavaScript modules -->
+<script src="{{ url_for('static', filename='js/dashboard-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-tree.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-utils.js') }}"></script>
+{% endblock %} 

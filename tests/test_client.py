@@ -3,6 +3,7 @@ import asyncio
 
 # import logging
 import os
+import random
 import signal
 import sys
 import threading
@@ -51,6 +52,91 @@ class TestClient(EventListener):
         self.message_logger = message_logger
         self._server_thread = None
 
+        # Generowanie losowego stanu na końcu inicjalizacji
+        self._state = self._generate_random_state()
+
+    def _generate_random_state(self) -> dict:
+        """
+        Generuje losowy słownik z zagnieżdżeniami do użycia jako stan klienta.
+        Tworzy strukturę danych z różnymi typami wartości i poziomami zagnieżdżenia.
+        """
+
+        def generate_random_value(depth: int = 0, max_depth: int = 3):
+            """Rekurencyjnie generuje losowe wartości różnych typów"""
+            if depth >= max_depth:
+                # Na najgłębszym poziomie zwracamy tylko proste typy
+                return random.choice([
+                    random.randint(1, 1000),
+                    random.uniform(0.0, 100.0),
+                    f"random_string_{random.randint(1, 100)}",
+                    random.choice([True, False]),
+                    None,
+                ])
+
+            value_type = random.choice(["dict", "list", "simple"])
+
+            if value_type == "dict":
+                # Generujemy zagnieżdżony słownik
+                nested_dict = {}
+                for _ in range(random.randint(1, 4)):
+                    key = f"key_{random.randint(1, 100)}"
+                    nested_dict[key] = generate_random_value(depth + 1, max_depth)
+                return nested_dict
+
+            elif value_type == "list":
+                # Generujemy listę z losowymi wartościami
+                return [
+                    generate_random_value(depth + 1, max_depth)
+                    for _ in range(random.randint(1, 5))
+                ]
+
+            else:
+                # Zwracamy prostą wartość
+                return generate_random_value(depth + 1, max_depth)
+
+        # Główna struktura stanu
+        state = {
+            "client_info": {
+                "name": self._EventListener__name,
+                "port": self._EventListener__port,
+                "startup_time": time.time(),
+                "session_id": f"session_{random.randint(10000, 99999)}",
+            },
+            "config": {
+                "max_connections": random.randint(10, 100),
+                "timeout": random.uniform(1.0, 30.0),
+                "retry_attempts": random.randint(1, 10),
+                "features": {
+                    "logging_enabled": random.choice([True, False]),
+                    "cache_enabled": random.choice([True, False]),
+                    "compression": random.choice(["gzip", "deflate", None]),
+                    "auth_methods": random.sample(
+                        ["basic", "oauth", "token", "cert"], random.randint(1, 3)
+                    ),
+                },
+            },
+            "runtime_data": generate_random_value(0, 3),
+            "statistics": {
+                "requests_count": random.randint(0, 1000),
+                "errors_count": random.randint(0, 50),
+                "response_times": [
+                    random.uniform(0.1, 5.0) for _ in range(random.randint(5, 15))
+                ],
+                "status_codes": {
+                    "200": random.randint(500, 900),
+                    "404": random.randint(10, 50),
+                    "500": random.randint(0, 20),
+                },
+            },
+            "user_preferences": generate_random_value(0, 2),
+            "cache": {
+                f"cache_key_{i}": generate_random_value(1, 2)
+                for i in range(random.randint(3, 8))
+            },
+        }
+
+        return state
+
     async def _analyze_event(self, event: Event) -> bool:
         try:
             debug(
@@ -68,6 +154,20 @@ class TestClient(EventListener):
 
     async def _check_local_data(self):
         pass
+
+    async def _handle_get_state_command(self, event: Event) -> None:
+        """
+        Nadpisana metoda obsługi CMD_GET_STATE - zwraca wygenerowany losowy stan klienta.
+        """
+        debug(
+            f"TestClient processing CMD_GET_STATE event, sending generated state with {len(self._state)} keys",
+            message_logger=self.message_logger,
+        )
+
+        # Zwracamy wygenerowany losowy stan z _generate_random_state()
+        event.data = self._state
+        event.result = Result(result="success")
+        await self._reply(event)
 
     def _run_server_in_thread(self):
         """Uruchamia serwer uvicorn w osobnym wątku wewnątrz procesu."""
