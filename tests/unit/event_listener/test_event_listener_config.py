@@ -10,7 +10,7 @@ from avena_commons.event_listener.event_listener import EventListener
 
 
 class TestEventListenerConfiguration:
-    """Test suite for EventListener configuration management."""
+    """Test suite for EventListener baseline configuration management."""
 
     @pytest.fixture
     def temp_config_file(self):
@@ -39,61 +39,142 @@ class TestEventListenerConfiguration:
             listener._EventListener__config_file_path = temp_config_file
             return listener
 
-    def test_merge_configuration_basic(self, mock_listener):
-        """Test basic configuration merging."""
-        # Setup default configuration
-        mock_listener._default_configuration = {
-            "key1": "default_value1",
-            "key2": "default_value2",
+    def test_configuration_initialization(self, mock_listener):
+        """Test that baseline configuration is properly initialized."""
+        # Setup initial configuration
+        initial_config = {
+            "default_key": "default_value",
+            "nested": {"default_nested": "default_nested_value"},
         }
+        mock_listener._configuration = initial_config.copy()
 
-        # Mock loaded config data
-        config_data = {"key1": "loaded_value1", "key3": "loaded_value3"}
+        # Simulate the baseline setup that happens in __load_configuration
+        mock_listener._default_configuration = initial_config.copy()
 
-        # Merge configuration
-        mock_listener._merge_configuration(config_data)
+        # Verify baseline is established
+        assert mock_listener._default_configuration == initial_config
+        assert mock_listener._configuration == initial_config
 
-        # Assert results
-        expected = {
-            "key1": "loaded_value1",  # Updated from loaded data
-            "key2": "default_value2",  # Preserved from default
-            "key3": "loaded_value3",  # Added from loaded data
+    def test_extract_config_differences_no_changes(self, mock_listener):
+        """Test that no differences are detected when configs are identical."""
+        baseline = {"key1": "value1", "nested": {"key2": "value2"}}
+        current = {"key1": "value1", "nested": {"key2": "value2"}}
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        assert differences == {}
+
+    def test_extract_config_differences_simple_changes(self, mock_listener):
+        """Test detection of simple configuration changes."""
+        baseline = {"key1": "value1", "key2": "value2"}
+        current = {"key1": "changed_value1", "key2": "value2", "key3": "new_value"}
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        expected = {"key1": "changed_value1", "key3": "new_value"}
+        assert differences == expected
+
+    def test_extract_config_differences_nested_changes(self, mock_listener):
+        """Test detection of nested configuration changes."""
+        baseline = {
+            "database": {"host": "localhost", "port": 5432},
+            "cache": {"enabled": False},
         }
-        assert mock_listener._default_configuration == expected
-
-    def test_merge_configuration_nested_dicts(self, mock_listener):
-        """Test merging with nested dictionaries."""
-        # Setup default configuration
-        mock_listener._default_configuration = {
-            "database": {"host": "localhost", "port": 5432, "name": "default_db"},
+        current = {
+            "database": {"host": "remote", "port": 5432, "timeout": 30},
+            "cache": {"enabled": False},
             "logging": {"level": "INFO"},
         }
 
-        # Mock loaded config data
-        config_data = {
-            "database": {"host": "remote_host", "timeout": 30},
-            "cache": {"enabled": True},
-        }
-
-        # Merge configuration
-        mock_listener._merge_configuration(config_data)
-
-        # Assert results
+        differences = mock_listener._extract_config_differences(baseline, current)
         expected = {
-            "database": {
-                "host": "remote_host",  # Updated
-                "port": 5432,  # Preserved
-                "name": "default_db",  # Preserved
-                "timeout": 30,  # Added
-            },
-            "logging": {
-                "level": "INFO"  # Preserved
-            },
-            "cache": {
-                "enabled": True  # Added
-            },
+            "database": {"host": "remote", "timeout": 30},
+            "logging": {"level": "INFO"},
         }
-        assert mock_listener._default_configuration == expected
+        assert differences == expected
+
+    def test_save_configuration_no_changes(self, mock_listener, temp_config_file):
+        """Test saving configuration when no changes exist from baseline."""
+        # Setup baseline and current config (identical)
+        config = {"key": "value", "nested": {"key2": "value2"}}
+        mock_listener._default_configuration = config.copy()
+        mock_listener._configuration = config.copy()
+
+        # Should not create config file when no changes
+        mock_listener._EventListener__save_configuration()
+        assert not os.path.exists(temp_config_file)
+
+    def test_save_configuration_with_changes(self, mock_listener, temp_config_file):
+        """Test saving configuration when changes exist from baseline."""
+        # Setup baseline
+        baseline = {"key1": "baseline_value", "nested": {"shared": "baseline_nested"}}
+        mock_listener._configuration = baseline
+
+        # Setup current config with changes
+        current = {
+            "key1": "changed_value",
+            "nested": {"shared": "changed_nested", "new_key": "new_value"},
+            "new_section": {"setting": "value"},
+        }
+        mock_listener._configuration = current
+
+        # Save configuration
+        mock_listener._EventListener__save_configuration()
+
+        # Verify only changes were saved
+        assert os.path.exists(temp_config_file)
+        with open(temp_config_file, "r") as f:
+            saved_config = json.load(f)
+
+        expected_changes = {
+            "key1": "changed_value",
+            "nested": {"shared": "changed_nested", "new_key": "new_value"},
+            "new_section": {"setting": "value"},
+        }
+        assert saved_config == expected_changes
+
+    def test_save_configuration_removes_file_when_no_changes(
+        self, mock_listener, temp_config_file
+    ):
+        """Test that config file is removed when no changes exist."""
+        # Create initial file
+        initial_content = {"old": "data"}
+        with open(temp_config_file, "w") as f:
+            json.dump(initial_content, f)
+
+        # Setup identical baseline and current
+        config = {"key": "value"}
+        mock_listener._configuration = config
+        mock_listener._configuration = config
+
+        # Save should remove the file
+        mock_listener._EventListener__save_configuration()
+        assert not os.path.exists(temp_config_file)
+
+    def test_load_configuration_establishes_baseline(
+        self, mock_listener, temp_config_file
+    ):
+        """Test that loading configuration establishes proper baseline."""
+        # Setup initial default configuration
+        initial_config = {"app_default": "value", "shared": "app_value"}
+        mock_listener._configuration = initial_config.copy()
+
+        # Create config file with changes
+        file_config = {"shared": "file_value", "file_only": "file_setting"}
+        with open(temp_config_file, "w") as f:
+            json.dump(file_config, f)
+
+        # Load configuration
+        mock_listener._EventListener__load_configuration()
+
+        # Verify baseline was established from initial config
+        assert mock_listener._default_configuration == initial_config
+
+        # Verify working config was merged
+        expected_working = {
+            "app_default": "value",
+            "shared": "file_value",  # Overridden from file
+            "file_only": "file_setting",  # Added from file
+        }
+        assert mock_listener._configuration == expected_working
 
     def test_merge_dict_recursive(self, mock_listener):
         """Test recursive dictionary merging."""
@@ -114,76 +195,22 @@ class TestEventListenerConfiguration:
         }
         assert result == expected
 
-    def test_merge_config_for_save(self, mock_listener):
-        """Test merging configuration for saving to file."""
-        existing_config = {
-            "manual_setting": "user_edited",
-            "shared_setting": "old_value",
-            "nested": {"manual_nested": "user_value", "shared_nested": "old_nested"},
-        }
-
-        current_config = {
-            "shared_setting": "new_value",
-            "app_setting": "app_value",
-            "nested": {"shared_nested": "new_nested", "app_nested": "app_nested_value"},
-        }
-
-        result = mock_listener._merge_config_for_save(existing_config, current_config)
-
-        expected = {
-            "manual_setting": "user_edited",  # Preserved from existing
-            "shared_setting": "new_value",  # Updated from current
-            "app_setting": "app_value",  # Added from current
-            "nested": {
-                "manual_nested": "user_value",  # Preserved from existing
-                "shared_nested": "new_nested",  # Updated from current
-                "app_nested": "app_nested_value",  # Added from current
-            },
-        }
-        assert result == expected
-
-    def test_has_config_changes_identical(self, mock_listener):
-        """Test change detection with identical configurations."""
-        config1 = {"key1": "value1", "key2": {"nested": "value"}}
-        config2 = {"key1": "value1", "key2": {"nested": "value"}}
-
-        assert not mock_listener._has_config_changes(config1, config2)
-
-    def test_has_config_changes_different(self, mock_listener):
-        """Test change detection with different configurations."""
-        config1 = {"key1": "value1", "key2": {"nested": "value"}}
-        config2 = {"key1": "value1", "key2": {"nested": "different"}}
-
-        assert mock_listener._has_config_changes(config1, config2)
-
-    def test_has_config_changes_serialization_error(self, mock_listener):
-        """Test change detection when serialization fails."""
-        with patch.object(
-            mock_listener,
-            "_serialize_value",
-            side_effect=Exception("Serialization error"),
-        ):
-            config1 = {"key": "value"}
-            config2 = {"key": "value"}
-
-            # Should return True when comparison fails
-            assert mock_listener._has_config_changes(config1, config2)
-
     def test_load_configuration_file_not_exists(self, mock_listener, temp_config_file):
         """Test loading configuration when file doesn't exist."""
         # Remove the temp file to simulate non-existence
         os.unlink(temp_config_file)
 
-        mock_listener._default_configuration = {"default": "value"}
+        mock_listener._configuration = {"default": "value"}
         mock_listener._EventListener__load_configuration()
 
-        # Should remain unchanged
+        # Should remain unchanged and baseline should be established
+        assert mock_listener._configuration == {"default": "value"}
         assert mock_listener._default_configuration == {"default": "value"}
 
     def test_load_configuration_success(self, mock_listener, temp_config_file):
         """Test successful configuration loading."""
         # Setup default configuration
-        mock_listener._default_configuration = {
+        mock_listener._configuration = {
             "default_key": "default_value",
             "shared_key": "default_shared",
         }
@@ -196,59 +223,20 @@ class TestEventListenerConfiguration:
         # Load configuration
         mock_listener._EventListener__load_configuration()
 
+        # Verify baseline was established
+        expected_baseline = {
+            "default_key": "default_value",
+            "shared_key": "default_shared",
+        }
+        assert mock_listener._default_configuration == expected_baseline
+
         # Verify merge
-        expected = {
+        expected_working = {
             "default_key": "default_value",  # Preserved
             "shared_key": "loaded_shared",  # Updated
             "loaded_key": "loaded_value",  # Added
         }
-        assert mock_listener._default_configuration == expected
-
-    def test_save_configuration_no_changes(self, mock_listener, temp_config_file):
-        """Test saving configuration when no changes exist."""
-        # Setup configuration
-        config = {"key": "value"}
-        mock_listener._default_configuration = config
-
-        # Write same config to file
-        with open(temp_config_file, "w") as f:
-            json.dump(config, f)
-
-        # Mock the change detection to return False
-        with patch.object(mock_listener, "_has_config_changes", return_value=False):
-            mock_listener._EventListener__save_configuration()
-
-        # File should remain unchanged (same content)
-        with open(temp_config_file, "r") as f:
-            file_content = json.load(f)
-        assert file_content == config
-
-    def test_save_configuration_with_changes(self, mock_listener, temp_config_file):
-        """Test saving configuration when changes exist."""
-        # Setup existing file content
-        existing_config = {"manual_edit": "user_value", "shared_key": "old_value"}
-        with open(temp_config_file, "w") as f:
-            json.dump(existing_config, f)
-
-        # Setup current configuration
-        mock_listener._default_configuration = {
-            "shared_key": "new_value",
-            "app_key": "app_value",
-        }
-
-        # Save configuration
-        mock_listener._EventListener__save_configuration()
-
-        # Verify merged result was saved
-        with open(temp_config_file, "r") as f:
-            saved_config = json.load(f)
-
-        expected = {
-            "manual_edit": "user_value",  # Preserved from existing
-            "shared_key": "new_value",  # Updated from current
-            "app_key": "app_value",  # Added from current
-        }
-        assert saved_config == expected
+        assert mock_listener._configuration == expected_working
 
     def test_save_configuration_empty(self, mock_listener, temp_config_file):
         """Test saving empty configuration."""
@@ -256,7 +244,7 @@ class TestEventListenerConfiguration:
         if os.path.exists(temp_config_file):
             os.unlink(temp_config_file)
 
-        mock_listener._default_configuration = {}
+        mock_listener._configuration = {}
 
         # Should skip saving
         mock_listener._EventListener__save_configuration()
@@ -264,43 +252,13 @@ class TestEventListenerConfiguration:
         # File should not be created when config is empty
         assert not os.path.exists(temp_config_file)
 
-    def test_save_configuration_empty_with_existing_file(
-        self, mock_listener, temp_config_file
-    ):
-        """Test saving empty configuration when file already exists."""
-        # Write some initial content to the file
-        initial_content = {"existing": "data"}
-        with open(temp_config_file, "w") as f:
-            json.dump(initial_content, f)
-
-        # Record the modification time
-        initial_mtime = os.path.getmtime(temp_config_file)
-
-        # Set empty configuration
-        mock_listener._default_configuration = {}
-
-        # Should skip saving
-        mock_listener._EventListener__save_configuration()
-
-        # File should still exist but remain unchanged
-        assert os.path.exists(temp_config_file)
-        final_mtime = os.path.getmtime(temp_config_file)
-
-        # File should not have been modified
-        assert final_mtime == initial_mtime
-
-        # Content should remain the same
-        with open(temp_config_file, "r") as f:
-            content = json.load(f)
-        assert content == initial_content
-
     def test_custom_deserialize_configuration(self, mock_listener, temp_config_file):
         """Test loading with custom deserialization method."""
 
         # Add custom deserialize method
         def custom_deserialize(config_data):
-            mock_listener._default_configuration.update(config_data)
-            mock_listener._default_configuration["custom_processed"] = True
+            mock_listener._configuration.update(config_data)
+            mock_listener._configuration["custom_processed"] = True
 
         mock_listener._deserialize_configuration = custom_deserialize
 
@@ -313,5 +271,5 @@ class TestEventListenerConfiguration:
         mock_listener._EventListener__load_configuration()
 
         # Verify custom method was called
-        assert mock_listener._default_configuration["test_key"] == "test_value"
-        assert mock_listener._default_configuration["custom_processed"] is True
+        assert mock_listener._configuration["test_key"] == "test_value"
+        assert mock_listener._configuration["custom_processed"] is True

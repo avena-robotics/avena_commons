@@ -68,6 +68,7 @@ class EventListener:
     __get_state_frequency: int = 1
 
     _state: dict[str, Any] = {}
+    _configuration: dict[str, Any] = {}
     _default_configuration: dict[str, Any] = {}
     _shutdown_requested: bool = False
 
@@ -488,15 +489,15 @@ class EventListener:
 
     def __save_configuration(self):
         """
-        Saves configuration to file by merging with existing file content.
+        Saves configuration to file by storing only differences from baseline configuration.
 
-        Reads existing configuration file (if exists), merges current _default_configuration
-        changes into it, and saves only the modified values. This preserves manual edits
-        to the config file while updating only changed values.
-        Operation is skipped if configuration is empty.
+        Compares current _configuration with _default_configuration and saves
+        only the changed values to the config file. This preserves the original defaults
+        while persisting only the actual changes made during runtime.
+        Operation is skipped if configuration is empty or no changes exist.
         """
         try:
-            if not self._default_configuration:
+            if not self._configuration:
                 debug(
                     "Konfiguracja jest pusta, pomijam zapis do pliku",
                     message_logger=self._message_logger,
@@ -505,46 +506,29 @@ class EventListener:
 
             with self.__lock_for_general_purpose:
                 debug(
-                    "Starting configuration save with merge",
+                    "Starting configuration save with baseline comparison",
                     message_logger=self._message_logger,
                 )
 
-                # Load existing configuration from file
-                existing_config = {}
-                if os.path.exists(self.__config_file_path):
-                    try:
-                        with open(self.__config_file_path, "r", encoding="utf-8") as f:
-                            existing_config = json.load(f)
-                        debug(
-                            "Loaded existing configuration for merge",
-                            message_logger=self._message_logger,
-                        )
-                    except Exception as e:
-                        warning(
-                            f"Could not load existing config file for merge: {e}. Creating new file.",
-                            message_logger=self._message_logger,
-                        )
-                        existing_config = {}
-
-                # Merge current configuration with existing file content
-                merged_config = self._merge_config_for_save(
-                    existing_config, self._default_configuration
+                # Extract only the differences from baseline
+                config_changes = self._extract_config_differences(
+                    self._default_configuration, self._configuration
                 )
 
                 # Only save if there are actual changes
-                if self._has_config_changes(existing_config, merged_config):
+                if config_changes:
                     debug(
                         "Configuration changes detected, serializing",
                         message_logger=self._message_logger,
                     )
-                    serialized_config = self._serialize_value(merged_config)
+                    serialized_config = self._serialize_value(config_changes)
                     debug(
                         "Configuration serialization completed",
                         message_logger=self._message_logger,
                     )
 
                     debug(
-                        "Writing merged configuration to file",
+                        "Writing configuration changes to file",
                         message_logger=self._message_logger,
                     )
                     with open(self.__config_file_path, "w", encoding="utf-8") as f:
@@ -556,7 +540,7 @@ class EventListener:
                             ensure_ascii=False,
                         )
                     info(
-                        "Konfiguracja zostala zapisana do pliku (merged)",
+                        "Konfiguracja zostala zapisana do pliku (changes only)",
                         message_logger=self._message_logger,
                     )
                 else:
@@ -564,6 +548,13 @@ class EventListener:
                         "No configuration changes detected, skipping save",
                         message_logger=self._message_logger,
                     )
+                    # Remove config file if no changes exist
+                    if os.path.exists(self.__config_file_path):
+                        os.remove(self.__config_file_path)
+                        debug(
+                            "Removed empty configuration file",
+                            message_logger=self._message_logger,
+                        )
 
         except Exception as e:
             error(
@@ -571,11 +562,11 @@ class EventListener:
                 message_logger=self._message_logger,
             )
             error(
-                f"Configuration type: {type(self._default_configuration)}",
+                f"Configuration type: {type(self._configuration)}",
                 message_logger=self._message_logger,
             )
             error(
-                f"Configuration content: {self._default_configuration}",
+                f"Configuration content: {self._configuration}",
                 message_logger=self._message_logger,
             )
 
@@ -583,11 +574,16 @@ class EventListener:
         """
         Loads configuration from file and merges it with default configuration.
 
-        Reads saved configuration from JSON file and merges it with _default_configuration.
-        Only updates existing keys in _default_configuration or adds new ones from config file.
-        Keys that exist in _default_configuration but not in config file remain unchanged.
+        First establishes the baseline configuration, then loads saved changes from file
+        and merges them with the baseline to create the working _configuration.
+        The baseline remains unchanged and serves as reference for detecting changes.
         If the class has a _deserialize_configuration method, uses it for deserialization.
         """
+        # Store the current configuration as baseline before any modifications
+        self._configuration = (
+            self._default_configuration.copy() if self._default_configuration else {}
+        )
+
         if not os.path.exists(self.__config_file_path):
             debug(
                 f"Plik konfiguracji {self.__config_file_path} nie istnieje, pomijam wczytywanie.",
@@ -602,7 +598,7 @@ class EventListener:
             if hasattr(self, "_deserialize_configuration"):
                 self._deserialize_configuration(config_data)
             else:
-                # Merge config_data with _default_configuration
+                # Merge config_data with _configuration
                 self._merge_configuration(config_data)
 
             info(
@@ -619,29 +615,29 @@ class EventListener:
         """
         Merges loaded configuration data with default configuration.
 
-        Updates existing keys in _default_configuration from config_data.
-        Adds new keys from config_data that don't exist in _default_configuration.
-        Preserves keys in _default_configuration that don't exist in config_data.
+        Updates existing keys in _configuration from config_data.
+        Adds new keys from config_data that don't exist in _configuration.
+        Preserves keys in _configuration that don't exist in config_data.
 
         Args:
             config_data (dict): Configuration data loaded from file
         """
         for key, value in config_data.items():
-            if key in self._default_configuration:
+            if key in self._configuration:
                 # Update existing key
-                if isinstance(self._default_configuration[key], dict) and isinstance(
+                if isinstance(self._configuration[key], dict) and isinstance(
                     value, dict
                 ):
                     # Recursively merge nested dictionaries
-                    self._default_configuration[key] = self._merge_dict_recursive(
-                        self._default_configuration[key], value
+                    self._configuration[key] = self._merge_dict_recursive(
+                        self._configuration[key], value
                     )
                 else:
                     # Direct assignment for non-dict values
-                    self._default_configuration[key] = value
+                    self._configuration[key] = value
             else:
                 # Add new key that doesn't exist in default configuration
-                self._default_configuration[key] = value
+                self._configuration[key] = value
 
     def _merge_dict_recursive(self, default_dict: dict, config_dict: dict) -> dict:
         """
@@ -669,6 +665,40 @@ class EventListener:
                 result[key] = value
 
         return result
+
+    def _extract_config_differences(self, default: dict, current: dict) -> dict:
+        """
+        Extracts only the differences between default and current configuration.
+
+        Recursively compares default and current configurations and returns
+        a dictionary containing only the changed values.
+
+        Args:
+            default (dict): The default configuration (original defaults)
+            current (dict): The current configuration (potentially modified)
+
+        Returns:
+            dict: Dictionary containing only the changed values
+        """
+        differences = {}
+
+        # Check for new or modified keys in current config
+        for key, current_value in current.items():
+            if key not in default:
+                # New key that doesn't exist in default
+                differences[key] = current_value
+            elif isinstance(current_value, dict) and isinstance(default[key], dict):
+                # Recursively check nested dictionaries
+                nested_diff = self._extract_config_differences(
+                    default[key], current_value
+                )
+                if nested_diff:  # Only add if there are actual differences
+                    differences[key] = nested_diff
+            elif current_value != default[key]:
+                # Value has changed
+                differences[key] = current_value
+
+        return differences
 
     def _execute_before_shutdown(self):
         pass
@@ -1732,39 +1762,6 @@ class EventListener:
                 f"Received CMD_RESET in unexpected state: {self.__fsm_state.name}",
                 message_logger=self._message_logger,
             )
-
-    def _merge_config_for_save(
-        self, existing_config: dict, current_config: dict
-    ) -> dict:
-        """
-        Merges current configuration with existing file configuration for saving.
-
-        This method prioritizes current configuration values while preserving
-        manually edited values in the existing file that don't exist in current config.
-
-        Args:
-            existing_config (dict): Configuration loaded from file
-            current_config (dict): Current _default_configuration
-
-        Returns:
-            dict: Merged configuration ready for saving
-        """
-        result = existing_config.copy()
-
-        # Update with current configuration values
-        for key, value in current_config.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                # Recursively merge nested dictionaries
-                result[key] = self._merge_config_for_save(result[key], value)
-            else:
-                # Direct assignment - current config takes precedence
-                result[key] = value
-
-        return result
 
     def _has_config_changes(self, old_config: dict, new_config: dict) -> bool:
         """

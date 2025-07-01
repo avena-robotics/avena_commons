@@ -1,33 +1,34 @@
-# File: tests/unit/test_config_merge_logic.py
+# File: tests/unit/test_baseline_config_logic.py
 
 
-class TestConfigurationMergeLogic:
-    """Test suite for configuration merging logic in isolation."""
+class TestBaselineConfigurationLogic:
+    """Test suite for baseline configuration logic in isolation."""
 
-    def merge_config_for_save(
-        self, existing_config: dict, current_config: dict
-    ) -> dict:
+    def extract_config_differences(self, baseline: dict, current: dict) -> dict:
         """
-        Implementation of merge config for save method for testing.
+        Implementation of extract config differences method for testing.
 
-        This is the actual logic from EventListener._merge_config_for_save
+        This is the actual logic from EventListener._extract_config_differences
         """
-        result = existing_config.copy()
+        differences = {}
 
-        # Update with current configuration values
-        for key, value in current_config.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                # Recursively merge nested dictionaries
-                result[key] = self.merge_config_for_save(result[key], value)
-            else:
-                # Direct assignment - current config takes precedence
-                result[key] = value
+        # Check for new or modified keys in current config
+        for key, current_value in current.items():
+            if key not in baseline:
+                # New key that doesn't exist in baseline
+                differences[key] = current_value
+            elif isinstance(current_value, dict) and isinstance(baseline[key], dict):
+                # Recursively check nested dictionaries
+                nested_diff = self.extract_config_differences(
+                    baseline[key], current_value
+                )
+                if nested_diff:  # Only add if there are actual differences
+                    differences[key] = nested_diff
+            elif current_value != baseline[key]:
+                # Value has changed
+                differences[key] = current_value
 
-        return result
+        return differences
 
     def merge_dict_recursive(self, default_dict: dict, config_dict: dict) -> dict:
         """
@@ -63,75 +64,85 @@ class TestConfigurationMergeLogic:
             return [self.serialize_value(item) for item in value]
         return value
 
-    def has_config_changes(self, old_config: dict, new_config: dict) -> bool:
-        """
-        Implementation of has config changes for testing.
+    def test_extract_config_differences_no_changes(self):
+        """Test that no differences are detected when configs are identical."""
+        baseline = {"key1": "value1", "nested": {"key2": "value2"}}
+        current = {"key1": "value1", "nested": {"key2": "value2"}}
 
-        This is the actual logic from EventListener._has_config_changes
-        """
-        try:
-            old_serialized = self.serialize_value(old_config)
-            new_serialized = self.serialize_value(new_config)
+        differences = self.extract_config_differences(baseline, current)
+        assert differences == {}
 
-            return old_serialized != new_serialized
-        except Exception:
-            return True  # If comparison fails, assume there are changes to be safe
+    def test_extract_config_differences_simple_changes(self):
+        """Test detection of simple configuration changes."""
+        baseline = {"key1": "value1", "key2": "value2"}
+        current = {"key1": "changed_value1", "key2": "value2", "key3": "new_value"}
 
-    def test_merge_config_for_save_basic(self):
-        """Test basic configuration merging for save operation."""
-        existing_config = {
-            "manual_setting": "user_value",
-            "shared_setting": "old_value",
-            "existing_only": "preserved",
+        differences = self.extract_config_differences(baseline, current)
+        expected = {"key1": "changed_value1", "key3": "new_value"}
+        assert differences == expected
+
+    def test_extract_config_differences_nested_changes(self):
+        """Test detection of nested configuration changes."""
+        baseline = {
+            "database": {"host": "localhost", "port": 5432},
+            "cache": {"enabled": False},
+        }
+        current = {
+            "database": {"host": "remote", "port": 5432, "timeout": 30},
+            "cache": {"enabled": False},
+            "logging": {"level": "INFO"},
         }
 
-        current_config = {"shared_setting": "new_value", "app_setting": "app_value"}
-
-        result = self.merge_config_for_save(existing_config, current_config)
-
+        differences = self.extract_config_differences(baseline, current)
         expected = {
-            "manual_setting": "user_value",  # Preserved from existing
-            "shared_setting": "new_value",  # Updated from current
-            "existing_only": "preserved",  # Preserved from existing
-            "app_setting": "app_value",  # Added from current
+            "database": {"host": "remote", "timeout": 30},
+            "logging": {"level": "INFO"},
+        }
+        assert differences == expected
+
+    def test_extract_config_differences_deep_nesting(self):
+        """Test extraction of differences with deep nesting."""
+        baseline = {
+            "level1": {
+                "level2": {
+                    "level3": {
+                        "existing_key": "existing_value",
+                        "shared_key": "old_value",
+                    },
+                    "level2_existing": "preserved",
+                }
+            }
         }
 
-        assert result == expected
-
-    def test_merge_config_for_save_nested(self):
-        """Test nested dictionary merging for save operation."""
-        existing_config = {
-            "database": {
-                "manual_host": "user_host",
-                "shared_port": 3306,
-                "manual_ssl": True,
-            },
-            "manual_cache": {"size": 1000},
+        current = {
+            "level1": {
+                "level2": {
+                    "level3": {
+                        "existing_key": "existing_value",
+                        "shared_key": "new_value",
+                        "new_key": "new_value",
+                    },
+                    "level2_existing": "preserved",
+                    "level2_new": "added",
+                },
+                "level1_new": "added",
+            }
         }
 
-        current_config = {
-            "database": {"shared_port": 5432, "app_timeout": 30},
-            "app_logging": {"level": "INFO"},
-        }
-
-        result = self.merge_config_for_save(existing_config, current_config)
-
+        differences = self.extract_config_differences(baseline, current)
         expected = {
-            "database": {
-                "manual_host": "user_host",  # Preserved
-                "shared_port": 5432,  # Updated from current
-                "manual_ssl": True,  # Preserved
-                "app_timeout": 30,  # Added from current
-            },
-            "manual_cache": {
-                "size": 1000  # Preserved entirely
-            },
-            "app_logging": {
-                "level": "INFO"  # Added from current
-            },
+            "level1": {
+                "level2": {
+                    "level3": {
+                        "shared_key": "new_value",
+                        "new_key": "new_value",
+                    },
+                    "level2_new": "added",
+                },
+                "level1_new": "added",
+            }
         }
-
-        assert result == expected
+        assert differences == expected
 
     def test_merge_dict_recursive_basic(self):
         """Test basic recursive dictionary merging."""
@@ -195,22 +206,6 @@ class TestConfigurationMergeLogic:
 
         assert result == expected
 
-    def test_has_config_changes_identical(self):
-        """Test change detection with identical configurations."""
-        config1 = {"key1": "value1", "nested": {"key2": "value2", "key3": 123}}
-
-        config2 = {"key1": "value1", "nested": {"key2": "value2", "key3": 123}}
-
-        assert not self.has_config_changes(config1, config2)
-
-    def test_has_config_changes_different(self):
-        """Test change detection with different configurations."""
-        config1 = {"key1": "value1", "nested": {"key2": "value2"}}
-
-        config2 = {"key1": "value1", "nested": {"key2": "different_value"}}
-
-        assert self.has_config_changes(config1, config2)
-
     def test_serialize_value_basic_types(self):
         """Test serialization of basic types."""
         assert self.serialize_value("string") == "string"
@@ -232,112 +227,191 @@ class TestConfigurationMergeLogic:
 
     def test_edge_cases_empty_configs(self):
         """Test edge cases with empty configurations."""
-        # Empty existing, non-empty current
-        result1 = self.merge_config_for_save({}, {"key": "value"})
+        # Empty baseline, non-empty current
+        result1 = self.extract_config_differences({}, {"key": "value"})
         assert result1 == {"key": "value"}
 
-        # Non-empty existing, empty current
-        result2 = self.merge_config_for_save({"key": "value"}, {})
-        assert result2 == {"key": "value"}
+        # Non-empty baseline, empty current
+        result2 = self.extract_config_differences({"key": "value"}, {})
+        assert result2 == {}
 
         # Both empty
-        result3 = self.merge_config_for_save({}, {})
+        result3 = self.extract_config_differences({}, {})
         assert result3 == {}
 
-    def test_type_replacement_in_merge(self):
-        """Test that different types replace each other correctly."""
-        existing = {"setting": {"nested": "value"}}
+    def test_type_replacement_in_differences(self):
+        """Test that different types are detected as changes."""
+        baseline = {"setting": {"nested": "value"}}
         current = {"setting": "string_value"}  # Different type
 
-        result = self.merge_config_for_save(existing, current)
-        expected = {"setting": "string_value"}  # Should replace with new type
-        assert result == expected
+        differences = self.extract_config_differences(baseline, current)
+        expected = {"setting": "string_value"}  # Should detect type change
+        assert differences == expected
 
-    def test_list_replacement_in_merge(self):
-        """Test that lists are replaced entirely, not merged."""
-        existing = {"list_setting": [1, 2, 3]}
-        current = {"list_setting": [4, 5, 6]}
+    def test_list_changes_in_differences(self):
+        """Test that list changes are detected."""
+        baseline = {"list_setting": [1, 2, 3]}
+        current = {"list_setting": [1, 2, 3, 4]}
 
-        result = self.merge_config_for_save(existing, current)
-        expected = {"list_setting": [4, 5, 6]}  # Should replace entirely
-        assert result == expected
+        differences = self.extract_config_differences(baseline, current)
+        expected = {"list_setting": [1, 2, 3, 4]}  # Should detect list change
+        assert differences == expected
 
     def test_immutability_of_original_dicts(self):
-        """Test that original dictionaries are not modified during merge."""
-        original_existing = {"key1": "value1", "nested": {"key2": "value2"}}
-
+        """Test that original dictionaries are not modified during operations."""
+        original_baseline = {"key1": "value1", "nested": {"key2": "value2"}}
         original_current = {"key1": "new_value1", "nested": {"key3": "value3"}}
 
         # Create copies to check immutability
-        existing_copy = {"key1": "value1", "nested": {"key2": "value2"}}
-        current_copy = {"key1": "new_value1", "nested": {"key3": "value3"}}
+        baseline_copy = original_baseline.copy()
+        current_copy = original_current.copy()
 
-        result = self.merge_config_for_save(original_existing, original_current)
+        differences = self.extract_config_differences(
+            original_baseline, original_current
+        )
 
         # Verify original dictionaries weren't modified
-        assert original_existing == existing_copy
+        assert original_baseline == baseline_copy
         assert original_current == current_copy
 
         # Verify result is correct
         expected = {
             "key1": "new_value1",
-            "nested": {"key2": "value2", "key3": "value3"},
+            "nested": {"key3": "value3"},
         }
-        assert result == expected
+        assert differences == expected
 
-    def test_complex_nested_structure(self):
-        """Test with a complex, realistic configuration structure."""
-        existing_config = {
+    def test_complex_baseline_scenario(self):
+        """Test with a complex, realistic baseline vs current configuration."""
+        baseline_config = {
             "database": {
-                "host": "manual-db.example.com",
+                "host": "localhost",
                 "port": 5432,
-                "ssl": {"enabled": True, "cert_path": "/manual/path/cert.pem"},
-                "manual_pools": {"read": 5, "write": 2},
+                "ssl": {"enabled": False},
+                "pools": {"read": 5, "write": 2},
             },
-            "manual_features": {"feature_x": True, "feature_y": False},
+            "features": {"feature_x": True, "feature_y": False},
+            "logging": {"level": "INFO"},
         }
 
         current_config = {
             "database": {
-                "port": 3306,  # App changed this
-                "timeout": 30,  # App added this
-                "ssl": {
-                    "enabled": False,  # App changed this
-                    "verify_mode": "strict",  # App added this
-                },
-                "app_pools": {"connection": 10},
+                "host": "remote.example.com",  # Changed
+                "port": 5432,  # Same
+                "ssl": {"enabled": True, "verify_mode": "strict"},  # Changed + new
+                "pools": {"read": 5, "write": 2},  # Same
+                "timeout": 30,  # New
             },
-            "app_settings": {"version": "1.2.3", "debug": False},
+            "features": {"feature_x": True, "feature_y": False},  # Same
+            "logging": {"level": "DEBUG", "file": "/var/log/app.log"},  # Changed + new
+            "monitoring": {"enabled": True},  # Entirely new section
         }
 
-        result = self.merge_config_for_save(existing_config, current_config)
+        differences = self.extract_config_differences(baseline_config, current_config)
 
         expected = {
             "database": {
-                "host": "manual-db.example.com",  # Preserved from manual
-                "port": 3306,  # Updated by app
-                "timeout": 30,  # Added by app
-                "ssl": {
-                    "enabled": False,  # Updated by app
-                    "cert_path": "/manual/path/cert.pem",  # Preserved from manual
-                    "verify_mode": "strict",  # Added by app
-                },
-                "manual_pools": {  # Preserved from manual
-                    "read": 5,
-                    "write": 2,
-                },
-                "app_pools": {  # Added by app
-                    "connection": 10
+                "host": "remote.example.com",
+                "ssl": {"enabled": True, "verify_mode": "strict"},
+                "timeout": 30,
+            },
+            "logging": {"level": "DEBUG", "file": "/var/log/app.log"},
+            "monitoring": {"enabled": True},
+        }
+
+        assert differences == expected
+
+    def test_baseline_workflow_integration(self):
+        """Test the complete baseline workflow from load to save."""
+        # Step 1: Initial app defaults (baseline)
+        app_defaults = {
+            "database": {"host": "localhost", "port": 5432},
+            "app_setting": "default_value",
+        }
+
+        # Step 2: File contains user changes
+        user_changes = {
+            "database": {"host": "remote_host", "timeout": 30},
+            "new_feature": {"enabled": True},
+        }
+
+        # Step 3: Merge user changes with app defaults (load workflow)
+        working_config = self.merge_dict_recursive(app_defaults, user_changes)
+        expected_working = {
+            "database": {"host": "remote_host", "port": 5432, "timeout": 30},
+            "app_setting": "default_value",
+            "new_feature": {"enabled": True},
+        }
+        assert working_config == expected_working
+
+        # Step 4: Extract only the differences for saving (save workflow)
+        differences = self.extract_config_differences(app_defaults, working_config)
+        expected_differences = {
+            "database": {"host": "remote_host", "timeout": 30},
+            "new_feature": {"enabled": True},
+        }
+        assert differences == expected_differences
+
+    def test_no_changes_after_load_save_cycle(self):
+        """Test that load-save cycle preserves changes correctly."""
+        # Original baseline
+        baseline = {"key1": "default1", "nested": {"key2": "default2"}}
+
+        # User changes saved to file
+        file_changes = {"key1": "changed1", "nested": {"key3": "new3"}}
+
+        # Load: merge changes with baseline
+        working_config = self.merge_dict_recursive(baseline, file_changes)
+
+        # Save: extract differences
+        extracted_changes = self.extract_config_differences(baseline, working_config)
+
+        # Should get back the same changes
+        assert extracted_changes == file_changes
+
+    def test_partial_nested_changes(self):
+        """Test that only modified parts of nested structures are included in differences."""
+        baseline = {
+            "section1": {
+                "unchanged_key": "value1",
+                "changed_key": "old_value",
+                "nested_section": {
+                    "unchanged_nested": "nested_value1",
+                    "changed_nested": "old_nested_value",
                 },
             },
-            "manual_features": {  # Preserved from manual
-                "feature_x": True,
-                "feature_y": False,
+            "section2": {"all_unchanged": "value2"},
+        }
+
+        current = {
+            "section1": {
+                "unchanged_key": "value1",  # Same
+                "changed_key": "new_value",  # Changed
+                "nested_section": {
+                    "unchanged_nested": "nested_value1",  # Same
+                    "changed_nested": "new_nested_value",  # Changed
+                    "added_nested": "added_value",  # New
+                },
             },
-            "app_settings": {  # Added by app
-                "version": "1.2.3",
-                "debug": False,
+            "section2": {
+                "all_unchanged": "value2"  # Same
+            },
+            "section3": {  # New section
+                "new_key": "new_value"
             },
         }
 
-        assert result == expected
+        differences = self.extract_config_differences(baseline, current)
+
+        expected = {
+            "section1": {
+                "changed_key": "new_value",
+                "nested_section": {
+                    "changed_nested": "new_nested_value",
+                    "added_nested": "added_value",
+                },
+            },
+            "section3": {"new_key": "new_value"},
+        }
+
+        assert differences == expected

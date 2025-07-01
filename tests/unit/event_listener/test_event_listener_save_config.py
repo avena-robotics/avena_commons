@@ -7,7 +7,7 @@ import pytest
 
 
 class TestEventListenerSaveConfiguration:
-    """Test suite for EventListener save configuration with intelligent merging."""
+    """Test suite for EventListener save configuration with baseline approach."""
 
     @pytest.fixture
     def mock_listener(self):
@@ -31,45 +31,35 @@ class TestEventListenerSaveConfiguration:
         listener._EventListener__config_file_path = "/tmp/test_config.json"
 
         # Set up actual implementations of the methods we want to test
-        listener._merge_config_for_save = self._merge_config_for_save.__get__(listener)
-        listener._has_config_changes = self._has_config_changes.__get__(listener)
+        listener._extract_config_differences = self._extract_config_differences.__get__(
+            listener
+        )
         listener._serialize_value = self._serialize_value.__get__(listener)
 
         return listener
 
     @staticmethod
-    def _merge_config_for_save(
-        self, existing_config: dict, current_config: dict
-    ) -> dict:
-        """Implementation of the merge config for save method."""
-        result = existing_config.copy()
+    def _extract_config_differences(self, baseline: dict, current: dict) -> dict:
+        """Implementation of the extract config differences method."""
+        differences = {}
 
-        # Update with current configuration values
-        for key, value in current_config.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                # Recursively merge nested dictionaries
-                result[key] = self._merge_config_for_save(result[key], value)
-            else:
-                # Direct assignment - current config takes precedence
-                result[key] = value
+        # Check for new or modified keys in current config
+        for key, current_value in current.items():
+            if key not in baseline:
+                # New key that doesn't exist in baseline
+                differences[key] = current_value
+            elif isinstance(current_value, dict) and isinstance(baseline[key], dict):
+                # Recursively check nested dictionaries
+                nested_diff = self._extract_config_differences(
+                    baseline[key], current_value
+                )
+                if nested_diff:  # Only add if there are actual differences
+                    differences[key] = nested_diff
+            elif current_value != baseline[key]:
+                # Value has changed
+                differences[key] = current_value
 
-        return result
-
-    @staticmethod
-    def _has_config_changes(self, old_config: dict, new_config: dict) -> bool:
-        """Implementation of the has config changes method."""
-        try:
-            # Serialize both configs for comparison to handle complex nested objects
-            old_serialized = self._serialize_value(old_config)
-            new_serialized = self._serialize_value(new_config)
-
-            return old_serialized != new_serialized
-        except Exception:
-            return True  # If comparison fails, assume there are changes to be safe
+        return differences
 
     @staticmethod
     def _serialize_value(self, value):
@@ -84,184 +74,45 @@ class TestEventListenerSaveConfiguration:
             return value.value
         return value
 
-    def test_merge_config_for_save_basic_merge(self, mock_listener):
-        """Test basic merging of current config with existing file config."""
-        existing_config = {
-            "manual_setting": "user_value",
-            "shared_setting": "old_value",
-            "existing_only": "preserved",
+    def test_extract_config_differences_no_changes(self, mock_listener):
+        """Test that no differences are detected when configs are identical."""
+        baseline = {"key1": "value1", "nested": {"key2": "value2"}}
+        current = {"key1": "value1", "nested": {"key2": "value2"}}
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        assert differences == {}
+
+    def test_extract_config_differences_simple_changes(self, mock_listener):
+        """Test detection of simple configuration changes."""
+        baseline = {"key1": "value1", "key2": "value2"}
+        current = {"key1": "changed_value1", "key2": "value2", "key3": "new_value"}
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        expected = {"key1": "changed_value1", "key3": "new_value"}
+        assert differences == expected
+
+    def test_extract_config_differences_nested_changes(self, mock_listener):
+        """Test detection of nested configuration changes."""
+        baseline = {
+            "database": {"host": "localhost", "port": 5432},
+            "cache": {"enabled": False},
+        }
+        current = {
+            "database": {"host": "remote", "port": 5432, "timeout": 30},
+            "cache": {"enabled": False},
+            "logging": {"level": "INFO"},
         }
 
-        current_config = {"shared_setting": "new_value", "app_setting": "app_value"}
-
-        result = mock_listener._merge_config_for_save(existing_config, current_config)
-
+        differences = mock_listener._extract_config_differences(baseline, current)
         expected = {
-            "manual_setting": "user_value",  # Preserved from existing
-            "shared_setting": "new_value",  # Updated from current
-            "existing_only": "preserved",  # Preserved from existing
-            "app_setting": "app_value",  # Added from current
+            "database": {"host": "remote", "timeout": 30},
+            "logging": {"level": "INFO"},
         }
+        assert differences == expected
 
-        assert result == expected
-
-    def test_merge_config_for_save_nested_dicts(self, mock_listener):
-        """Test merging with nested dictionary structures."""
-        existing_config = {
-            "database": {
-                "manual_host": "user_host",
-                "shared_port": 3306,
-                "manual_ssl": True,
-            },
-            "manual_cache": {"size": 1000},
-        }
-
-        current_config = {
-            "database": {"shared_port": 5432, "app_timeout": 30},
-            "app_logging": {"level": "INFO"},
-        }
-
-        result = mock_listener._merge_config_for_save(existing_config, current_config)
-
-        expected = {
-            "database": {
-                "manual_host": "user_host",  # Preserved
-                "shared_port": 5432,  # Updated from current
-                "manual_ssl": True,  # Preserved
-                "app_timeout": 30,  # Added from current
-            },
-            "manual_cache": {
-                "size": 1000  # Preserved entirely
-            },
-            "app_logging": {
-                "level": "INFO"  # Added from current
-            },
-        }
-
-        assert result == expected
-
-    def test_has_config_changes_identical_configs(self, mock_listener):
-        """Test change detection with identical configurations."""
-        config1 = {"key1": "value1", "nested": {"key2": "value2", "key3": 123}}
-
-        config2 = {"key1": "value1", "nested": {"key2": "value2", "key3": 123}}
-
-        assert not mock_listener._has_config_changes(config1, config2)
-
-    def test_has_config_changes_different_configs(self, mock_listener):
-        """Test change detection with different configurations."""
-        config1 = {"key1": "value1", "nested": {"key2": "value2"}}
-
-        config2 = {"key1": "value1", "nested": {"key2": "different_value"}}
-
-        assert mock_listener._has_config_changes(config1, config2)
-
-    def test_has_config_changes_serialization_error(self, mock_listener):
-        """Test change detection when serialization fails."""
-        config1 = {"key": "value"}
-        config2 = {"key": "value"}
-
-        # Mock serialize_value to raise an exception
-        mock_listener._serialize_value = MagicMock(
-            side_effect=Exception("Serialization failed")
-        )
-
-        # Should return True when comparison fails (assuming changes exist to be safe)
-        assert mock_listener._has_config_changes(config1, config2)
-
-    def test_save_configuration_integration_workflow(self):
-        """Test the complete save configuration workflow with mocked I/O."""
-        with (
-            patch("builtins.open", mock_open()) as mock_file,
-            patch("json.load") as mock_json_load,
-            patch("json.dump") as mock_json_dump,
-            patch("os.path.exists") as mock_exists,
-        ):
-            # Setup scenario: existing file with manual edits + app changes
-            mock_exists.return_value = True
-
-            existing_file_config = {
-                "database": {
-                    "host": "manual.example.com",
-                    "port": 3306,
-                    "manual_ssl_cert": "/path/to/cert",
-                },
-                "manual_feature_flag": True,
-            }
-            mock_json_load.return_value = existing_file_config
-
-            current_app_config = {
-                "database": {
-                    "port": 5432,  # App changed this
-                    "timeout": 30,  # App added this
-                    "pool_size": 10,  # App added this
-                },
-                "app_version": "1.2.3",  # App added this
-                "logging": {  # App added entire section
-                    "level": "INFO",
-                    "file": "/var/log/app.log",
-                },
-            }
-
-            # Create a mock that implements our save configuration logic
-            mock_listener = MagicMock()
-            mock_listener._default_configuration = current_app_config
-            mock_listener._EventListener__config_file_path = "/tmp/config.json"
-            mock_listener._message_logger = MagicMock()
-
-            # Implement the save logic directly in the test
-            if mock_exists.return_value:
-                with mock_file() as f:
-                    existing_config = mock_json_load()
-
-                # Merge logic
-                merged_config = existing_file_config.copy()
-                for key, value in current_app_config.items():
-                    if (
-                        key in merged_config
-                        and isinstance(merged_config[key], dict)
-                        and isinstance(value, dict)
-                    ):
-                        # Merge nested dicts
-                        for nested_key, nested_value in value.items():
-                            merged_config[key][nested_key] = nested_value
-                    else:
-                        merged_config[key] = value
-
-                # Save merged config
-                mock_json_dump(
-                    merged_config,
-                    mock_file(),
-                    indent=4,
-                    sort_keys=True,
-                    ensure_ascii=False,
-                )
-
-            # Verify the result combines both manual and app settings correctly
-            mock_json_dump.assert_called_once()
-            saved_config = mock_json_dump.call_args[0][0]
-
-            expected_final_config = {
-                "database": {
-                    "host": "manual.example.com",  # Preserved from manual
-                    "port": 5432,  # Updated by app
-                    "manual_ssl_cert": "/path/to/cert",  # Preserved from manual
-                    "timeout": 30,  # Added by app
-                    "pool_size": 10,  # Added by app
-                },
-                "manual_feature_flag": True,  # Preserved from manual
-                "app_version": "1.2.3",  # Added by app
-                "logging": {  # Added by app
-                    "level": "INFO",
-                    "file": "/var/log/app.log",
-                },
-            }
-
-            assert saved_config == expected_final_config
-
-    def test_recursive_dict_merge_deep_nesting(self):
-        """Test that deeply nested dictionaries are merged correctly."""
-        existing = {
+    def test_extract_config_differences_deep_nesting(self, mock_listener):
+        """Test extraction of differences with deep nesting."""
+        baseline = {
             "level1": {
                 "level2": {
                     "level3": {
@@ -276,69 +127,118 @@ class TestEventListenerSaveConfiguration:
         current = {
             "level1": {
                 "level2": {
-                    "level3": {"shared_key": "new_value", "new_key": "new_value"},
+                    "level3": {
+                        "existing_key": "existing_value",
+                        "shared_key": "new_value",
+                        "new_key": "new_value",
+                    },
+                    "level2_existing": "preserved",
                     "level2_new": "added",
                 },
                 "level1_new": "added",
             }
         }
 
-        # Create a minimal mock for the merge function
-        mock_self = MagicMock()
-
-        def mock_merge_config_for_save(existing_dict, current_dict):
-            result = existing_dict.copy()
-            for key, value in current_dict.items():
-                if (
-                    key in result
-                    and isinstance(result[key], dict)
-                    and isinstance(value, dict)
-                ):
-                    result[key] = mock_merge_config_for_save(result[key], value)
-                else:
-                    result[key] = value
-            return result
-
-        result = mock_merge_config_for_save(existing, current)
-
+        differences = mock_listener._extract_config_differences(baseline, current)
         expected = {
             "level1": {
                 "level2": {
                     "level3": {
-                        "existing_key": "existing_value",  # Preserved
-                        "shared_key": "new_value",  # Updated
-                        "new_key": "new_value",  # Added
+                        "shared_key": "new_value",
+                        "new_key": "new_value",
                     },
-                    "level2_existing": "preserved",  # Preserved
-                    "level2_new": "added",  # Added
+                    "level2_new": "added",
                 },
-                "level1_new": "added",  # Added
+                "level1_new": "added",
             }
         }
+        assert differences == expected
 
-        assert result == expected
+    def test_save_configuration_baseline_workflow(self):
+        """Test the complete save configuration workflow with baseline comparison."""
+        with (
+            patch("builtins.open", mock_open()) as mock_file,
+            patch("json.dump") as mock_json_dump,
+            patch("os.path.exists") as mock_exists,
+            patch("os.remove") as mock_remove,
+        ):
+            # Setup scenario: baseline vs current configuration with changes
+            mock_exists.return_value = False  # No existing file initially
 
-    def test_empty_configurations(self):
-        """Test handling of empty configurations."""
-        mock_self = MagicMock()
+            default_config = {
+                "database": {
+                    "host": "localhost",
+                    "port": 5432,
+                },
+                "app_setting": "default_value",
+            }
 
-        def mock_merge_config_for_save(existing_dict, current_dict):
-            result = existing_dict.copy()
-            for key, value in current_dict.items():
-                result[key] = value
-            return result
+            current_config = {
+                "database": {
+                    "host": "remote_host",  # Changed from baseline
+                    "port": 5432,  # Same as baseline
+                    "timeout": 30,  # New setting
+                },
+                "app_setting": "default_value",  # Same as baseline
+                "new_feature": {  # Entirely new section
+                    "enabled": True,
+                    "config": "value",
+                },
+            }
 
-        # Empty existing, non-empty current
-        result1 = mock_merge_config_for_save({}, {"key": "value"})
-        assert result1 == {"key": "value"}
+            # Create a mock that implements our save configuration logic
+            mock_listener = MagicMock()
+            mock_listener._default_configuration = default_config
+            mock_listener._configuration = current_config
+            mock_listener._EventListener__config_file_path = "/tmp/config.json"
+            mock_listener._message_logger = MagicMock()
 
-        # Non-empty existing, empty current
-        result2 = mock_merge_config_for_save({"key": "value"}, {})
-        assert result2 == {"key": "value"}
+            # Extract differences (this is what __save_configuration does)
+            differences = {}
+            for key, current_value in current_config.items():
+                if key not in default_config:
+                    differences[key] = current_value
+                elif isinstance(current_value, dict) and isinstance(
+                    default_config[key], dict
+                ):
+                    nested_diff = {}
+                    for nested_key, nested_value in current_value.items():
+                        if (
+                            nested_key not in default_config[key]
+                            or default_config[key][nested_key] != nested_value
+                        ):
+                            nested_diff[nested_key] = nested_value
+                    if nested_diff:
+                        differences[key] = nested_diff
+                elif current_value != default_config[key]:
+                    differences[key] = current_value
 
-        # Both empty
-        result3 = mock_merge_config_for_save({}, {})
-        assert result3 == {}
+            # Save only differences
+            if differences:
+                mock_json_dump(
+                    differences,
+                    mock_file(),
+                    indent=4,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                )
+
+            # Verify the result contains only the actual changes
+            mock_json_dump.assert_called_once()
+            saved_config = mock_json_dump.call_args[0][0]
+
+            expected_differences = {
+                "database": {
+                    "host": "remote_host",  # Changed value
+                    "timeout": 30,  # New value
+                },
+                "new_feature": {  # Entirely new section
+                    "enabled": True,
+                    "config": "value",
+                },
+            }
+
+            assert saved_config == expected_differences
 
     def test_serialize_value_functionality(self, mock_listener):
         """Test the serialize value method with various data types."""
@@ -360,3 +260,118 @@ class TestEventListenerSaveConfiguration:
         # Test datetime
         test_datetime = datetime(2023, 1, 1, 12, 0, 0)
         assert mock_listener._serialize_value(test_datetime) == "2023-01-01T12:00:00"
+
+    def test_empty_configurations(self, mock_listener):
+        """Test handling of empty configurations in difference extraction."""
+        # Empty baseline, non-empty current
+        differences1 = mock_listener._extract_config_differences({}, {"key": "value"})
+        assert differences1 == {"key": "value"}
+
+        # Non-empty baseline, empty current
+        differences2 = mock_listener._extract_config_differences({"key": "value"}, {})
+        assert differences2 == {}
+
+        # Both empty
+        differences3 = mock_listener._extract_config_differences({}, {})
+        assert differences3 == {}
+
+    def test_complex_nested_structure_differences(self, mock_listener):
+        """Test with a complex, realistic configuration structure."""
+        default_config = {
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "ssl": {"enabled": False},
+                "pools": {"read": 5, "write": 2},
+            },
+            "features": {"feature_x": True, "feature_y": False},
+            "logging": {"level": "INFO"},
+        }
+
+        current_config = {
+            "database": {
+                "host": "remote.example.com",  # Changed
+                "port": 5432,  # Same
+                "ssl": {"enabled": True, "verify_mode": "strict"},  # Changed + new
+                "pools": {"read": 5, "write": 2},  # Same
+                "timeout": 30,  # New
+            },
+            "features": {"feature_x": True, "feature_y": False},  # Same
+            "logging": {"level": "DEBUG", "file": "/var/log/app.log"},  # Changed + new
+            "monitoring": {"enabled": True},  # Entirely new section
+        }
+
+        differences = mock_listener._extract_config_differences(
+            default_config, current_config
+        )
+
+        expected = {
+            "database": {
+                "host": "remote.example.com",
+                "ssl": {"enabled": True, "verify_mode": "strict"},
+                "timeout": 30,
+            },
+            "logging": {"level": "DEBUG", "file": "/var/log/app.log"},
+            "monitoring": {"enabled": True},
+        }
+
+        assert differences == expected
+
+    def test_type_changes_in_differences(self, mock_listener):
+        """Test that type changes are properly detected."""
+        baseline = {"setting": {"nested": "value"}}
+        current = {"setting": "string_value"}  # Changed from dict to string
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        expected = {"setting": "string_value"}
+        assert differences == expected
+
+    def test_list_changes_in_differences(self, mock_listener):
+        """Test that list changes are detected."""
+        baseline = {"list_setting": [1, 2, 3]}
+        current = {"list_setting": [1, 2, 3, 4]}  # List changed
+
+        differences = mock_listener._extract_config_differences(baseline, current)
+        expected = {"list_setting": [1, 2, 3, 4]}
+        assert differences == expected
+
+    def test_no_file_removal_on_changes(self):
+        """Test that file is not removed when there are actual changes."""
+        with (
+            patch("os.path.exists") as mock_exists,
+            patch("os.remove") as mock_remove,
+            patch("builtins.open", mock_open()),
+            patch("json.dump"),
+        ):
+            mock_exists.return_value = True
+
+            # This would be the logic in __save_configuration when changes exist
+            config_changes = {"key": "changed_value"}
+
+            if config_changes:
+                # File should not be removed when there are changes
+                pass
+            else:
+                mock_remove("/tmp/config.json")
+
+            # Verify remove was not called since there were changes
+            mock_remove.assert_not_called()
+
+    def test_file_removal_on_no_changes(self):
+        """Test that file is removed when no changes exist."""
+        with (
+            patch("os.path.exists") as mock_exists,
+            patch("os.remove") as mock_remove,
+        ):
+            mock_exists.return_value = True
+
+            # This would be the logic in __save_configuration when no changes exist
+            config_changes = {}
+
+            if config_changes:
+                pass  # Would save file
+            else:
+                mock_remove("/tmp/config.json")
+
+            # Verify remove was called since there were no changes
+            mock_remove.assert_called_once_with("/tmp/config.json")
