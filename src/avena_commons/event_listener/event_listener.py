@@ -1786,5 +1786,3 @@ class EventListener:
                 message_logger=self._message_logger,
             )
             return True  # If comparison fails, assume there are changes to be safe
-
-    # ...existing code...

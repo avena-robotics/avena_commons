@@ -119,6 +119,9 @@ class ModbusRTUWorker(Worker):
             await self.init()
             last_debug_time = time.time()
 
+            # Set up cancellation handling
+            loop = asyncio.get_running_loop()
+
             while True:
                 if pipe_in.poll(0.0005):
                     data = pipe_in.recv()
@@ -299,15 +302,25 @@ class ModbusRTUWorker(Worker):
                     )
                     last_debug_time = time.time()
 
-        except KeyboardInterrupt:
-            pass
+        except asyncio.CancelledError:
+            info(
+                f"{self.device_name} - Task was cancelled",
+                message_logger=self._message_logger,
+            )
         except Exception as e:
             error(f"Error in ModbusRTUWorker: {e}", message_logger=self._message_logger)
             error(
                 f"Traceback:\n{traceback.format_exc()}",
                 message_logger=self._message_logger,
             )
-            # raise e
+        finally:
+            # Clean up resources
+            if self._client and self._client.connected:
+                await self._client.close()
+            info(
+                f"{self.device_name} - Worker has shut down",
+                message_logger=self._message_logger,
+            )
 
 
 class ModbusRTU(Connector):
@@ -367,9 +380,32 @@ class ModbusRTU(Connector):
             message_logger=self.message_logger,
         )
         try:
-            asyncio.run(worker._run(pipe_in))
+            asyncio.run(worker._run(pipe_in), debug=False)
         except KeyboardInterrupt:
-            pass
+            debug(
+                f"{self.device_name} KeyboardInterrupt received, shutting down asyncio event loop",
+                message_logger=self.message_logger,
+            )
+        except Exception as e:
+            error(
+                f"{self.device_name} Error in ModbusRTU process: {e}",
+                message_logger=self.message_logger,
+            )
+        finally:
+            # Ensure any remaining resources are cleaned up
+            if hasattr(worker, "_client") and worker._client is not None:
+                try:
+                    # Create a new event loop for cleanup
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    if worker._client.connected:
+                        loop.run_until_complete(worker._client.close())
+                    loop.close()
+                except Exception as e:
+                    error(
+                        f"{self.device_name} Error during cleanup: {e}",
+                        message_logger=self.message_logger,
+                    )
 
     @property
     def serial_port(self):
@@ -467,5 +503,12 @@ class ModbusRTU(Connector):
         ).isError()
 
     def __del__(self):
-        time.sleep(0.5)
         self.message_logger = None
+        self.__execute_command(["STOP"])
+        self.pipe_out.close()
+        # self.process.join()
+        time.sleep(0.1)  # Allow time for the subprocess to stop
+        debug(
+            f"{self.device_name} - ModbusRTU Connector subprocess stopped.",
+            message_logger=self.message_logger,
+        )

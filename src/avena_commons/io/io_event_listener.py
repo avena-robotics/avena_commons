@@ -247,6 +247,11 @@ class IO_server(EventListener):
                 )
         # debug(f"Checking local data end ---", message_logger=self._message_logger)
 
+    def _execute_before_shutdown(
+        self,
+    ):  # TODO: Stworzyć kaskadowe zamykanie wszystkich urządzeń. Bus STOP, del VirtualDevice -> del device -> del BUS
+        pass
+
     def _load_device_configuration(
         self, configuration_file: str, general_config_file: str = None
     ):
