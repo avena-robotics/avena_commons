@@ -45,6 +45,13 @@ function dashboardApp(apiPort) {
             content: ''
         },
         
+        /** @type {Object} Śledzenie otwartego modala dla auto-refresh */
+        openModal: {
+            isOpen: false,
+            serviceName: null,
+            type: null // 'details' lub 'data'
+        },
+        
         /** @type {Object} Metryki systemu */
         metrics: {
             online: 0,
@@ -95,7 +102,8 @@ function dashboardApp(apiPort) {
             try {
                 console.debug('📡 Pobieranie danych z API...');
                 
-                const response = await fetch(`http://localhost:${apiPort}/api/dashboard/status`, {
+                // Używaj relatywnego URL żeby uniknąć problemów CORS
+                const response = await fetch(`/dashboard/data`, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -119,6 +127,9 @@ function dashboardApp(apiPort) {
                 this.services = data;
                 this.updateMetrics();
                 this.updateLastUpdateTime();
+                
+                // Odśwież modal jeśli jest otwarty
+                this.refreshModalContent();
                 
                 console.debug('✅ Dane pobrane pomyślnie:', Object.keys(data).length, 'serwisów');
                 
@@ -316,9 +327,24 @@ function dashboardApp(apiPort) {
             this.modal.title = `🔍 Szczegóły: ${serviceName}`;
             this.modal.content = this.generateServiceDetailsHTML(serviceName, service);
             
+            // Śledzenie otwartego modala dla auto-refresh
+            this.openModal = {
+                isOpen: true,
+                serviceName: serviceName,
+                type: 'details'
+            };
+            
             // Pokaż modal używając Bootstrap
             const modalElement = document.getElementById('detailsModal');
             const modal = new bootstrap.Modal(modalElement);
+            
+            // Nasłuchuj na zamknięcie modala
+            modalElement.addEventListener('hidden.bs.modal', () => {
+                this.openModal.isOpen = false;
+                this.openModal.serviceName = null;
+                this.openModal.type = null;
+            }, { once: true });
+            
             modal.show();
             
             console.debug('📋 Pokazano szczegóły serwisu:', serviceName);
@@ -346,9 +372,24 @@ function dashboardApp(apiPort) {
                 `;
             }
             
+            // Śledzenie otwartego modala dla auto-refresh
+            this.openModal = {
+                isOpen: true,
+                serviceName: serviceName,
+                type: 'data'
+            };
+            
             // Pokaż modal
             const modalElement = document.getElementById('detailsModal');
             const modal = new bootstrap.Modal(modalElement);
+            
+            // Nasłuchuj na zamknięcie modala
+            modalElement.addEventListener('hidden.bs.modal', () => {
+                this.openModal.isOpen = false;
+                this.openModal.serviceName = null;
+                this.openModal.type = null;
+            }, { once: true });
+            
             modal.show();
             
             console.debug('🌳 Pokazano drzewo danych serwisu:', serviceName);
@@ -460,7 +501,49 @@ function dashboardApp(apiPort) {
                 // Opcjonalnie możesz dodać prostą notyfikację w UI
                 // np. przez dodanie elementu do DOM
             }
-        }
+        },
+
+        /**
+         * Odświeża zawartość otwartego modala jeśli są nowe dane
+         */
+        refreshModalContent() {
+            // Sprawdź czy modal jest otwarty
+            if (!this.openModal.isOpen || !this.openModal.serviceName) {
+                return;
+            }
+
+            const serviceName = this.openModal.serviceName;
+            const service = this.services[serviceName];
+
+            // Sprawdź czy serwis nadal istnieje
+            if (!service) {
+                console.warn(`⚠️ Serwis ${serviceName} nie istnieje, zamykam modal`);
+                const modalElement = document.getElementById('detailsModal');
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) modal.hide();
+                return;
+            }
+
+            // Regeneruj zawartość w zależności od typu modala
+            if (this.openModal.type === 'details') {
+                this.modal.content = this.generateServiceDetailsHTML(serviceName, service);
+                console.debug('🔄 Odświeżono szczegóły modala dla:', serviceName);
+            } else if (this.openModal.type === 'data') {
+                // Regeneruj drzewo danych
+                if (typeof window.DashboardTree !== 'undefined' && window.DashboardTree.generateTreeHTML) {
+                    this.modal.content = window.DashboardTree.generateTreeHTML(service.data);
+                } else {
+                    this.modal.content = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Moduł drzewa nie został załadowany. Dane wyświetlone jako JSON:
+                        </div>
+                        <pre class="bg-light p-3 rounded">${JSON.stringify(service.data, null, 2)}</pre>
+                    `;
+                }
+                console.debug('🔄 Odświeżono drzewo danych modala dla:', serviceName);
+            }
+        },
     };
 }
 
