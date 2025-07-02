@@ -27,10 +27,8 @@ class Dashboard(EventListener):
         web_port: int = None,  # Dodatkowy port dla Flask web interface
         message_logger: MessageLogger | None = None,
         do_not_load_state: bool = True,
-        debug: bool = True,
     ):
         self._message_logger = message_logger
-        self._debug = debug
         self._service_status = {}  # Cache dla statusów serwisów
         self._web_port = web_port or (port + 1000)  # Domyślnie API port + 1000
         self._flask_app = None
@@ -43,6 +41,9 @@ class Dashboard(EventListener):
                 address=address,
                 message_logger=self._message_logger,
                 do_not_load_state=True,
+            )
+            debug(
+                f"konfiguracja: {self._configuration}",
             )
 
             # Dodaj API endpoints do FastAPI (zachowujemy dla JSON API)
@@ -325,11 +326,52 @@ class Dashboard(EventListener):
                     500,
                 )
 
+        # Dodaj globalne CORS middleware dla wszystkich route'ów Flask
+        @self._flask_app.after_request
+        def after_request(response):
+            response.headers.add("Access-Control-Allow-Origin", "*")
+            response.headers.add(
+                "Access-Control-Allow-Headers",
+                "Content-Type,Authorization,X-Requested-With",
+            )
+            response.headers.add(
+                "Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS"
+            )
+            response.headers.add("Access-Control-Allow-Credentials", "true")
+            return response
+
+        # Obsługuj OPTIONS preflight requests
+        @self._flask_app.route("/dashboard/data", methods=["OPTIONS"])
+        def dashboard_data_options():
+            """CORS preflight handler"""
+            response = jsonify({})
+            response.headers.add("Access-Control-Allow-Origin", "*")
+            response.headers.add(
+                "Access-Control-Allow-Headers",
+                "Content-Type,Authorization,X-Requested-With",
+            )
+            response.headers.add(
+                "Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS"
+            )
+            return response
+
         @self._flask_app.route("/dashboard/data")
         def dashboard_data():
             """Flask endpoint dla danych (alternatywa do FastAPI)"""
             try:
-                return jsonify(self._get_system_status())
+                data = self._get_system_status()
+                print(f"🌐 FLASK /dashboard/data returning: {len(data)} services")
+                # Debug: pokaż jakie dane state'u mamy dla każdego serwisu
+                for service_name, service_data in data.items():
+                    if service_data.get("data"):
+                        print(
+                            f"   📊 {service_name} ma dane state: {list(service_data['data'].keys())}"
+                        )
+                    else:
+                        print(f"   📭 {service_name} brak danych state")
+
+                # Zwróć JSON z danymi (CORS już dodane globalnie)
+                return jsonify(data)
             except Exception as e:
                 error(f"Dashboard data error: {e}", message_logger=self._message_logger)
                 return jsonify({"error": str(e)}), 500
@@ -366,63 +408,60 @@ class Dashboard(EventListener):
             )
 
     def _get_system_status(self) -> Dict[str, Any]:
-        """Zwraca statusy wszystkich serwisów na podstawie processing events"""
+        """Zwraca statusy wszystkich serwisów na podstawie processing events i state'u"""
         status = {}
         current_time = datetime.now()
 
-        # Analizuj eventy CMD_GET_STATE w processing queue
+        # POPRAWKA: Najpierw inicjalizuj wszystkich klientów z konfiguracji
+        if "clients" in self._configuration:
+            print(f"\n=== DASHBOARD CLIENT LIST FOR FLASK ===")
+            print(
+                f"Clients in configuration: {list(self._configuration['clients'].keys())}"
+            )
+            print(f"State keys: {list(self._state.keys())}")
+            print(f"Processing events: {len(self._processing_events_dict)}")
+            print(f"=======================================\n")
+
+            for client_name, client_config in self._configuration["clients"].items():
+                # Sprawdź czy mamy dane ze state'u dla tego klienta
+                service_state_data = self._state.get(client_name, {})
+                has_state_data = bool(service_state_data)
+
+                status[client_name] = {
+                    "online": has_state_data,  # Online jeśli mamy dane ze state'u
+                    "status": "connected" if has_state_data else "no_response",
+                    "last_response": current_time.isoformat()
+                    if has_state_data
+                    else None,
+                    "response_time_ms": 0 if has_state_data else None,
+                    "data": service_state_data,  # Dane ze state'u
+                    "address": f"{client_config.get('address', 'unknown')}:{client_config.get('port', 'unknown')}",
+                    "event_id": None,
+                }
+
+                print(
+                    f"   📊 {client_name}: {'ma dane' if has_state_data else 'brak danych'} ({len(service_state_data)} kluczy)"
+                )
+
+        # Analizuj eventy CMD_GET_STATE w processing queue (dla statusów waiting/timeout)
         for timestamp_str, event in self._processing_events_dict.items():
             if event.event_type == "CMD_GET_STATE":
                 service_name = event.destination
 
-                if event.result is not None:
-                    # Mamy odpowiedź
-                    status[service_name] = {
-                        "online": True,
-                        "status": "connected",
-                        "last_response": event.result.timestamp.isoformat()
-                        if hasattr(event.result, "timestamp")
-                        else current_time.isoformat(),
-                        "response_time_ms": getattr(event.result, "processing_time", 0),
-                        "data": event.result.result if event.result.result else {},
-                        "address": f"{event.destination_address}:{event.destination_port}",
-                        "event_id": event.id,
-                    }
-                else:
-                    # Sprawdź timeout
+                if event.result is None:
+                    # Event nadal oczekuje - sprawdź timeout
                     elapsed = (current_time - event.timestamp).total_seconds()
                     is_timeout = elapsed > event.maximum_processing_time
 
-                    status[service_name] = {
-                        "online": not is_timeout,
-                        "status": "timeout" if is_timeout else "waiting",
-                        "last_response": None,
-                        "response_time_ms": None,
-                        "data": {},
-                        "address": f"{event.destination_address}:{event.destination_port}",
-                        "elapsed_seconds": elapsed,
-                        "timeout_threshold": event.maximum_processing_time,
-                        "event_id": event.id,
-                    }
-
-        # POPRAWKA: używamy _default_configuration zamiast _configuration
-        if (
-            hasattr(self, "_default_configuration")
-            and "clients" in self._default_configuration
-        ):
-            for client_name, client_config in self._default_configuration[
-                "clients"
-            ].items():
-                if client_name not in status:
-                    status[client_name] = {
-                        "online": False,
-                        "status": "no_response",
-                        "last_response": None,
-                        "response_time_ms": None,
-                        "data": {},
-                        "address": f"{client_config.get('address', 'unknown')}:{client_config.get('port', 'unknown')}",
-                        "event_id": None,
-                    }
+                    # Aktualizuj status tylko jeśli istnieje w status dict
+                    if service_name in status:
+                        status[service_name].update({
+                            "online": not is_timeout,
+                            "status": "timeout" if is_timeout else "waiting",
+                            "elapsed_seconds": elapsed,
+                            "timeout_threshold": event.maximum_processing_time,
+                            "event_id": event.id,
+                        })
 
         return status
 
@@ -433,27 +472,31 @@ class Dashboard(EventListener):
                     # Event ma result - usuń go z processing
                     self._find_and_remove_processing_event(event)
                     debug(
-                        f"Received state from {event.destination}: {event.result.result}",
+                        f"Received state from {event.source}: {event.result.result}",
                         message_logger=self._message_logger,
                     )
+                    # Zapisz dane ze state'u - używaj event.source (nazwa klienta) zamiast event.destination (dashboard)
+                    self._state[event.source] = event.data if event.data else {}
+                    debug(
+                        f"Saved state for {event.source}: {len(self._state[event.source])} keys",
+                        message_logger=self._message_logger,
+                    )
+                    print(f"🌐 STATE: {self._state}")
             case _:
                 pass
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         """Rozszerzona wersja sprawdzania danych lokalnych"""
-        # POPRAWKA: używamy _default_configuration zamiast _configuration
-        if (
-            not hasattr(self, "_default_configuration")
-            or "clients" not in self._default_configuration
-        ):
+        # POPRAWKA: używamy _configuration zamiast _default_configuration
+        if not hasattr(self, "_configuration") or "clients" not in self._configuration:
             debug(
                 "No clients configured for monitoring",
                 message_logger=self._message_logger,
             )
             return
 
-        for key, client in self._default_configuration["clients"].items():
+        for key, client in self._configuration["clients"].items():
             client_port = client["port"]
             client_address = client["address"]
 
