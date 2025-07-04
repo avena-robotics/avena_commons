@@ -2,6 +2,12 @@
 
 A utility library for working with Avena Robotics systems.
 
+Integration and unit test are still in progress, but the library is functional.
+
+Documentation: 
+- [Connector / Worker](/docs/connector_worker_usage.md)
+- [Utils](/docs/utils_usage.md)
+
 ## Quick Start
 
 **Install from source:**

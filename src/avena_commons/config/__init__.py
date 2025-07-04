@@ -1,5 +1,5 @@
 """
-#### Moduł Config - Zarządzanie Konfiguracją Systemu
+#### Moduł Config - Zarządzanie Konfiguracją Systemu DEPRECATED
 
 Scentralizowane zarządzanie konfiguracją z automatyczną walidacją
 i bezpiecznym dostępem do plików konfiguracyjnych.

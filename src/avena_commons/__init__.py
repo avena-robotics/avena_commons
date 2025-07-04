@@ -43,6 +43,8 @@ Interfejs monitorowania systemu w czasie rzeczywistym oparty na Flask.
 #### util - Narzędzia Pomocnicze
 Funkcje matematyczne, pomiar wydajności i narzędzia systemowe.
 - `MeasureTime`: Pomiar czasu wykonania kodu
+- `ControlLoop`: Pętla kontrolna
+- `Connector`/`Worker`: Asynchroniczne połączenia i przetwarzanie
 - Funkcje 3D: transformacje, interpolacja, obliczenia robotyczne
 - Filtry sygnałów i systemy sterowania
 
