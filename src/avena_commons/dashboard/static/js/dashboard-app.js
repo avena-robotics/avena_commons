@@ -450,10 +450,10 @@ function dashboardApp(apiPort) {
             // Obserwuj zmiany w autoRefresh
             this.$watch('autoRefresh', (value) => {
                 if (value) {
-                    console.info('▶️ Auto-odświeżanie włączone (co 5s)');
+                    console.info('▶️ Auto-odświeżanie włączone (co 500ms)');
                     this.refreshInterval = setInterval(() => {
                         this.refreshData();
-                    }, 5000);
+                    }, 500);
                 } else {
                     console.info('⏸️ Auto-odświeżanie wyłączone');
                     if (this.refreshInterval) {
@@ -467,7 +467,7 @@ function dashboardApp(apiPort) {
             if (this.autoRefresh) {
                 this.refreshInterval = setInterval(() => {
                     this.refreshData();
-                }, 5000);
+                }, 500);
             }
         },
 
@@ -529,10 +529,18 @@ function dashboardApp(apiPort) {
                 this.modal.content = this.generateServiceDetailsHTML(serviceName, service);
                 console.debug('🔄 Odświeżono szczegóły modala dla:', serviceName);
             } else if (this.openModal.type === 'data') {
-                // Regeneruj drzewo danych
-                if (typeof window.DashboardTree !== 'undefined' && window.DashboardTree.generateTreeHTML) {
+                // Inteligentnie aktualizuj drzewo danych z zachowaniem stanu
+                const modalBody = document.querySelector('#detailsModal .modal-body');
+                if (modalBody && typeof window.DashboardTree !== 'undefined' && window.DashboardTree.updateTreeContent) {
+                    // Użyj inteligentnej aktualizacji która zachowa stan drzewa
+                    window.DashboardTree.updateTreeContent(modalBody, service.data);
+                    console.debug('🔄 Inteligentnie zaktualizowano drzewo danych modala dla:', serviceName);
+                } else if (typeof window.DashboardTree !== 'undefined' && window.DashboardTree.generateTreeHTML) {
+                    // Fallback - pełna regeneracja
                     this.modal.content = window.DashboardTree.generateTreeHTML(service.data);
+                    console.debug('🔄 Odświeżono drzewo danych modala (fallback) dla:', serviceName);
                 } else {
+                    // Fallback JSON
                     this.modal.content = `
                         <div class="alert alert-warning">
                             <i class="fas fa-exclamation-triangle me-2"></i>
@@ -541,7 +549,6 @@ function dashboardApp(apiPort) {
                         <pre class="bg-light p-3 rounded">${JSON.stringify(service.data, null, 2)}</pre>
                     `;
                 }
-                console.debug('🔄 Odświeżono drzewo danych modala dla:', serviceName);
             }
         },
     };

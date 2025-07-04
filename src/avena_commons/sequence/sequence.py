@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -111,6 +112,7 @@ class Sequence(BaseModel):
     sequence_enum: str | type[Enum]
     status: SequenceStatus = Field(default_factory=SequenceStatus)
     parametry: dict[str, Any] = Field(default_factory=dict)
+    creation_timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     @field_validator("sequence_enum", mode="before")
     @classmethod

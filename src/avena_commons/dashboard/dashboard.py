@@ -1,21 +1,15 @@
-import importlib
-import json
-import os
 import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
+from avena_commons.event_listener.event import Event
+from avena_commons.event_listener.event_listener import EventListener
+from avena_commons.util.logger import MessageLogger, debug, error
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from flask import Flask, jsonify, render_template, request
-from flask.wrappers import Response
-
-from avena_commons.event_listener.event import Event, Result
-from avena_commons.event_listener.event_listener import EventListener
-from avena_commons.util.logger import MessageLogger, debug, error, warning
-from avena_commons.util.measure_time import MeasureTime
+from flask import Flask, jsonify, render_template
 
 
 class Dashboard(EventListener):
@@ -33,6 +27,7 @@ class Dashboard(EventListener):
         self._web_port = web_port or (port + 1000)  # Domyślnie API port + 1000
         self._flask_app = None
         self._flask_server = None
+        self._last_event_timestamps = {}  # Timestamp ostatniego eventu dla każdego serwisu
 
         try:
             super().__init__(
@@ -77,20 +72,24 @@ class Dashboard(EventListener):
             status = self._get_system_status()
             online_services = [s for s in status.values() if s.get("online", False)]
 
-            return JSONResponse({
-                "status": "healthy"
-                if len(online_services) == len(status)
-                else "degraded",
-                "timestamp": datetime.now().isoformat(),
-                "services": {
-                    "total": len(status),
-                    "online": len(online_services),
-                    "offline": len(status) - len(online_services),
-                },
-                "uptime_seconds": (datetime.now() - self._start_time).total_seconds()
-                if hasattr(self, "_start_time")
-                else 0,
-            })
+            return JSONResponse(
+                {
+                    "status": "healthy"
+                    if len(online_services) == len(status)
+                    else "degraded",
+                    "timestamp": datetime.now().isoformat(),
+                    "services": {
+                        "total": len(status),
+                        "online": len(online_services),
+                        "offline": len(status) - len(online_services),
+                    },
+                    "uptime_seconds": (
+                        datetime.now() - self._start_time
+                    ).total_seconds()
+                    if hasattr(self, "_start_time")
+                    else 0,
+                }
+            )
 
     def _setup_flask_app(self):
         """Konfiguruje Flask app dla web interface z debug informacjami"""
@@ -224,7 +223,6 @@ class Dashboard(EventListener):
                         .service { border: 1px solid #ccc; margin: 10px 0; padding: 15px; border-radius: 5px; }
                         .online { background-color: #d4edda; }
                         .offline { background-color: #f8d7da; }
-                        .waiting { background-color: #fff3cd; }
                     </style>
                 </head>
                 <body>
@@ -235,11 +233,9 @@ class Dashboard(EventListener):
                     html += "<p>Brak skonfigurowanych serwisów</p>"
                 else:
                     for name, service in services.items():
-                        status_class = "offline"
-                        if service["status"] == "connected":
-                            status_class = "online"
-                        elif service["status"] == "waiting":
-                            status_class = "waiting"
+                        status_class = (
+                            "online" if service["status"] == "connected" else "offline"
+                        )
 
                         html += f"""
                         <div class="service {status_class}">
@@ -248,7 +244,7 @@ class Dashboard(EventListener):
                             <p><strong>Online:</strong> {"Tak" if service["online"] else "Nie"}</p>
                             <p><strong>Adres:</strong> {service["address"]}</p>
                             {f"<p><strong>Ostatnia odpowiedź:</strong> {service['last_response']}</p>" if service.get("last_response") else ""}
-                            {f"<p><strong>Czas odpowiedzi:</strong> {service['response_time_ms']}ms</p>" if service.get("response_time_ms") else ""}
+                            {f"<p><strong>Sekundy od ostatniego eventu:</strong> {service['seconds_since_last_event']:.1f}s</p>" if service.get("seconds_since_last_event") is not None else ""}
                         </div>
                         """
 
@@ -361,15 +357,6 @@ class Dashboard(EventListener):
             try:
                 data = self._get_system_status()
                 print(f"🌐 FLASK /dashboard/data returning: {len(data)} services")
-                # Debug: pokaż jakie dane state'u mamy dla każdego serwisu
-                for service_name, service_data in data.items():
-                    if service_data.get("data"):
-                        print(
-                            f"   📊 {service_name} ma dane state: {list(service_data['data'].keys())}"
-                        )
-                    else:
-                        print(f"   📭 {service_name} brak danych state")
-
                 # Zwróć JSON z danymi (CORS już dodane globalnie)
                 return jsonify(data)
             except Exception as e:
@@ -408,60 +395,37 @@ class Dashboard(EventListener):
             )
 
     def _get_system_status(self) -> Dict[str, Any]:
-        """Zwraca statusy wszystkich serwisów na podstawie processing events i state'u"""
+        """Zwraca statusy wszystkich serwisów na podstawie ostatnich eventów (5s timeout)"""
         status = {}
         current_time = datetime.now()
 
-        # POPRAWKA: Najpierw inicjalizuj wszystkich klientów z konfiguracji
+        # Inicjalizuj wszystkich klientów z konfiguracji
         if "clients" in self._configuration:
-            print(f"\n=== DASHBOARD CLIENT LIST FOR FLASK ===")
-            print(
-                f"Clients in configuration: {list(self._configuration['clients'].keys())}"
-            )
-            print(f"State keys: {list(self._state.keys())}")
-            print(f"Processing events: {len(self._processing_events_dict)}")
-            print(f"=======================================\n")
-
             for client_name, client_config in self._configuration["clients"].items():
-                # Sprawdź czy mamy dane ze state'u dla tego klienta
+                # Sprawdź czy otrzymano event w ciągu ostatnich 5 sekund
+                last_event_time = self._last_event_timestamps.get(client_name)
+                is_online = False
+                seconds_since_last_event = None
+
+                if last_event_time:
+                    seconds_since_last_event = (
+                        current_time - last_event_time
+                    ).total_seconds()
+                    is_online = seconds_since_last_event <= 5.0
+
+                # Pobierz dane ze state'u
                 service_state_data = self._state.get(client_name, {})
-                has_state_data = bool(service_state_data)
 
                 status[client_name] = {
-                    "online": has_state_data,  # Online jeśli mamy dane ze state'u
-                    "status": "connected" if has_state_data else "no_response",
-                    "last_response": current_time.isoformat()
-                    if has_state_data
+                    "online": is_online,
+                    "status": "connected" if is_online else "offline",
+                    "last_response": last_event_time.isoformat()
+                    if last_event_time
                     else None,
-                    "response_time_ms": 0 if has_state_data else None,
-                    "data": service_state_data,  # Dane ze state'u
+                    "seconds_since_last_event": seconds_since_last_event,
+                    "data": service_state_data,
                     "address": f"{client_config.get('address', 'unknown')}:{client_config.get('port', 'unknown')}",
-                    "event_id": None,
                 }
-
-                print(
-                    f"   📊 {client_name}: {'ma dane' if has_state_data else 'brak danych'} ({len(service_state_data)} kluczy)"
-                )
-
-        # Analizuj eventy CMD_GET_STATE w processing queue (dla statusów waiting/timeout)
-        for timestamp_str, event in self._processing_events_dict.items():
-            if event.event_type == "CMD_GET_STATE":
-                service_name = event.destination
-
-                if event.result is None:
-                    # Event nadal oczekuje - sprawdź timeout
-                    elapsed = (current_time - event.timestamp).total_seconds()
-                    is_timeout = elapsed > event.maximum_processing_time
-
-                    # Aktualizuj status tylko jeśli istnieje w status dict
-                    if service_name in status:
-                        status[service_name].update({
-                            "online": not is_timeout,
-                            "status": "timeout" if is_timeout else "waiting",
-                            "elapsed_seconds": elapsed,
-                            "timeout_threshold": event.maximum_processing_time,
-                            "event_id": event.id,
-                        })
 
         return status
 
@@ -475,7 +439,9 @@ class Dashboard(EventListener):
                         f"Received state from {event.source}: {event.result.result}",
                         message_logger=self._message_logger,
                     )
-                    # Zapisz dane ze state'u - używaj event.source (nazwa klienta) zamiast event.destination (dashboard)
+                    # Zapisz timestamp otrzymania eventu dla tego serwisu
+                    self._last_event_timestamps[event.source] = datetime.now()
+                    # Zapisz dane ze state'u
                     self._state[event.source] = event.data if event.data else {}
                     debug(
                         f"Saved state for {event.source}: {len(self._state[event.source])} keys",
@@ -483,7 +449,9 @@ class Dashboard(EventListener):
                     )
                     print(f"🌐 STATE: {self._state}")
             case _:
-                pass
+                # Dla wszystkich innych eventów też zapisuj timestamp
+                if hasattr(event, "source") and event.source:
+                    self._last_event_timestamps[event.source] = datetime.now()
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA

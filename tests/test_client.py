@@ -52,55 +52,22 @@ class TestClient(EventListener):
         self.message_logger = message_logger
         self._server_thread = None
 
-        # Generowanie losowego stanu na końcu inicjalizacji
-        self._state = self._generate_random_state()
+        # Generowanie podstawowego stanu (rzeczy które się nie zmieniają często)
+        self._base_state = self._generate_base_state()
+        # Pełny stan będzie kombinacją base + dynamic
+        self._state = self._base_state.copy()
 
-    def _generate_random_state(self) -> dict:
+    def _generate_base_state(self) -> dict:
         """
-        Generuje losowy słownik z zagnieżdżeniami do użycia jako stan klienta.
-        Tworzy strukturę danych z różnymi typami wartości i poziomami zagnieżdżenia.
+        Generuje podstawowy stan klienta - rzeczy które się nie zmieniają często
         """
-
-        def generate_random_value(depth: int = 0, max_depth: int = 3):
-            """Rekurencyjnie generuje losowe wartości różnych typów"""
-            if depth >= max_depth:
-                # Na najgłębszym poziomie zwracamy tylko proste typy
-                return random.choice([
-                    random.randint(1, 1000),
-                    random.uniform(0.0, 100.0),
-                    f"random_string_{random.randint(1, 100)}",
-                    random.choice([True, False]),
-                    None,
-                ])
-
-            value_type = random.choice(["dict", "list", "simple"])
-
-            if value_type == "dict":
-                # Generujemy zagnieżdżony słownik
-                nested_dict = {}
-                for _ in range(random.randint(1, 4)):
-                    key = f"key_{random.randint(1, 100)}"
-                    nested_dict[key] = generate_random_value(depth + 1, max_depth)
-                return nested_dict
-
-            elif value_type == "list":
-                # Generujemy listę z losowymi wartościami
-                return [
-                    generate_random_value(depth + 1, max_depth)
-                    for _ in range(random.randint(1, 5))
-                ]
-
-            else:
-                # Zwracamy prostą wartość
-                return generate_random_value(depth + 1, max_depth)
-
-        # Główna struktura stanu
-        state = {
+        return {
             "client_info": {
                 "name": self._EventListener__name,
                 "port": self._EventListener__port,
                 "startup_time": time.time(),
                 "session_id": f"session_{random.randint(10000, 99999)}",
+                "version": f"v{random.randint(1, 3)}.{random.randint(0, 9)}.{random.randint(0, 9)}",
             },
             "config": {
                 "max_connections": random.randint(10, 100),
@@ -113,29 +80,134 @@ class TestClient(EventListener):
                     "auth_methods": random.sample(
                         ["basic", "oauth", "token", "cert"], random.randint(1, 3)
                     ),
+                    "security": {
+                        "ssl_enabled": random.choice([True, False]),
+                        "encryption_level": random.choice(["low", "medium", "high"]),
+                        "rate_limiting": random.randint(10, 1000),
+                    },
                 },
             },
-            "runtime_data": generate_random_value(0, 3),
-            "statistics": {
-                "requests_count": random.randint(0, 1000),
-                "errors_count": random.randint(0, 50),
-                "response_times": [
-                    random.uniform(0.1, 5.0) for _ in range(random.randint(5, 15))
-                ],
-                "status_codes": {
-                    "200": random.randint(500, 900),
-                    "404": random.randint(10, 50),
-                    "500": random.randint(0, 20),
-                },
-            },
-            "user_preferences": generate_random_value(0, 2),
-            "cache": {
-                f"cache_key_{i}": generate_random_value(1, 2)
-                for i in range(random.randint(3, 8))
+            # Inicjalizacja user_preferences - podstawowe preferencje
+            "user_preferences": {
+                "theme": random.choice(["light", "dark", "auto"]),
+                "language": random.choice(["pl", "en", "de", "fr"]),
+                "notifications": random.choice([True, False]),
+                "auto_refresh": random.randint(1, 60),
             },
         }
 
-        return state
+    def _update_dynamic_state(self):
+        """
+        Aktualizuje dynamiczne części stanu - dane które zmieniają się w czasie
+        """
+        current_time = time.time()
+
+        # Aktualizuj runtime_data z losowymi zagnieżdżonymi danymi
+        self._state["runtime_data"] = self._generate_random_nested_data()
+
+        # Aktualizuj statystyki - symulacja prawdziwych metryk
+        self._state["statistics"] = {
+            "requests_count": random.randint(100, 2000) + int(current_time % 1000),
+            "errors_count": random.randint(0, 50),
+            "response_times": [
+                round(random.uniform(0.1, 5.0), 3) for _ in range(random.randint(5, 15))
+            ],
+            "status_codes": {
+                "200": random.randint(500, 900) + int(current_time % 100),
+                "404": random.randint(10, 50),
+                "500": random.randint(0, 20),
+                "502": random.randint(0, 10),
+            },
+            "bandwidth": {
+                "bytes_sent": random.randint(10000, 1000000),
+                "bytes_received": random.randint(5000, 500000),
+                "peak_connections": random.randint(5, 50),
+            },
+            "last_updated": current_time,
+        }
+
+        # Aktualizuj preferencje użytkownika - czasami się zmieniają
+        if random.random() < 0.3:  # 30% szansy na zmianę
+            self._state["user_preferences"] = self._generate_random_nested_data(
+                max_depth=2
+            )
+
+        # Aktualizuj cache - dynamiczne klucze
+        cache_size = random.randint(3, 12)
+        self._state["cache"] = {
+            f"cache_key_{i}_{int(current_time % 1000)}": self._generate_random_nested_data(
+                max_depth=2
+            )
+            for i in range(cache_size)
+        }
+
+        # Dodaj performance metrics
+        self._state["performance"] = {
+            "cpu_usage": round(random.uniform(5.0, 95.0), 2),
+            "memory_usage": round(random.uniform(100, 2048), 2),  # MB
+            "disk_usage": round(random.uniform(10.0, 90.0), 2),  # %
+            "network_io": {
+                "in": random.randint(1000, 100000),  # bytes/sec
+                "out": random.randint(500, 50000),
+            },
+            "uptime_seconds": current_time
+            - self._base_state["client_info"]["startup_time"],
+        }
+
+        # Dodaj active connections z różnymi statusami
+        connections = []
+        for i in range(random.randint(2, 8)):
+            connections.append({
+                "id": f"conn_{i}_{int(current_time % 1000)}",
+                "remote_ip": f"192.168.1.{random.randint(10, 254)}",
+                "port": random.randint(1024, 65535),
+                "status": random.choice(["active", "idle", "closing", "connecting"]),
+                "duration": random.randint(1, 3600),  # seconds
+                "bytes_transferred": random.randint(100, 1000000),
+            })
+        self._state["active_connections"] = connections
+
+        # Timestamp ostatniej aktualizacji
+        self._state["last_state_update"] = {
+            "timestamp": current_time,
+            "iso_time": time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(current_time)
+            ),
+            "update_count": getattr(self, "_update_count", 0) + 1,
+        }
+        self._update_count = getattr(self, "_update_count", 0) + 1
+
+    def _generate_random_nested_data(self, max_depth: int = 3) -> dict:
+        """Generuje losowe zagnieżdżone dane z kontrolowaną głębokością"""
+
+        def generate_random_value(depth: int = 0):
+            if depth >= max_depth:
+                return random.choice([
+                    random.randint(1, 1000),
+                    round(random.uniform(0.0, 100.0), 3),
+                    f"random_string_{random.randint(1, 100)}",
+                    random.choice([True, False]),
+                    None,
+                ])
+
+            value_type = random.choice(["dict", "list", "simple"])
+
+            if value_type == "dict":
+                nested_dict = {}
+                for _ in range(random.randint(1, 4)):
+                    key = f"key_{random.randint(1, 100)}"
+                    nested_dict[key] = generate_random_value(depth + 1)
+                return nested_dict
+
+            elif value_type == "list":
+                return [
+                    generate_random_value(depth + 1)
+                    for _ in range(random.randint(1, 5))
+                ]
+            else:
+                return generate_random_value(depth + 1)
+
+        return generate_random_value(0)
 
     async def _analyze_event(self, event: Event) -> bool:
         try:
@@ -157,14 +229,17 @@ class TestClient(EventListener):
 
     async def _handle_get_state_command(self, event: Event) -> None:
         """
-        Nadpisana metoda obsługi CMD_GET_STATE - zwraca wygenerowany losowy stan klienta.
+        Nadpisana metoda obsługi CMD_GET_STATE - zwraca zaktualizowany dynamiczny stan klienta.
         """
+        # Aktualizuj dynamiczne części stanu przed zwróceniem
+        self._update_dynamic_state()
+
         debug(
-            f"TestClient processing CMD_GET_STATE event, sending generated state with {len(self._state)} keys",
+            f"TestClient processing CMD_GET_STATE event, sending updated state with {len(self._state)} keys",
             message_logger=self.message_logger,
         )
 
-        # Zwracamy wygenerowany losowy stan z _generate_random_state()
+        # Zwracamy zaktualizowany stan
         event.data = self._state
         event.result = Result(result="success")
         await self._reply(event)

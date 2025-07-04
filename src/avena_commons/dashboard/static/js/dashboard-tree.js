@@ -199,6 +199,181 @@ const DashboardTree = {
                 <strong>Błąd wyświetlania drzewa:</strong> ${this.escapeHTML(message)}
             </div>
         `;
+    },
+
+    /**
+     * Zapisuje aktualny stan drzewa (rozwinięte węzły, scroll)
+     * @param {HTMLElement} container - Kontener drzewa
+     * @return {Object} Obiekt ze stanem drzewa
+     */
+    saveTreeState(container) {
+        const state = {
+            expandedNodes: [],
+            scrollTop: 0,
+            scrollLeft: 0
+        };
+
+        try {
+            // Zapisz pozycję scrolla
+            const modalBody = container.closest('.modal-body');
+            if (modalBody) {
+                state.scrollTop = modalBody.scrollTop;
+                state.scrollLeft = modalBody.scrollLeft;
+            }
+
+            // Znajdź wszystkie rozwinięte węzły i zapisz ich ścieżki
+            const expandedItems = container.querySelectorAll('.tree-item:not(.collapsed)');
+            expandedItems.forEach(item => {
+                const path = this.getNodePath(item);
+                if (path) {
+                    state.expandedNodes.push(path);
+                }
+            });
+
+            console.debug('💾 Zapisano stan drzewa:', state);
+            return state;
+
+        } catch (error) {
+            console.warn('⚠️ Błąd zapisywania stanu drzewa:', error);
+            return state;
+        }
+    },
+
+    /**
+     * Przywraca zapisany stan drzewa
+     * @param {HTMLElement} container - Kontener drzewa  
+     * @param {Object} state - Zapisany stan drzewa
+     */
+    restoreTreeState(container, state) {
+        if (!state || !container) return;
+
+        try {
+            // Przywróć stan rozwinięcia węzłów
+            state.expandedNodes.forEach(path => {
+                const node = this.findNodeByPath(container, path);
+                if (node) {
+                    node.classList.remove('collapsed');
+                }
+            });
+
+            // Przywróć pozycję scrolla z małym opóźnieniem (żeby DOM się zaktualizował)
+            setTimeout(() => {
+                const modalBody = container.closest('.modal-body');
+                if (modalBody && (state.scrollTop > 0 || state.scrollLeft > 0)) {
+                    modalBody.scrollTop = state.scrollTop;
+                    modalBody.scrollLeft = state.scrollLeft;
+                }
+            }, 50);
+
+            console.debug('♻️ Przywrócono stan drzewa:', state);
+
+        } catch (error) {
+            console.warn('⚠️ Błąd przywracania stanu drzewa:', error);
+        }
+    },
+
+    /**
+     * Generuje ścieżkę do węzła w drzewie na podstawie kluczy/indeksów
+     * @param {HTMLElement} treeItem - Element węzła drzewa
+     * @return {string|null} Ścieżka do węzła
+     */
+    getNodePath(treeItem) {
+        const path = [];
+        let current = treeItem;
+
+        while (current && current.classList.contains('tree-item')) {
+            const keyElement = current.querySelector('.tree-key');
+            if (keyElement) {
+                let key = keyElement.textContent.replace(':', '').trim();
+                // Dla tablic usuń nawiasy kwadratowe
+                if (key.startsWith('[') && key.endsWith(']')) {
+                    key = key.slice(1, -1);
+                }
+                path.unshift(key);
+            }
+            
+            // Przejdź do rodzica
+            current = current.parentElement?.closest('.tree-item');
+        }
+
+        return path.length > 0 ? path.join('.') : null;
+    },
+
+    /**
+     * Znajduje węzeł drzewa na podstawie ścieżki
+     * @param {HTMLElement} container - Kontener drzewa
+     * @param {string} path - Ścieżka do węzła
+     * @return {HTMLElement|null} Znaleziony węzeł
+     */
+    findNodeByPath(container, path) {
+        const parts = path.split('.');
+        let current = container;
+
+        for (const part of parts) {
+            const items = current.querySelectorAll(':scope > .tree-object > .tree-item, :scope > .tree-array > .tree-item');
+            let found = false;
+
+            for (const item of items) {
+                const keyElement = item.querySelector('.tree-key');
+                if (keyElement) {
+                    let key = keyElement.textContent.replace(':', '').trim();
+                    // Dla tablic usuń nawiasy kwadratowe
+                    if (key.startsWith('[') && key.endsWith(']')) {
+                        key = key.slice(1, -1);
+                    }
+                    
+                    if (key === part) {
+                        current = item;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!found) {
+                return null;
+            }
+        }
+
+        return current;
+    },
+
+    /**
+     * Inteligentnie aktualizuje zawartość drzewa zachowując stan
+     * @param {HTMLElement} container - Kontener drzewa
+     * @param {*} newData - Nowe dane do wyświetlenia
+     */
+    updateTreeContent(container, newData) {
+        if (!container) return;
+
+        try {
+            // Zapisz aktualny stan
+            const treeContainer = container.querySelector('.tree-container');
+            const savedState = treeContainer ? this.saveTreeState(treeContainer) : null;
+
+            // Wygeneruj nową zawartość
+            const newHTML = this.generateTreeHTML(newData);
+            
+            // Zastąp zawartość
+            container.innerHTML = newHTML;
+
+            // Przywróć stan po krótkim opóźnieniu
+            if (savedState) {
+                setTimeout(() => {
+                    const newTreeContainer = container.querySelector('.tree-container');
+                    if (newTreeContainer) {
+                        this.restoreTreeState(newTreeContainer, savedState);
+                    }
+                }, 100);
+            }
+
+            console.debug('🔄 Zaktualizowano zawartość drzewa z zachowaniem stanu');
+
+        } catch (error) {
+            console.error('❌ Błąd aktualizacji drzewa:', error);
+            // Fallback - zwykła regeneracja
+            container.innerHTML = this.generateTreeHTML(newData);
+        }
     }
 };
 
