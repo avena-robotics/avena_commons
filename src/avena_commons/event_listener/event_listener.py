@@ -239,7 +239,7 @@ class EventListener:
             message_logger=None,
         )
         # Wyłącz wątki przed próbą zamknięcia
-        self.__shutdown()  # Dodajemy bezpośrednie wywołanie shutdown
+        self.__del__()  # Wywołujemy destruktor, który wywoła __shutdown
         sys.exit(0)
 
     @contextmanager
@@ -894,7 +894,7 @@ class EventListener:
         try:
             debug(f"__del__ event listenera", message_logger=self._message_logger)
             if not self._shutdown_requested:
-                self.__shutdown()
+                self.shutdown()
         except Exception:
             # Ignorujemy błędy podczas destruktora
             pass
