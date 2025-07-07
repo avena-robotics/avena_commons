@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from enum import Enum
 from threading import Lock
 
@@ -14,7 +14,7 @@ class VirtualDeviceState(Enum):
     ERROR = 3
 
 
-class VirtualDevice:
+class VirtualDevice(ABC):
     def __init__(self, **kwargs):
         self.device_name = kwargs["device_name"]
         self.devices = kwargs["devices"]
@@ -129,7 +129,7 @@ class VirtualDevice:
     def _instant_execute_event(self, event: Event) -> Event:
         pass
 
-    def execute_event(self, event: Event) -> Event | None:  # wywolanie akcji dlugiej
+    def execute_event(self, event: Event) -> Event | None:  # wywolanie akcji
         with MeasureTime(
             label=f"{self.device_name} execute_event: {event.event_type}",
             max_execution_time=1.0,
@@ -162,4 +162,118 @@ class VirtualDevice:
 
     @abstractmethod
     def tick(self):
+        """Module main loop method. Io Server calls this method periodically. Device checks should take place here. Do not use this method for blocking operations."""
         pass
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia wirtualnego w formie stringa.
+        Używane przy printowaniu urządzenia.
+        
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan i liczbę połączonych urządzeń
+        """
+        try:
+            current_state = self.get_current_state()
+            state_display = (
+                current_state.name if hasattr(current_state, "name") 
+                else str(current_state)
+            )
+            devices_count = len(self.devices) if self.devices else 0
+            
+            return f"VirtualDevice(name='{self.device_name}', state={state_display}, connected_devices={devices_count})"
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"VirtualDevice(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia wirtualnego dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+        
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            current_state = self.get_current_state()
+            state_display = (
+                f"{current_state.name}({current_state.value})" 
+                if hasattr(current_state, "name") and hasattr(current_state, "value")
+                else str(current_state)
+            )
+            
+            return (f"VirtualDevice(device_name='{self.device_name}', "
+                   f"state={state_display}, "
+                   f"devices={self.devices}, "
+                   f"methods={list(self.methods.keys()) if self.methods else []})")
+        except Exception as e:
+            return f"VirtualDevice(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia wirtualnego.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+        
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - state: aktualny stan urządzenia (wartość)
+                - state_name: nazwa stanu urządzenia
+                - connected_devices: lista nazw połączonych urządzeń (serializowalne)
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        # Konwertuj obiekty urządzeń na ich nazwy/typy dla serializacji JSON
+        connected_devices_info = {}
+        if self.devices:
+            for device_name, device in self.devices.items():
+                try:
+                    # Próbuj wywołać to_dict() na połączonym urządzeniu
+                    if hasattr(device, "to_dict") and callable(device.to_dict):
+                        connected_devices_info[device_name] = device.to_dict()
+                    else:
+                        # Fallback - podstawowe informacje o urządzeniu
+                        connected_devices_info[device_name] = {
+                            "name": device_name,
+                            "type": str(type(device).__name__),
+                            "device_obj_str": str(device) if hasattr(device, "__str__") else "Unknown"
+                        }
+                except Exception as e:
+                    # W przypadku błędu, zapisz tylko podstawowe informacje
+                    connected_devices_info[device_name] = {
+                        "name": device_name,
+                        "type": str(type(device).__name__),
+                        "error": str(e)
+                    }
+        
+        result = {
+            "name": self.device_name,
+            "connected_devices": connected_devices_info,
+        }
+        
+        try:
+            current_state = self.get_current_state()
+            
+            # Dodanie informacji o stanie
+            result["state"] = (
+                current_state.value 
+                if hasattr(current_state, "value") 
+                else str(current_state)
+            )
+            result["state_name"] = (
+                current_state.name 
+                if hasattr(current_state, "name") 
+                else str(current_state)
+            )
+            
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["state"] = "ERROR"
+            result["state_name"] = "ERROR"
+            result["error"] = str(e)
+            
+            error(
+                f"{self.device_name} - Error creating dict representation: {e}",
+                message_logger=self._message_logger,
+            )
+        
+        return result
