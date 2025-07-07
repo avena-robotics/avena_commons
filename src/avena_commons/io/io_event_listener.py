@@ -28,7 +28,9 @@ class IO_server(EventListener):
             self._load_device_configuration(configuration_file, general_config_file)
             self.check_local_data_frequency: int = 50
             # Initialize state dict to store state data for actual device configuration.
-            self._state = self._build_state_dict(name, port, configuration_file, general_config_file)
+            self._state = self._build_state_dict(
+                name, port, configuration_file, general_config_file
+            )
             super().__init__(
                 name=name,
                 port=port,
@@ -256,31 +258,35 @@ class IO_server(EventListener):
     ):  # TODO: Stworzyć kaskadowe zamykanie wszystkich urządzeń. Bus STOP, del VirtualDevice -> del device -> del BUS
         """
         Wykonuje operacje przed zamknięciem serwera IO.
-        
+
         Aktualizuje stan urządzeń i wykonuje kaskadowe zamykanie wszystkich urządzeń.
         Kolejność zamykania: Virtual Devices -> Physical Devices -> Buses
         """
         try:
             # Aktualizuj stan przed zamknięciem
-            if hasattr(self, '_state'):
+            if hasattr(self, "_state"):
                 self._state = self._build_state_dict(
                     name=self._state.get("io_server", {}).get("name", "unknown"),
                     port=self._state.get("io_server", {}).get("port", 0),
-                    configuration_file=self._state.get("io_server", {}).get("configuration_file", ""),
-                    general_config_file=self._state.get("io_server", {}).get("general_config_file", "")
+                    configuration_file=self._state.get("io_server", {}).get(
+                        "configuration_file", ""
+                    ),
+                    general_config_file=self._state.get("io_server", {}).get(
+                        "general_config_file", ""
+                    ),
                 )
-                
+
                 if self._debug:
                     debug(
                         f"State updated before shutdown with {len(self._state.get('virtual_devices', {}))} virtual devices",
                         message_logger=self._message_logger,
                     )
-            
+
             # TODO: Implementacja kaskadowego zamykania urządzeń
             # 1. Zatrzymaj wszystkie virtual devices
-            # 2. Zatrzymaj wszystkie physical devices  
+            # 2. Zatrzymaj wszystkie physical devices
             # 3. Zatrzymaj wszystkie buses
-            
+
         except Exception as e:
             error(
                 f"Error during shutdown preparation: {e}",
@@ -875,19 +881,21 @@ class IO_server(EventListener):
             error(traceback.format_exc(), message_logger=self._message_logger)
             return None
 
-    def _build_state_dict(self, name: str, port: int, configuration_file: str, general_config_file: str) -> dict:
+    def _build_state_dict(
+        self, name: str, port: int, configuration_file: str, general_config_file: str
+    ) -> dict:
         """
         Buduje słownik stanu zawierający informacje o serwerze IO i wszystkich urządzeniach.
-        
+
         Metoda iteruje przez wszystkie typy urządzeń (virtual_devices, buses, physical_devices)
         i tworzy ich słownikowe reprezentacje wykorzystując metodę to_dict() jeśli jest dostępna.
-        
+
         Args:
             name: nazwa serwera IO
             port: port serwera IO
             configuration_file: ścieżka do pliku konfiguracji
             general_config_file: ścieżka do pliku konfiguracji ogólnej
-            
+
         Returns:
             dict: Słownik zawierający stan serwera IO i wszystkich urządzeń
         """
@@ -905,7 +913,7 @@ class IO_server(EventListener):
                 "virtual_devices": {},
                 "buses": {},
             }
-            
+
             # Przeiteruj przez virtual devices
             if hasattr(self, "virtual_devices") and self.virtual_devices:
                 for device_name, device in self.virtual_devices.items():
@@ -919,7 +927,7 @@ class IO_server(EventListener):
                             state["virtual_devices"][device_name] = {
                                 "name": device_name,
                                 "type": str(type(device).__name__),
-                                "to_dict_returned_none": True
+                                "to_dict_returned_none": True,
                             }
                     except Exception as e:
                         error(
@@ -930,9 +938,9 @@ class IO_server(EventListener):
                         state["virtual_devices"][device_name] = {
                             "name": device_name,
                             "type": str(type(device).__name__),
-                            "error": str(e)
+                            "error": str(e),
                         }
-            
+
             # Przeiteruj przez buses
             if hasattr(self, "buses") and self.buses:
                 for bus_name, bus in self.buses.items():
@@ -946,7 +954,7 @@ class IO_server(EventListener):
                             state["buses"][bus_name] = {
                                 "name": bus_name,
                                 "type": str(type(bus).__name__),
-                                "to_dict_returned_none": True
+                                "to_dict_returned_none": True,
                             }
                     except Exception as e:
                         error(
@@ -957,18 +965,18 @@ class IO_server(EventListener):
                         state["buses"][bus_name] = {
                             "name": bus_name,
                             "type": str(type(bus).__name__),
-                            "error": str(e)
+                            "error": str(e),
                         }
-            
+
             if self._debug:
                 debug(
                     f"Built state dict: {len(state['virtual_devices'])} virtual devices, "
                     f"{len(state['buses'])} buses",
                     message_logger=self._message_logger,
                 )
-            
+
             return state
-            
+
         except Exception as e:
             error(
                 f"Error building state dict: {e}",
@@ -976,11 +984,7 @@ class IO_server(EventListener):
             )
             # Zwróć minimalny state w przypadku błędu
             return {
-                "io_server": {
-                    "name": name,
-                    "port": port,
-                    "error": str(e)
-                },
+                "io_server": {"name": name, "port": port, "error": str(e)},
                 "virtual_devices": {},
                 "buses": {},
             }
@@ -988,22 +992,22 @@ class IO_server(EventListener):
     def update_state(self) -> dict:
         """
         Aktualizuje i zwraca aktualny stan serwera IO z wszystkimi urządzeniami.
-        
-        Metoda publiczna do aktualizacji stanu w dowolnym momencie - przydatna do 
+
+        Metoda publiczna do aktualizacji stanu w dowolnym momencie - przydatna do
         monitorowania, zapisywania stanu czy debugowania.
-        
+
         Returns:
             dict: Aktualny stan serwera IO i wszystkich urządzeń
         """
         try:
-            if hasattr(self, '_state') and self._state:
+            if hasattr(self, "_state") and self._state:
                 # Użyj istniejących parametrów z aktualnego stanu
                 io_server_info = self._state.get("io_server", {})
                 self._state = self._build_state_dict(
                     name=io_server_info.get("name", "unknown"),
                     port=io_server_info.get("port", 0),
                     configuration_file=io_server_info.get("configuration_file", ""),
-                    general_config_file=io_server_info.get("general_config_file", "")
+                    general_config_file=io_server_info.get("general_config_file", ""),
                 )
             else:
                 # Jeśli nie ma stanu, stwórz podstawowy
@@ -1011,21 +1015,21 @@ class IO_server(EventListener):
                     name="unknown",
                     port=0,
                     configuration_file="",
-                    general_config_file=""
+                    general_config_file="",
                 )
-            
+
             if self._debug:
                 debug(
                     f"State updated manually: {len(self._state.get('virtual_devices', {}))} virtual devices, "
                     f"{len(self._state.get('buses', {}))} buses",
                     message_logger=self._message_logger,
                 )
-            
+
             return self._state
-            
+
         except Exception as e:
             error(
                 f"Error updating state: {e}",
                 message_logger=self._message_logger,
             )
-            return self._state if hasattr(self, '_state') else {}
+            return self._state if hasattr(self, "_state") else {}

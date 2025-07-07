@@ -169,18 +169,19 @@ class VirtualDevice(ABC):
         """
         Zwraca czytelną reprezentację urządzenia wirtualnego w formie stringa.
         Używane przy printowaniu urządzenia.
-        
+
         Returns:
             str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan i liczbę połączonych urządzeń
         """
         try:
             current_state = self.get_current_state()
             state_display = (
-                current_state.name if hasattr(current_state, "name") 
+                current_state.name
+                if hasattr(current_state, "name")
                 else str(current_state)
             )
             devices_count = len(self.devices) if self.devices else 0
-            
+
             return f"VirtualDevice(name='{self.device_name}', state={state_display}, connected_devices={devices_count})"
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
@@ -190,22 +191,24 @@ class VirtualDevice(ABC):
         """
         Zwraca reprezentację urządzenia wirtualnego dla developerów.
         Pokazuje więcej szczegółów technicznych.
-        
+
         Returns:
             str: Szczegółowa reprezentacja urządzenia
         """
         try:
             current_state = self.get_current_state()
             state_display = (
-                f"{current_state.name}({current_state.value})" 
+                f"{current_state.name}({current_state.value})"
                 if hasattr(current_state, "name") and hasattr(current_state, "value")
                 else str(current_state)
             )
-            
-            return (f"VirtualDevice(device_name='{self.device_name}', "
-                   f"state={state_display}, "
-                   f"devices={self.devices}, "
-                   f"methods={list(self.methods.keys()) if self.methods else []})")
+
+            return (
+                f"VirtualDevice(device_name='{self.device_name}', "
+                f"state={state_display}, "
+                f"devices={self.devices}, "
+                f"methods={list(self.methods.keys()) if self.methods else []})"
+            )
         except Exception as e:
             return f"VirtualDevice(device_name='{self.device_name}', error='{str(e)}')"
 
@@ -213,7 +216,7 @@ class VirtualDevice(ABC):
         """
         Zwraca słownikową reprezentację urządzenia wirtualnego.
         Używane do zapisywania stanu urządzenia w strukturach danych.
-        
+
         Returns:
             dict: Słownik zawierający:
                 - name: nazwa urządzenia
@@ -235,45 +238,47 @@ class VirtualDevice(ABC):
                         connected_devices_info[device_name] = {
                             "name": device_name,
                             "type": str(type(device).__name__),
-                            "device_obj_str": str(device) if hasattr(device, "__str__") else "Unknown"
+                            "device_obj_str": str(device)
+                            if hasattr(device, "__str__")
+                            else "Unknown",
                         }
                 except Exception as e:
                     # W przypadku błędu, zapisz tylko podstawowe informacje
                     connected_devices_info[device_name] = {
                         "name": device_name,
                         "type": str(type(device).__name__),
-                        "error": str(e)
+                        "error": str(e),
                     }
-        
+
         result = {
             "name": self.device_name,
             "connected_devices": connected_devices_info,
         }
-        
+
         try:
             current_state = self.get_current_state()
-            
+
             # Dodanie informacji o stanie
             result["state"] = (
-                current_state.value 
-                if hasattr(current_state, "value") 
+                current_state.value
+                if hasattr(current_state, "value")
                 else str(current_state)
             )
             result["state_name"] = (
-                current_state.name 
-                if hasattr(current_state, "name") 
+                current_state.name
+                if hasattr(current_state, "name")
                 else str(current_state)
             )
-            
+
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie
             result["state"] = "ERROR"
             result["state_name"] = "ERROR"
             result["error"] = str(e)
-            
+
             error(
                 f"{self.device_name} - Error creating dict representation: {e}",
                 message_logger=self._message_logger,
             )
-        
+
         return result
