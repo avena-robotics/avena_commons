@@ -910,22 +910,26 @@ class IO_server(EventListener):
             if hasattr(self, "virtual_devices") and self.virtual_devices:
                 for device_name, device in self.virtual_devices.items():
                     try:
-                        if hasattr(device, "to_dict") and callable(device.to_dict):
-                            state["virtual_devices"][device_name] = device.to_dict()
+                        # Spróbuj wywołać to_dict() - jeśli zwraca None, użyj fallback
+                        device_dict = device.to_dict()
+                        if device_dict is not None:
+                            state["virtual_devices"][device_name] = device_dict
                         else:
                             # Fallback - podstawowe informacje o urządzeniu
                             state["virtual_devices"][device_name] = {
                                 "name": device_name,
                                 "type": str(type(device).__name__),
-                                "no_to_dict_method": True
+                                "to_dict_returned_none": True
                             }
                     except Exception as e:
                         error(
                             f"Error building state for virtual device {device_name}: {e}",
                             message_logger=self._message_logger,
                         )
+                        # Fallback - podstawowe informacje o urządzeniu
                         state["virtual_devices"][device_name] = {
                             "name": device_name,
+                            "type": str(type(device).__name__),
                             "error": str(e)
                         }
             
@@ -933,22 +937,26 @@ class IO_server(EventListener):
             if hasattr(self, "buses") and self.buses:
                 for bus_name, bus in self.buses.items():
                     try:
-                        if hasattr(bus, "to_dict") and callable(bus.to_dict):
-                            state["buses"][bus_name] = bus.to_dict()
+                        # Spróbuj wywołać to_dict() - jeśli zwraca None, użyj fallback
+                        bus_dict = bus.to_dict()
+                        if bus_dict is not None:
+                            state["buses"][bus_name] = bus_dict
                         else:
                             # Fallback - podstawowe informacje o busie
                             state["buses"][bus_name] = {
                                 "name": bus_name,
                                 "type": str(type(bus).__name__),
-                                "no_to_dict_method": True
+                                "to_dict_returned_none": True
                             }
                     except Exception as e:
                         error(
                             f"Error building state for bus {bus_name}: {e}",
                             message_logger=self._message_logger,
                         )
+                        # Fallback - podstawowe informacje o busie
                         state["buses"][bus_name] = {
                             "name": bus_name,
+                            "type": str(type(bus).__name__),
                             "error": str(e)
                         }
             
@@ -974,7 +982,7 @@ class IO_server(EventListener):
                     "error": str(e)
                 },
                 "virtual_devices": {},
-                "buses": {}
+                "buses": {},
             }
 
     def update_state(self) -> dict:
