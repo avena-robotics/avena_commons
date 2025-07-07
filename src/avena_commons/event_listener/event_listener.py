@@ -830,6 +830,9 @@ class EventListener:
                 0.5
             )  # Reduced from 0.5s - just enough for threads to see the flag
 
+            # Allow subclasses to perform custom cleanup
+            self._execute_before_shutdown()
+
             # Stop all threads in proper order
             self.__stop_state_update_thread()
             self.__stop_local_check()
@@ -839,9 +842,6 @@ class EventListener:
             # Save state after threads are stopped to avoid race conditions
             self.__save_queues()
             self.__save_configuration()
-
-            # Allow subclasses to perform custom cleanup
-            self._execute_before_shutdown()
 
             # Close aiohttp session
             if self.__session:
