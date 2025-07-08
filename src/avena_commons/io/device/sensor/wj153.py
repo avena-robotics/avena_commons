@@ -91,6 +91,81 @@ class WJ153:
         with self.__lock:
             return self.counter_2
 
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia WJ153 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę i aktualny stan
+        """
+        try:
+            return f"WJ153(name='{self.device_name}', encoder={self.encoder}, counter_1={self.counter_1}, counter_2={self.counter_2})"
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"WJ153(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia WJ153 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            return (
+                f"WJ153(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"encoder={self.encoder}, "
+                f"counter_1={self.counter_1}, "
+                f"counter_2={self.counter_2})"
+            )
+        except Exception as e:
+            return f"WJ153(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia WJ153.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - period: okres odczytu
+                - encoder: aktualną wartość encodera
+                - counter_1: wartość counter_1
+                - counter_2: wartość counter_2
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+        }
+
+        try:
+            # Dodanie aktualnych wartości urządzenia
+            result["encoder"] = self.encoder
+            result["counter_1"] = self.counter_1
+            result["counter_2"] = self.counter_2
+            
+            # Określenie głównego stanu urządzenia
+            result["main_state"] = "ACTIVE"  # WJ153 jest aktywny gdy thread działa
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger is not None:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
+
     # def __del__(self):
     #     if hasattr(self, '_thread') and self._thread is not None and self._thread.is_alive():
     #         self._stop_event.set()
@@ -110,9 +185,6 @@ class WJ153:
                 time.sleep(0.1)
                 self._thread.join()
                 self._thread = None
-                info(
-                    f"{self.device_name} - Encoder monitoring thread stopped",
-                    message_logger=self.message_logger,
-                )
+
         except Exception:
             pass  # nie loguj tutaj!

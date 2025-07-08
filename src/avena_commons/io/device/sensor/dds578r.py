@@ -388,6 +388,139 @@ class DDS578R:
             self.total_reactive_electricity_cache_time = current_time
             return fresh_value
 
+    def check_device_connection(self) -> bool:
+        return modbus_check_device_connection(
+            device_name=self.device_name,
+            bus=self.bus,
+            address=self.address,
+            register=0,
+            message_logger=self.message_logger,
+        )
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia DDS578R w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę i podstawowe parametry elektryczne
+        """
+        try:
+            # Pobieranie aktualnych wartości z zabezpieczeniem przed błędami
+            with self.__lock:
+                voltages = self.phase_voltages.copy()
+                currents = self.line_currents.copy()
+                freq = self.frequency
+                active_total = self.active_power.get("total", 0.0)
+                reactive_total = self.reactive_power.get("total", 0.0)
+
+            # Formatowanie napięć fazowych
+            voltage_str = f"V_A:{voltages['A']:.1f}V, V_B:{voltages['B']:.1f}V, V_C:{voltages['C']:.1f}V"
+            
+            # Formatowanie prądów liniowych
+            current_str = f"I_A:{currents['A']:.2f}A, I_B:{currents['B']:.2f}A, I_C:{currents['C']:.2f}A"
+            
+            # Formatowanie mocy
+            power_str = f"P:{active_total:.1f}W, Q:{reactive_total:.1f}VAR"
+            
+            return f"DDS578R(name='{self.device_name}', freq={freq:.1f}Hz, {voltage_str}, {current_str}, {power_str})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"DDS578R(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia DDS578R dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            with self.__lock:
+                return (
+                    f"DDS578R(device_name='{self.device_name}', "
+                    f"address={self.address}, "
+                    f"period={self.period}, "
+                    f"phase_voltages={self.phase_voltages}, "
+                    f"line_currents={self.line_currents}, "
+                    f"active_power={self.active_power}, "
+                    f"reactive_power={self.reactive_power}, "
+                    f"power_factors={self.power_factors}, "
+                    f"frequency={self.frequency}, "
+                    f"total_active_electricity={self.total_active_electricity}, "
+                    f"total_reactive_electricity={self.total_reactive_electricity})"
+                )
+        except Exception as e:
+            return f"DDS578R(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia DDS578R.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - period: okres odczytu
+                - phase_voltages: napięcia fazowe A, B, C
+                - line_currents: prądy liniowe A, B, C
+                - active_power: moc czynna (total + A, B, C)
+                - reactive_power: moc bierna (total + A, B, C)
+                - power_factors: współczynniki mocy A, B, C
+                - frequency: częstotliwość
+                - total_active_electricity: całkowita energia czynna
+                - total_reactive_electricity: całkowita energia bierna
+                - summary: podsumowanie stanu urządzenia
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "period": self.period,
+        }
+
+        try:
+            # Dodanie wszystkich parametrów elektrycznych
+            with self.__lock:
+                result["phase_voltages"] = self.phase_voltages.copy()
+                result["line_currents"] = self.line_currents.copy()
+                result["active_power"] = self.active_power.copy()
+                result["reactive_power"] = self.reactive_power.copy()
+                result["power_factors"] = self.power_factors.copy()
+                result["frequency"] = self.frequency
+                result["total_active_electricity"] = self.total_active_electricity
+                result["total_reactive_electricity"] = self.total_reactive_electricity
+
+            # Dodanie podsumowania stanu
+            result["summary"] = {
+                "voltage_avg": sum(result["phase_voltages"].values()) / 3,
+                "current_avg": sum(result["line_currents"].values()) / 3,
+                "active_power_total": result["active_power"]["total"],
+                "reactive_power_total": result["reactive_power"]["total"],
+                "power_factor_avg": sum(result["power_factors"].values()) / 3,
+                "frequency": result["frequency"],
+                "status": "OK"
+            }
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["summary"] = {
+                "status": "ERROR",
+                "error_message": str(e)
+            }
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
+
     def __del__(self):
         self.message_logger = None
         try:
@@ -406,12 +539,3 @@ class DDS578R:
                 )
         except Exception:
             pass  # nie loguj tutaj!
-
-    def check_device_connection(self) -> bool:
-        return modbus_check_device_connection(
-            device_name=self.device_name,
-            bus=self.bus,
-            address=self.address,
-            register=0,
-            message_logger=self.message_logger,
-        )

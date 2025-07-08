@@ -86,6 +86,84 @@ class PTA9B01:
     def read_temperature(self):
         return self.temperature
 
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia PTA9B01 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan i temperaturę
+        """
+        try:
+            # Określenie głównego stanu urządzenia
+            if self.temperature > 0.0:
+                main_state = "MONITORING"
+            else:
+                main_state = "IDLE"
+
+            return f"PTA9B01(name='{self.device_name}', state={main_state}, temperature={self.temperature}°C)"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"PTA9B01(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia PTA9B01 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            
+            return (
+                f"PTA9B01(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"temperature={self.temperature})"
+            )
+        except Exception as e:
+            return f"PTA9B01(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia PTA9B01.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - temperature: aktualna temperatura
+                - main_state: główny stan urządzenia
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "temperature": self.temperature,
+        }
+
+        try:
+            # Dodanie głównego stanu urządzenia
+            if self.temperature > 0.0:
+                result["main_state"] = "MONITORING"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
+
     # def __del__(self):
     #     if self._thread is not None and self._thread.is_alive():
     #         self._stop_event.set()
@@ -104,10 +182,7 @@ class PTA9B01:
                 self._stop_event.set()
                 self._thread.join()
                 self._thread = None
-                info(
-                    "Temperature monitoring thread stopped",
-                    message_logger=self.message_logger,
-                )
+
         except Exception:
             pass  # nie loguj tutaj!
 
