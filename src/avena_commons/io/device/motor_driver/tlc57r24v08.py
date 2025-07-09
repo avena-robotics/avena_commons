@@ -94,8 +94,10 @@ class TLC57R24V08:
                 )
             # pass
 
-            self.reset_error()
-            
+            self.bus.write_holding_register(
+                address=self.address, register=79, value=0x0300
+            )  # reset błędów
+
             self.bus.write_holding_register(
                 address=self.address, register=34, value=int(self.reverse_direction)
             )  # ustalenie kierunku enkodera
@@ -362,12 +364,16 @@ class TLC57R24V08:
     def is_motor_running(self):
         return self.operation_status_motor_running
 
+    @property
     def is_failure(self):
         return self.operation_status_failure
 
+    @property
     def reset_error(self):
-        self.bus.write_holding_register(
-            address=self.address, register=79, value=0x0300
+        self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
+        debug(
+            f"{self.device_name} - Reset bo byciu w stanie failure",
+            message_logger=self.message_logger,
         )
 
     def ujemna_na_uzupelnienie_do_dwoch(self, wartosc: int, bity: int = 16):
@@ -677,10 +683,12 @@ class TLC57R24V08:
             alarm_info = f", alarms={alarms}" if alarms else ""
 
             return f"TLC57R24V08(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.do_current_state}{alarm_info})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
-            return f"TLC57R24V08(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+            return (
+                f"TLC57R24V08(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+            )
 
     def __repr__(self) -> str:
         """
