@@ -364,11 +364,9 @@ class TLC57R24V08:
     def is_motor_running(self):
         return self.operation_status_motor_running
 
-    @property
     def is_failure(self):
         return self.operation_status_failure
 
-    @property
     def reset_error(self):
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
         debug(
