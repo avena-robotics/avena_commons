@@ -90,7 +90,7 @@ class N4AIA04:
 
                 # Read all 4 holding registers at once (0x0000-0x0003)
                 raw_data = self.bus.read_holding_registers(
-                    address=self.address, register=0x0000, count=4
+                    address=self.address, first_register=0x0000, count=4
                 )
 
                 if raw_data is not None and len(raw_data) == 4:
@@ -169,13 +169,13 @@ class N4AIA04:
         """
         try:
             values = self.get_all_values()
-            
+
             return (
                 f"N4AIA04(name='{self.device_name}', "
                 f"V1={values['voltage_1']:.2f}V, V2={values['voltage_2']:.2f}V, "
                 f"C1={values['current_1']:.1f}mA, C2={values['current_2']:.1f}mA)"
             )
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"N4AIA04(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -191,7 +191,7 @@ class N4AIA04:
         try:
             values = self.get_all_values()
             raw_values = self.get_raw_values()
-            
+
             return (
                 f"N4AIA04(device_name='{self.device_name}', "
                 f"address={self.address}, "
@@ -203,7 +203,7 @@ class N4AIA04:
                 f"current_1={values['current_1']:.1f}mA, "
                 f"current_2={values['current_2']:.1f}mA)"
             )
-        
+
         except Exception as e:
             return f"N4AIA04(device_name='{self.device_name}', error='{str(e)}')"
 

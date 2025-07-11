@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 import traceback
 from typing import Any, Dict, Optional
 
@@ -20,9 +21,11 @@ class IO_server(EventListener):
         general_config_file: str,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
+        do_not_load_state: bool = True,
     ):
         self._message_logger = message_logger
         self._debug = debug
+        self._do_not_load_state = do_not_load_state  # Przechowaj wartość parametru
 
         try:
             self._load_device_configuration(configuration_file, general_config_file)
@@ -35,9 +38,8 @@ class IO_server(EventListener):
                 name=name,
                 port=port,
                 message_logger=self._message_logger,
-                do_not_load_state=True,
+                do_not_load_state=do_not_load_state,
             )
-            # TODO: Load state data from state file if do_not_load_state false
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
 
@@ -697,6 +699,148 @@ class IO_server(EventListener):
 
         return result
 
+    def _apply_io_state_values(
+        self, device_instance, device_name: str, folder_name: str
+    ):
+        """
+        Stosuje wartości stanu z io_state.json do urządzenia po jego inicjalizacji.
+
+        UWAGA: Ta funkcja jest wywoływana tylko wtedy, gdy parametr do_not_load_state
+        konstruktora IO_server jest ustawiony na False. Pozwala to na kontrolę
+        czy stan ma być ładowany z pliku, czy urządzenia mają być inicjalizowane
+        z wartościami domyślnymi.
+
+        Ładuje rzeczywiste wartości stanu jak di_value, do_current_state, etc. - nie parametry konfiguracyjne.
+
+        Args:
+            device_instance: instancja urządzenia
+            device_name: nazwa urządzenia
+            folder_name: typ urządzenia ("device", "virtual_device", "bus")
+        """
+        io_state_file = "temp/io_state.json"
+
+        if self._debug:
+            debug(
+                f"Applying IO state values for {device_name} ({folder_name}) - do_not_load_state is False",
+                message_logger=self._message_logger,
+            )
+
+        try:
+            if not os.path.exists(io_state_file):
+                if self._debug:
+                    debug(
+                        f"File {io_state_file} does not exist, skipping state loading",
+                        message_logger=self._message_logger,
+                    )
+                return
+
+            with open(io_state_file, "r", encoding="utf-8") as f:
+                io_state = json.load(f)
+
+            # Znajdź dane stanu urządzenia
+            device_state_data = None
+
+            if folder_name == "virtual_device":
+                # Urządzenia wirtualne są w state.virtual_devices
+                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
+                if device_name in virtual_devices:
+                    device_state_data = virtual_devices[device_name]
+
+            elif folder_name == "device":
+                # Urządzenia fizyczne mogą być w różnych virtual_devices jako connected_devices
+                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
+                for vdev_name, vdev_data in virtual_devices.items():
+                    connected_devices = vdev_data.get("connected_devices", {})
+                    if device_name in connected_devices:
+                        device_state_data = connected_devices[device_name]
+                        break
+
+            elif folder_name == "bus":
+                # Magistrale są w state.buses
+                buses = io_state.get("state", {}).get("buses", {})
+                if device_name in buses:
+                    device_state_data = buses[device_name]
+
+            if not device_state_data:
+                return
+
+            # Zastosuj wartości stanu do urządzenia
+            values_applied = []
+
+            if folder_name == "device":
+                # Dla urządzeń fizycznych - przywróć stan operacyjny
+                if "di_value" in device_state_data and hasattr(
+                    device_instance, "di_value"
+                ):
+                    value_from_file = device_state_data["di_value"]
+                    device_instance.di_value = value_from_file
+                    values_applied.append("di_value")
+                    if self._debug:
+                        debug(
+                            f"Applied di_value to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "do_current_state" in device_state_data and hasattr(
+                    device_instance, "do_current_state"
+                ):
+                    value_from_file = device_state_data["do_current_state"]
+                    device_instance.do_current_state = value_from_file[:]
+                    values_applied.append("do_current_state")
+                    if self._debug:
+                        debug(
+                            f"Applied do_current_state to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "coil_state" in device_state_data and hasattr(
+                    device_instance, "coil_state"
+                ):
+                    value_from_file = device_state_data["coil_state"]
+                    device_instance.coil_state = value_from_file[:]
+                    values_applied.append("coil_state")
+                    if self._debug:
+                        debug(
+                            f"Applied coil_state to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "inputs_ports" in device_state_data and hasattr(
+                    device_instance, "inputs_ports"
+                ):
+                    value_from_file = device_state_data["inputs_ports"]
+                    device_instance.inputs_ports = value_from_file[:]
+                    values_applied.append("inputs_ports")
+                    if self._debug:
+                        debug(
+                            f"Applied inputs_ports to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "outputs_ports" in device_state_data and hasattr(
+                    device_instance, "outputs_ports"
+                ):
+                    value_from_file = device_state_data["outputs_ports"]
+                    device_instance.outputs_ports = value_from_file[:]
+                    values_applied.append("outputs_ports")
+                    if self._debug:
+                        debug(
+                            f"Applied outputs_ports to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+            if values_applied and self._debug:
+                debug(
+                    f"Applied state values to {device_name}: {values_applied}",
+                    message_logger=self._message_logger,
+                )
+
+        except Exception as e:
+            warning(
+                f"Error applying state values to {device_name}: {str(e)}",
+                message_logger=self._message_logger,
+            )
+
     def _init_class_from_config(
         self,
         device_name: str,
@@ -837,6 +981,16 @@ class IO_server(EventListener):
 
             # Create instance with appropriate parameters
             device_instance = device_class(**init_params)
+
+            # Apply state values from io_state.json after device initialization
+            if not self._do_not_load_state:
+                self._apply_io_state_values(device_instance, device_name, folder_name)
+            else:
+                if self._debug:
+                    debug(
+                        f"Skipping state loading for {device_name} ({folder_name}) - do_not_load_state is True",
+                        message_logger=self._message_logger,
+                    )
 
             # Set additional direct configuration properties for any JSON fields
             # that weren't part of the constructor parameters

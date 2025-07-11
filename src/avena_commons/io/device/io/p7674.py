@@ -52,7 +52,7 @@ class P7674:
             self._coil_state_changed: bool = False  # Flag to indicate buffer changes
 
             self.__setup()
-            self.__reset_all_coils()
+            # self.__reset_all_coils()
             self.check_device_connection()
         except Exception as e:
             error(
@@ -268,11 +268,11 @@ class P7674:
         """
         try:
             # Sprawdzenie czy są aktywne jakieś wejścia cyfrowe
-            active_di_count = bin(self.di_value).count('1')
-            
+            active_di_count = bin(self.di_value).count("1")
+
             # Sprawdzenie czy są aktywne jakieś wyjścia cyfrowe
             active_do_count = sum(self.coil_state)
-            
+
             # Określenie głównego stanu urządzenia
             if active_di_count > 0 or active_do_count > 0:
                 main_state = "ACTIVE"
@@ -280,7 +280,7 @@ class P7674:
                 main_state = "IDLE"
 
             return f"P7674(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.coil_state})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"P7674(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -336,7 +336,7 @@ class P7674:
             result["coil_state"] = self.coil_state.copy()
 
             # Obliczenie liczby aktywnych I/O
-            result["active_di_count"] = bin(self.di_value).count('1')
+            result["active_di_count"] = bin(self.di_value).count("1")
             result["active_do_count"] = sum(self.coil_state)
 
             # Dodanie głównego stanu urządzenia
