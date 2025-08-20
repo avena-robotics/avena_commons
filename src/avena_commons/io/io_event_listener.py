@@ -1,12 +1,15 @@
 import importlib
 import json
+import os
 import traceback
 from typing import Any, Dict, Optional
 
 from avena_commons.event_listener.event import Event, Result
 from avena_commons.event_listener.event_listener import (
     EventListener,
+    EventListenerState,
 )
+from avena_commons.io.virtual_device.virtual_device import VirtualDeviceState
 from avena_commons.util.logger import MessageLogger, debug, error, warning
 from avena_commons.util.measure_time import MeasureTime
 
@@ -20,30 +23,191 @@ class IO_server(EventListener):
         general_config_file: str,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
+        load_state: bool = True,
     ):
-        # TODO: mergowanie konfiguracji generycznej i lokalnych zmian w konfiguracji
         self._message_logger = message_logger
         self._debug = debug
+        self._load_state = load_state
+        # Pola stanu błędu IO
+        self._error = False
+        self._error_message = None
+
         try:
             self._load_device_configuration(configuration_file, general_config_file)
             self.check_local_data_frequency: int = 50
+            # Initialize state dict to store state data for actual device configuration.
+            self._state = self._build_state_dict(
+                name, port, configuration_file, general_config_file
+            )
             super().__init__(
                 name=name,
                 port=port,
                 message_logger=self._message_logger,
-                do_not_load_state=True,
+                load_state=self._load_state,
             )
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
+
+    # FSM Callback Methods
+    async def on_initializing(self):
+        """
+        FSM Callback: STOPPED → INITIALIZED
+        Inicjalizacja komponentu IO Server oraz ustawienie stanu (bez wykonywania operacji urządzeń)
+        """
+        if self._debug:
+            debug(
+                "FSM: Initializing IO server",
+                message_logger=self._message_logger,
+            )
+        # Brak dodatkowej rekonfiguracji _state tutaj, aby nie nadpisywać stanu
+        # wczytanego przez bazową klasę podczas INITIALIZING.
+        pass
+
+        if self._debug:
+            debug(
+                "FSM: IO server initialized (devices not started)",
+                message_logger=self._message_logger,
+            )
+
+    async def on_run(self):
+        """Metoda wywoływana podczas przejścia w stan RUN.
+        Tu komponent rozpoczyna swoje główne zadania operacyjne."""
+        pass
+
+    async def on_pause(self):
+        """Metoda wywoływana podczas przejścia w stan PAUSE.
+        Tu komponent jest wstrzymany ale gotowy do wznowienia."""
+        pass
+
+    async def on_stopping(self):
+        """
+        FSM Callback: RUN → auto PAUSE → STOPPED
+        Cleanup processing events and disable IO related resources
+        """
+        if self._debug:
+            debug(
+                "FSM: Stopping IO server operations",
+                message_logger=self._message_logger,
+            )
+
+        try:
+            self._execute_before_shutdown()
+        except Exception:
+            pass
+
+        if self._debug:
+            debug(
+                "FSM: IO server stopped and cleaned up",
+                message_logger=self._message_logger,
+            )
+
+    async def on_stopped(self):
+        """Metoda wywoływana po przejściu w stan STOPPED.
+        Tu komponent jest całkowicie zatrzymany i wyczyszczony."""
+        pass
+
+    async def on_ack(self):
+        """
+        FSM Callback: FAULT → INITIALIZED
+        Acknowledge fault and reset internal error state
+        """
+        if self._debug:
+            debug("FSM: Acknowledging fault (IO)", message_logger=self._message_logger)
+        # Resetuj lokalny stan błędu IO
+        self._error = False
+        self._error_message = None
+        pass
+
+    async def on_error(self):
+        """Metoda wywoływana podczas przejścia w stan ON_ERROR.
+        Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
+        error("FSM: Entering error state (IO)", message_logger=self._message_logger)
+
+    async def on_fault(self):
+        """Metoda wywoływana podczas przejścia w stan FAULT.
+        Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
+        error("FSM: Entering fault state (IO)", message_logger=self._message_logger)
+
+    async def on_starting(self):
+        """
+        FSM Callback: INITIALIZED → RUN
+        Enable IO processing and activate modules if needed
+        """
+        if self._debug:
+            debug("FSM: Enabling IO operations", message_logger=self._message_logger)
+        # IO_server nie posiada trybu ENABLE jak robot - brak dodatkowych akcji
+        pass
+
+    async def on_pausing(self):
+        """
+        FSM Callback: RUN → PAUSE
+        Stop current IO-related operations gracefully
+        """
+        if self._debug:
+            debug("FSM: Pausing IO operations", message_logger=self._message_logger)
+        # Brak specyficznej logiki - urządzenia wirtualne obsługują pauzę w swoich tick()
+        pass
+
+    async def on_resuming(self):
+        """
+        FSM Callback: PAUSE → RUN
+        Re-enable IO operations and continue processing
+        """
+        if self._debug:
+            debug("FSM: Resuming IO operations", message_logger=self._message_logger)
+        # Brak specyficznych akcji
+        pass
+
+    async def on_soft_stopping(self):
+        """
+        FSM Callback: RUN → INITIALIZED (graceful)
+        Stop accepting new events, wait for current operations to complete naturally
+        """
+        if self._debug:
+            debug(
+                "FSM: Soft stopping - waiting for operations to complete (IO)",
+                message_logger=self._message_logger,
+            )
+        # NIE wymuszamy zatrzymania - pozwalamy dokończyć przetwarzanie zdarzeń
+        pass
+
+    async def on_hard_stopping(self):
+        """
+        FSM Callback: RUN → auto PAUSE → STOPPED
+        Cleanup processing events and disable IO resources immediately
+        """
+        if self._debug:
+            debug(
+                "FSM: Hard stopping IO operations", message_logger=self._message_logger
+            )
+
+        try:
+            self._execute_before_shutdown()
+        except Exception:
+            pass
+
+        if self._debug:
+            debug(
+                "FSM: IO server hard stopped and cleaned up",
+                message_logger=self._message_logger,
+            )
+
+    async def get_status(self):
+        """Update IO_server internal state (FSM aware)"""
+        try:
+            if hasattr(self, "update_state"):
+                self._state = self.update_state()
+        except Exception:
+            pass
 
     async def _analyze_event(self, event: Event) -> Result:
         """
         Analyze and route incoming events to appropriate handlers.
 
         This method examines the source of each incoming event and routes it to the
-        appropriate handler. Currently, it only processes events from 'munchies_algo' source.
+        appropriate handler.
 
-        For 'munchies_algo' events, it calls the device_selector method to determine
+        It calls the device_selector method to determine
         which virtual device should handle the event, and adds successfully matched
         events to the processing queue.
 
@@ -111,6 +275,7 @@ class IO_server(EventListener):
         device_prefix = parts[0].lower()
         action = "execute_event"  # Default method to call on the device
 
+        # FIXME: Znaleźć lepszy sposób na odczytywanie nazwy urządzenia i akcji
         # Create device name by combining prefix with device_id
         device_name = f"{device_prefix}{device_id}"
 
@@ -193,6 +358,34 @@ class IO_server(EventListener):
                                         message_logger=self._message_logger,
                                     )
 
+                            # Proactive error detection: if any virtual device reports ERROR, trigger IO FSM ON_ERROR
+                            try:
+                                if hasattr(device, "get_current_state") and callable(
+                                    device.get_current_state
+                                ):
+                                    current_state = device.get_current_state()
+                                    if current_state == VirtualDeviceState.ERROR:
+                                        # Zapisz źródło błędu
+                                        self._error = True
+                                        self._error_message = device_name
+                                        if self.fsm_state not in {
+                                            EventListenerState.ON_ERROR,
+                                            EventListenerState.FAULT,
+                                        }:
+                                            error(
+                                                f"Virtual device {device_name} in ERROR; switching IO FSM to ON_ERROR",
+                                                message_logger=self._message_logger,
+                                            )
+                                            self._change_fsm_state(
+                                                EventListenerState.ON_ERROR
+                                            )
+                                            return
+                            except Exception as e:
+                                error(
+                                    f"Error checking state for {device_name}: {str(e)}",
+                                    message_logger=self._message_logger,
+                                )
+
                             # Check if device has a finished events list and process any finished events
                         with MeasureTime(
                             label=f"io - finished_events({device_name})",
@@ -216,22 +409,23 @@ class IO_server(EventListener):
                                                 )
                                                 continue
                                             # Find and remove the event from processing
-                                            event: Event = (
+                                            original_event = event  # Zachowaj oryginalny event dla komunikatu błędu
+                                            processed_event: Event = (
                                                 self._find_and_remove_processing_event(
-                                                    event
+                                                    event=event
                                                 )
                                             )
-                                            if event:
-                                                await self._reply(event)
+                                            if processed_event:
+                                                await self._reply(processed_event)
                                                 if self._debug:
                                                     debug(
-                                                        f"Processing event for device {device_name}: {event.event_type}",
+                                                        f"Processing event for device {device_name}: {processed_event.event_type}",
                                                         message_logger=self._message_logger,
                                                     )
                                             else:
                                                 if self._debug:
                                                     debug(
-                                                        f"Event not found in processing: {event.event_type} for device: {device_name}",
+                                                        f"Event not found in processing: {original_event.event_type} for device: {device_name}",
                                                         message_logger=self._message_logger,
                                                     )
                                     except Exception as e:
@@ -244,7 +438,89 @@ class IO_server(EventListener):
                     f"Error in _check_local_data: {str(e)}",
                     message_logger=self._message_logger,
                 )
+
+            # Proactive BUS health check: if any bus is unhealthy, trigger IO FSM ON_ERROR
+            try:
+                if hasattr(self, "buses") and isinstance(self.buses, dict):
+                    for bus_name, bus in self.buses.items():
+                        if bus is None:
+                            continue
+                        try:
+                            if hasattr(bus, "check_device_connection") and callable(
+                                bus.check_device_connection
+                            ):
+                                bus.check_device_connection()
+                            elif hasattr(bus, "is_connected"):
+                                # Accept both property and method styles
+                                is_connected = (
+                                    bus.is_connected
+                                    if not callable(bus.is_connected)
+                                    else bus.is_connected()
+                                )
+                                if is_connected is False:
+                                    raise RuntimeError(
+                                        f"Bus {bus_name} reported disconnected state"
+                                    )
+                        except Exception as bus_exc:
+                            error(
+                                f"Bus health check failed for {bus_name}: {bus_exc}",
+                                message_logger=self._message_logger,
+                            )
+                            # Zapisz źródło błędu
+                            self._error = True
+                            self._error_message = bus_name
+                            if self.fsm_state not in {
+                                EventListenerState.ON_ERROR,
+                                EventListenerState.FAULT,
+                            }:
+                                self._change_fsm_state(EventListenerState.ON_ERROR)
+                                return
+            except Exception as e:
+                error(
+                    f"Error during buses health check: {e}",
+                    message_logger=self._message_logger,
+                )
         # debug(f"Checking local data end ---", message_logger=self._message_logger)
+
+    def _execute_before_shutdown(
+        self,
+    ):  # TODO: Stworzyć kaskadowe zamykanie wszystkich urządzeń. Bus STOP, del VirtualDevice -> del device -> del BUS
+        """
+        Wykonuje operacje przed zamknięciem serwera IO.
+
+        Aktualizuje stan urządzeń i wykonuje kaskadowe zamykanie wszystkich urządzeń.
+        Kolejność zamykania: Virtual Devices -> Physical Devices -> Buses
+        """
+        try:
+            # Aktualizuj stan przed zamknięciem
+            if hasattr(self, "_state"):
+                self._state = self._build_state_dict(
+                    name=self._state.get("io_server", {}).get("name", "unknown"),
+                    port=self._state.get("io_server", {}).get("port", 0),
+                    configuration_file=self._state.get("io_server", {}).get(
+                        "configuration_file", ""
+                    ),
+                    general_config_file=self._state.get("io_server", {}).get(
+                        "general_config_file", ""
+                    ),
+                )
+
+                if self._debug:
+                    debug(
+                        f"State updated before shutdown with {len(self._state.get('virtual_devices', {}))} virtual devices",
+                        message_logger=self._message_logger,
+                    )
+
+            # TODO: Implementacja kaskadowego zamykania urządzeń
+            # 1. Zatrzymaj wszystkie virtual devices
+            # 2. Zatrzymaj wszystkie physical devices
+            # 3. Zatrzymaj wszystkie buses
+
+        except Exception as e:
+            error(
+                f"Error during shutdown preparation: {e}",
+                message_logger=self._message_logger,
+            )
 
     def _load_device_configuration(
         self, configuration_file: str, general_config_file: str = None
@@ -650,6 +926,148 @@ class IO_server(EventListener):
 
         return result
 
+    def _apply_io_state_values(
+        self, device_instance, device_name: str, folder_name: str
+    ):
+        """
+        Stosuje wartości stanu z io_state.json do urządzenia po jego inicjalizacji.
+
+        UWAGA: Ta funkcja jest wywoływana tylko wtedy, gdy parametr load_state
+        konstruktora IO_server jest ustawiony na False. Pozwala to na kontrolę
+        czy stan ma być ładowany z pliku, czy urządzenia mają być inicjalizowane
+        z wartościami domyślnymi.
+
+        Ładuje rzeczywiste wartości stanu jak di_value, do_current_state, etc. - nie parametry konfiguracyjne.
+
+        Args:
+            device_instance: instancja urządzenia
+            device_name: nazwa urządzenia
+            folder_name: typ urządzenia ("device", "virtual_device", "bus")
+        """
+        io_state_file = "temp/io_state.json"
+
+        if self._debug:
+            debug(
+                f"Applying IO state values for {device_name} ({folder_name}) - load_state is True",
+                message_logger=self._message_logger,
+            )
+
+        try:
+            if not os.path.exists(io_state_file):
+                if self._debug:
+                    debug(
+                        f"File {io_state_file} does not exist, skipping state loading",
+                        message_logger=self._message_logger,
+                    )
+                return
+
+            with open(io_state_file, "r", encoding="utf-8") as f:
+                io_state = json.load(f)
+
+            # Znajdź dane stanu urządzenia
+            device_state_data = None
+
+            if folder_name == "virtual_device":
+                # Urządzenia wirtualne są w state.virtual_devices
+                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
+                if device_name in virtual_devices:
+                    device_state_data = virtual_devices[device_name]
+
+            elif folder_name == "device":
+                # Urządzenia fizyczne mogą być w różnych virtual_devices jako connected_devices
+                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
+                for vdev_name, vdev_data in virtual_devices.items():
+                    connected_devices = vdev_data.get("connected_devices", {})
+                    if device_name in connected_devices:
+                        device_state_data = connected_devices[device_name]
+                        break
+
+            elif folder_name == "bus":
+                # Magistrale są w state.buses
+                buses = io_state.get("state", {}).get("buses", {})
+                if device_name in buses:
+                    device_state_data = buses[device_name]
+
+            if not device_state_data:
+                return
+
+            # Zastosuj wartości stanu do urządzenia
+            values_applied = []
+
+            if folder_name == "device":
+                # Dla urządzeń fizycznych - przywróć stan operacyjny
+                if "di_value" in device_state_data and hasattr(
+                    device_instance, "di_value"
+                ):
+                    value_from_file = device_state_data["di_value"]
+                    device_instance.di_value = value_from_file
+                    values_applied.append("di_value")
+                    if self._debug:
+                        debug(
+                            f"Applied di_value to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "do_current_state" in device_state_data and hasattr(
+                    device_instance, "do_current_state"
+                ):
+                    value_from_file = device_state_data["do_current_state"]
+                    device_instance.do_current_state = value_from_file[:]
+                    values_applied.append("do_current_state")
+                    if self._debug:
+                        debug(
+                            f"Applied do_current_state to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "coil_state" in device_state_data and hasattr(
+                    device_instance, "coil_state"
+                ):
+                    value_from_file = device_state_data["coil_state"]
+                    device_instance.coil_state = value_from_file[:]
+                    values_applied.append("coil_state")
+                    if self._debug:
+                        debug(
+                            f"Applied coil_state to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "inputs_ports" in device_state_data and hasattr(
+                    device_instance, "inputs_ports"
+                ):
+                    value_from_file = device_state_data["inputs_ports"]
+                    device_instance.inputs_ports = value_from_file[:]
+                    values_applied.append("inputs_ports")
+                    if self._debug:
+                        debug(
+                            f"Applied inputs_ports to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+                if "outputs_ports" in device_state_data and hasattr(
+                    device_instance, "outputs_ports"
+                ):
+                    value_from_file = device_state_data["outputs_ports"]
+                    device_instance.outputs_ports = value_from_file[:]
+                    values_applied.append("outputs_ports")
+                    if self._debug:
+                        debug(
+                            f"Applied outputs_ports to {device_name}: {value_from_file}",
+                            message_logger=self._message_logger,
+                        )
+
+            if values_applied and self._debug:
+                debug(
+                    f"Applied state values to {device_name}: {values_applied}",
+                    message_logger=self._message_logger,
+                )
+
+        except Exception as e:
+            warning(
+                f"Error applying state values to {device_name}: {str(e)}",
+                message_logger=self._message_logger,
+            )
+
     def _init_class_from_config(
         self,
         device_name: str,
@@ -791,6 +1209,16 @@ class IO_server(EventListener):
             # Create instance with appropriate parameters
             device_instance = device_class(**init_params)
 
+            # Apply state values from io_state.json after device initialization
+            if self._load_state:
+                self._apply_io_state_values(device_instance, device_name, folder_name)
+            else:
+                if self._debug:
+                    debug(
+                        f"Skipping state loading for {device_name} ({folder_name}) - load_state is False",
+                        message_logger=self._message_logger,
+                    )
+
             # Set additional direct configuration properties for any JSON fields
             # that weren't part of the constructor parameters
             for key, value in config.items():
@@ -833,3 +1261,159 @@ class IO_server(EventListener):
             )
             error(traceback.format_exc(), message_logger=self._message_logger)
             return None
+
+    def _build_state_dict(
+        self, name: str, port: int, configuration_file: str, general_config_file: str
+    ) -> dict:
+        """
+        Buduje słownik stanu zawierający informacje o serwerze IO i wszystkich urządzeniach.
+
+        Metoda iteruje przez wszystkie typy urządzeń (virtual_devices, buses, physical_devices)
+        i tworzy ich słownikowe reprezentacje wykorzystując metodę to_dict() jeśli jest dostępna.
+
+        Args:
+            name: nazwa serwera IO
+            port: port serwera IO
+            configuration_file: ścieżka do pliku konfiguracji
+            general_config_file: ścieżka do pliku konfiguracji ogólnej
+
+        Returns:
+            dict: Słownik zawierający stan serwera IO i wszystkich urządzeń
+        """
+        try:
+            # Podstawowe informacje o serwerze IO
+            state = {
+                "io_server": {
+                    "name": name,
+                    "port": port,
+                    "configuration_file": configuration_file,
+                    "general_config_file": general_config_file,
+                    "check_local_data_frequency": self.check_local_data_frequency,
+                    "debug": self._debug,
+                    "load_state": self._load_state,
+                    "error": self._error,
+                    "error_message": self._error_message,
+                },
+                "virtual_devices": {},
+                "buses": {},
+            }
+
+            # Przeiteruj przez virtual devices
+            if hasattr(self, "virtual_devices") and self.virtual_devices:
+                for device_name, device in self.virtual_devices.items():
+                    try:
+                        # Spróbuj wywołać to_dict() - jeśli zwraca None, użyj fallback
+                        device_dict = device.to_dict()
+                        if device_dict is not None:
+                            state["virtual_devices"][device_name] = device_dict
+                        else:
+                            # Fallback - podstawowe informacje o urządzeniu
+                            state["virtual_devices"][device_name] = {
+                                "name": device_name,
+                                "type": str(type(device).__name__),
+                                "to_dict_returned_none": True,
+                            }
+                    except Exception as e:
+                        error(
+                            f"Error building state for virtual device {device_name}: {e}",
+                            message_logger=self._message_logger,
+                        )
+                        # Fallback - podstawowe informacje o urządzeniu
+                        state["virtual_devices"][device_name] = {
+                            "name": device_name,
+                            "type": str(type(device).__name__),
+                            "error": str(e),
+                        }
+
+            # Przeiteruj przez buses
+            if hasattr(self, "buses") and self.buses:
+                for bus_name, bus in self.buses.items():
+                    try:
+                        # Spróbuj wywołać to_dict() - jeśli zwraca None, użyj fallback
+                        bus_dict = bus.to_dict()
+                        if bus_dict is not None:
+                            state["buses"][bus_name] = bus_dict
+                        else:
+                            # Fallback - podstawowe informacje o busie
+                            state["buses"][bus_name] = {
+                                "name": bus_name,
+                                "type": str(type(bus).__name__),
+                                "to_dict_returned_none": True,
+                            }
+                    except Exception as e:
+                        error(
+                            f"Error building state for bus {bus_name}: {e}",
+                            message_logger=self._message_logger,
+                        )
+                        # Fallback - podstawowe informacje o busie
+                        state["buses"][bus_name] = {
+                            "name": bus_name,
+                            "type": str(type(bus).__name__),
+                            "error": str(e),
+                        }
+
+            if self._debug:
+                debug(
+                    f"Built state dict: {len(state['virtual_devices'])} virtual devices, "
+                    f"{len(state['buses'])} buses",
+                    message_logger=self._message_logger,
+                )
+
+            return state
+
+        except Exception as e:
+            error(
+                f"Error building state dict: {e}",
+                message_logger=self._message_logger,
+            )
+            # Zwróć minimalny state w przypadku błędu
+            return {
+                "io_server": {"name": name, "port": port, "error": str(e)},
+                "virtual_devices": {},
+                "buses": {},
+            }
+
+    def update_state(self) -> dict:
+        """
+        Aktualizuje i zwraca aktualny stan serwera IO z wszystkimi urządzeniami.
+
+        Metoda publiczna do aktualizacji stanu w dowolnym momencie - przydatna do
+        monitorowania, zapisywania stanu czy debugowania.
+
+        Returns:
+            dict: Aktualny stan serwera IO i wszystkich urządzeń
+        """
+        try:
+            if hasattr(self, "_state") and self._state:
+                # Użyj istniejących parametrów z aktualnego stanu
+                io_server_info = self._state.get("io_server", {})
+                self._state = self._build_state_dict(
+                    name=io_server_info.get("name", "unknown"),
+                    port=io_server_info.get("port", 0),
+                    configuration_file=io_server_info.get("configuration_file", ""),
+                    general_config_file=io_server_info.get("general_config_file", ""),
+                )
+            else:
+                # Jeśli nie ma stanu, stwórz podstawowy
+                self._state = self._build_state_dict(
+                    name="unknown",
+                    port=0,
+                    configuration_file="",
+                    general_config_file="",
+                )
+
+            if self._debug:
+                debug(
+                    f"State updated manually: {len(self._state.get('virtual_devices', {}))} virtual devices, "
+                    f"{len(self._state.get('buses', {}))} buses",
+                    message_logger=self._message_logger,
+                )
+
+            return self._state
+
+        except Exception as e:
+            error(
+                f"Error updating state: {e}",
+                message_logger=self._message_logger,
+            )
+            return self._state if hasattr(self, "_state") else {}

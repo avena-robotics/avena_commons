@@ -139,6 +139,105 @@ class WJ150:
         with self.__lock:
             return self.counter_2
 
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia WJ150 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, tryb pracy i wartości
+        """
+        try:
+            # Określenie trybu pracy
+            mode_str = "AB_ENCODER" if self.working_mode == WorkingMode.AB_ENCODER else "INDEPENDENT_COUNTERS"
+            
+            # Pobranie wartości w zależności od trybu pracy
+            if self.working_mode == WorkingMode.AB_ENCODER:
+                with self.__lock:
+                    value_info = f"encoder={self.encoder}"
+            else:
+                with self.__lock:
+                    value_info = f"counter1={self.counter_1}, counter2={self.counter_2}"
+
+            return f"WJ150(name='{self.device_name}', mode={mode_str}, {value_info})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"WJ150(name='{self.device_name}', mode=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia WJ150 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            mode_str = "AB_ENCODER" if self.working_mode == WorkingMode.AB_ENCODER else "INDEPENDENT_COUNTERS"
+            
+            return (
+                f"WJ150(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"working_mode={mode_str}, "
+                f"encoder={self.encoder}, "
+                f"counter_1={self.counter_1}, "
+                f"counter_2={self.counter_2})"
+            )
+        except Exception as e:
+            return f"WJ150(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia WJ150.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - working_mode: tryb pracy urządzenia
+                - encoder: wartość enkodera (w trybie AB_ENCODER)
+                - counter_1: wartość licznika 1 (w trybie INDEPENDENT_COUNTERS)
+                - counter_2: wartość licznika 2 (w trybie INDEPENDENT_COUNTERS)
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "working_mode": self.working_mode.name,
+        }
+
+        try:
+            # Dodanie wartości w zależności od trybu pracy
+            with self.__lock:
+                result["encoder"] = self.encoder
+                result["counter_1"] = self.counter_1
+                result["counter_2"] = self.counter_2
+                
+                # Dodanie informacji o aktywnych wartościach w zależności od trybu
+                if self.working_mode == WorkingMode.AB_ENCODER:
+                    result["active_value"] = self.encoder
+                    result["active_mode"] = "encoder"
+                else:
+                    result["active_values"] = {
+                        "counter_1": self.counter_1,
+                        "counter_2": self.counter_2
+                    }
+                    result["active_mode"] = "counters"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
+
     # def __del__(self):
     #     if hasattr(self, '_thread') and self._thread is not None and self._thread.is_alive():
     #         self._stop_event.set()
@@ -158,9 +257,6 @@ class WJ150:
                 time.sleep(0.1)
                 self._thread.join()
                 self._thread = None
-                info(
-                    f"{self.device_name} - Encoder monitoring thread stopped",
-                    message_logger=self.message_logger,
-                )
+                # Nie loguj tutaj, bo message_logger jest już None
         except Exception:
             pass  # nie loguj tutaj!

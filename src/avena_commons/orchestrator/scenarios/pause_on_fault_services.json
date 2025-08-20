@@ -1,0 +1,71 @@
+{
+  "name": "Wstrzymanie systemu przy błędach (@all)",
+  "description": "Autonomiczny scenariusz bezpieczeństwa - wstrzymuje wszystkie usługi gdy wykryty zostanie błąd",
+  "priority": 10,
+  "cooldown": 10,
+  "trigger": {
+    "type": "automatic",
+    "conditions": {
+      "client_state": {
+        "any_service_in_state": ["ON_FAULT", "FAULT"]
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "error",
+      "message": "🚨 BŁĄD KRYTYCZNY: Wykryto komponent w stanie błędu - uruchamiam procedurę bezpieczeństwa",
+      "description": "Alert o wykryciu błędu krytycznego"
+    },
+    {
+      "type": "log_event",
+      "level": "warning",
+      "message": "⚠️ PROCEDURA BEZPIECZEŃSTWA: Wstrzymuję wszystkie usługi aby zapobiec dalszym uszkodzeniom",
+      "description": "Informacja o rozpoczęciu procedury bezpieczeństwa"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "⏸️ Autonomiczne wstrzymywanie wszystkich komponentów (@all)...",
+      "description": "Rozpoczęcie autonomicznego wstrzymywania"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_PAUSE",
+      "description": "Wstrzymanie wszystkich komponentów systemu"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "PAUSED",
+      "timeout": "30s",
+      "description": "Oczekiwanie na wstrzymanie wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "warning",
+      "message": "🛑 SYSTEM ZABEZPIECZONY: Wszystkie usługi wstrzymane z powodu wykrycia błędu",
+      "description": "Potwierdzenie zabezpieczenia systemu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📋 Wstrzymane komponenty: @all - wymagana interwencja administratora",
+      "description": "Lista wstrzymanych komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "warning",
+      "message": "🔧 WYMAGANA AKCJA: Sprawdź komponenty w błędzie i usuń przyczynę przed ponownym uruchomieniem",
+      "description": "Instrukcja dla administratora"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "💡 Aby uruchomić ponownie: usuń błędy i uruchom scenariusz startup lub restart systemu",
+      "description": "Wskazówka dotycząca powrotu do pracy"
+    }
+  ]
+}

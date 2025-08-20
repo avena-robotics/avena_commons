@@ -3,6 +3,7 @@ import asyncio
 
 # import logging
 import os
+import random
 import signal
 import sys
 import threading
@@ -51,6 +52,163 @@ class TestClient(EventListener):
         self.message_logger = message_logger
         self._server_thread = None
 
+        # Generowanie podstawowego stanu (rzeczy które się nie zmieniają często)
+        self._base_state = self._generate_base_state()
+        # Pełny stan będzie kombinacją base + dynamic
+        self._state = self._base_state.copy()
+
+    def _generate_base_state(self) -> dict:
+        """
+        Generuje podstawowy stan klienta - rzeczy które się nie zmieniają często
+        """
+        return {
+            "client_info": {
+                "name": self._EventListener__name,
+                "port": self._EventListener__port,
+                "startup_time": time.time(),
+                "session_id": f"session_{random.randint(10000, 99999)}",
+                "version": f"v{random.randint(1, 3)}.{random.randint(0, 9)}.{random.randint(0, 9)}",
+            },
+            "config": {
+                "max_connections": random.randint(10, 100),
+                "timeout": random.uniform(1.0, 30.0),
+                "retry_attempts": random.randint(1, 10),
+                "features": {
+                    "logging_enabled": random.choice([True, False]),
+                    "cache_enabled": random.choice([True, False]),
+                    "compression": random.choice(["gzip", "deflate", None]),
+                    "auth_methods": random.sample(
+                        ["basic", "oauth", "token", "cert"], random.randint(1, 3)
+                    ),
+                    "security": {
+                        "ssl_enabled": random.choice([True, False]),
+                        "encryption_level": random.choice(["low", "medium", "high"]),
+                        "rate_limiting": random.randint(10, 1000),
+                    },
+                },
+            },
+            # Inicjalizacja user_preferences - podstawowe preferencje
+            "user_preferences": {
+                "theme": random.choice(["light", "dark", "auto"]),
+                "language": random.choice(["pl", "en", "de", "fr"]),
+                "notifications": random.choice([True, False]),
+                "auto_refresh": random.randint(1, 60),
+            },
+        }
+
+    def _update_dynamic_state(self):
+        """
+        Aktualizuje dynamiczne części stanu - dane które zmieniają się w czasie
+        """
+        current_time = time.time()
+
+        # Aktualizuj runtime_data z losowymi zagnieżdżonymi danymi
+        self._state["runtime_data"] = self._generate_random_nested_data()
+
+        # Aktualizuj statystyki - symulacja prawdziwych metryk
+        self._state["statistics"] = {
+            "requests_count": random.randint(100, 2000) + int(current_time % 1000),
+            "errors_count": random.randint(0, 50),
+            "response_times": [
+                round(random.uniform(0.1, 5.0), 3) for _ in range(random.randint(5, 15))
+            ],
+            "status_codes": {
+                "200": random.randint(500, 900) + int(current_time % 100),
+                "404": random.randint(10, 50),
+                "500": random.randint(0, 20),
+                "502": random.randint(0, 10),
+            },
+            "bandwidth": {
+                "bytes_sent": random.randint(10000, 1000000),
+                "bytes_received": random.randint(5000, 500000),
+                "peak_connections": random.randint(5, 50),
+            },
+            "last_updated": current_time,
+        }
+
+        # Aktualizuj preferencje użytkownika - czasami się zmieniają
+        if random.random() < 0.3:  # 30% szansy na zmianę
+            self._state["user_preferences"] = self._generate_random_nested_data(
+                max_depth=2
+            )
+
+        # Aktualizuj cache - dynamiczne klucze
+        cache_size = random.randint(3, 12)
+        self._state["cache"] = {
+            f"cache_key_{i}_{int(current_time % 1000)}": self._generate_random_nested_data(
+                max_depth=2
+            )
+            for i in range(cache_size)
+        }
+
+        # Dodaj performance metrics
+        self._state["performance"] = {
+            "cpu_usage": round(random.uniform(5.0, 95.0), 2),
+            "memory_usage": round(random.uniform(100, 2048), 2),  # MB
+            "disk_usage": round(random.uniform(10.0, 90.0), 2),  # %
+            "network_io": {
+                "in": random.randint(1000, 100000),  # bytes/sec
+                "out": random.randint(500, 50000),
+            },
+            "uptime_seconds": current_time
+            - self._base_state["client_info"]["startup_time"],
+        }
+
+        # Dodaj active connections z różnymi statusami
+        connections = []
+        for i in range(random.randint(2, 8)):
+            connections.append({
+                "id": f"conn_{i}_{int(current_time % 1000)}",
+                "remote_ip": f"192.168.1.{random.randint(10, 254)}",
+                "port": random.randint(1024, 65535),
+                "status": random.choice(["active", "idle", "closing", "connecting"]),
+                "duration": random.randint(1, 3600),  # seconds
+                "bytes_transferred": random.randint(100, 1000000),
+            })
+        self._state["active_connections"] = connections
+
+        # Timestamp ostatniej aktualizacji
+        self._state["last_state_update"] = {
+            "timestamp": current_time,
+            "iso_time": time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(current_time)
+            ),
+            "update_count": getattr(self, "_update_count", 0) + 1,
+        }
+        self._update_count = getattr(self, "_update_count", 0) + 1
+
+    def _generate_random_nested_data(self, max_depth: int = 3) -> dict:
+        """Generuje losowe zagnieżdżone dane z kontrolowaną głębokością"""
+
+        def generate_random_value(depth: int = 0):
+            if depth >= max_depth:
+                return random.choice([
+                    random.randint(1, 1000),
+                    round(random.uniform(0.0, 100.0), 3),
+                    f"random_string_{random.randint(1, 100)}",
+                    random.choice([True, False]),
+                    None,
+                ])
+
+            value_type = random.choice(["dict", "list", "simple"])
+
+            if value_type == "dict":
+                nested_dict = {}
+                for _ in range(random.randint(1, 4)):
+                    key = f"key_{random.randint(1, 100)}"
+                    nested_dict[key] = generate_random_value(depth + 1)
+                return nested_dict
+
+            elif value_type == "list":
+                return [
+                    generate_random_value(depth + 1)
+                    for _ in range(random.randint(1, 5))
+                ]
+            else:
+                return generate_random_value(depth + 1)
+
+        return generate_random_value(0)
+
     async def _analyze_event(self, event: Event) -> bool:
         try:
             debug(
@@ -68,6 +226,23 @@ class TestClient(EventListener):
 
     async def _check_local_data(self):
         pass
+
+    async def _handle_get_state_command(self, event: Event) -> None:
+        """
+        Nadpisana metoda obsługi CMD_GET_STATE - zwraca zaktualizowany dynamiczny stan klienta.
+        """
+        # Aktualizuj dynamiczne części stanu przed zwróceniem
+        self._update_dynamic_state()
+
+        debug(
+            f"TestClient processing CMD_GET_STATE event, sending updated state with {len(self._state)} keys",
+            message_logger=self.message_logger,
+        )
+
+        # Zwracamy zaktualizowany stan
+        event.data = self._state
+        event.result = Result(result="success")
+        await self._reply(event)
 
     def _run_server_in_thread(self):
         """Uruchamia serwer uvicorn w osobnym wątku wewnątrz procesu."""
@@ -346,21 +521,9 @@ if __name__ == "__main__":
         "-c",
         "--clients",
         type=int,
-        default=10,
-        help="test clients number (default: 10)",
+        default=3,
+        help="test clients number (default: 3)",
     )
-    # parser.add_argument(
-    #     "-s",
-    #     "--session",
-    #     action="store_false",
-    #     help="use http session (default: False)",
-    # )
-    # parser.add_argument(
-    #     "-p",
-    #     "--parallel",
-    #     action="store_false",
-    #     help="use parallel send (default: False)",
-    # )
 
     args = parser.parse_args()
 
@@ -378,7 +541,7 @@ if __name__ == "__main__":
 
     clients_params = []
     for i in range(1, args.clients + 1):
-        client_number = i + 1
+        client_number = i
         port = base_port + client_number
         clients_params.append({
             "name": f"test_{port}",

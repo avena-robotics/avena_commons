@@ -1,0 +1,524 @@
+/* ======================================
+   DASHBOARD TREE STYLES
+   Rozbudowane style dla dashboard'a z rozwijalnymi drzewami JSON
+   ====================================== */
+
+/* -------------------------------------- 
+   GŁÓWNE STYLE DASHBOARD'A 
+   -------------------------------------- */
+.dashboard-container {
+    min-height: 100vh;
+}
+
+.dashboard-header h1 {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* -------------------------------------- 
+   KARTY METRYKI 
+   -------------------------------------- */
+.metrics-section .metric-card {
+    transition: all 0.3s ease;
+    border-left-width: 4px !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.metrics-section .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.metrics-section .metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.metrics-section .metric-card:hover::before {
+    opacity: 1;
+}
+
+/* -------------------------------------- 
+   KARTY SERWISÓW 
+   -------------------------------------- */
+.services-section .service-card {
+    transition: all 0.3s ease;
+    border-left-width: 4px !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.services-section .service-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+
+.services-section .service-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, currentColor 50%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.services-section .service-card:hover::after {
+    opacity: 0.3;
+}
+
+/* Service Header Styling */
+.service-header .card-title {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 1.1rem;
+}
+
+.service-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* Service Info Styling */
+.service-info {
+    min-height: 120px;
+}
+
+.service-detail {
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.service-detail i {
+    width: 16px;
+    text-align: center;
+}
+
+/* Service Actions */
+.service-actions {
+    border-top: 1px solid rgba(0,0,0,0.1);
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
+/* -------------------------------------- 
+   FILTRY I KONTROLKI 
+   -------------------------------------- */
+.filters-section .input-group-text {
+    background-color: #f8f9fa;
+    border-color: #ced4da;
+}
+
+.filters-section .form-control:focus,
+.filters-section .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.filters-section .form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+/* -------------------------------------- 
+   MODAL I DRZEWO JSON 
+   -------------------------------------- */
+.modal-lg {
+    max-width: 800px;
+}
+
+.modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Główny kontener drzewa */
+.tree-container {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #e1e5e9;
+    border-radius: 8px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Elementy drzewa */
+.tree-item {
+    margin: 3px 0;
+    position: relative;
+}
+
+.tree-item.collapsed .tree-children {
+    display: none;
+}
+
+.tree-item.collapsed .tree-toggle:before {
+    content: "▶";
+    color: #6c757d;
+}
+
+/* Węzły drzewa */
+.tree-node {
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.tree-node:hover {
+    background-color: rgba(13, 110, 253, 0.1);
+    transform: translateX(2px);
+}
+
+.tree-node:active {
+    background-color: rgba(13, 110, 253, 0.2);
+}
+
+/* Przełączniki rozwijania */
+.tree-toggle {
+    color: #0d6efd;
+    margin-right: 8px;
+    font-size: 11px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+    font-weight: bold;
+}
+
+.tree-toggle:before {
+    content: "▼";
+}
+
+.tree-toggle:hover {
+    background-color: rgba(13, 110, 253, 0.1);
+    transform: scale(1.1);
+}
+
+/* Punktory dla liści */
+.tree-bullet {
+    color: #adb5bd;
+    margin-right: 8px;
+    font-size: 10px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tree-bullet:before {
+    content: "•";
+}
+
+/* Klucze */
+.tree-key {
+    color: #0969da;
+    font-weight: 600;
+    margin-right: 8px;
+    min-width: fit-content;
+}
+
+/* Wartości z kolorami typów */
+.tree-value {
+    margin-left: 5px;
+    word-break: break-all;
+}
+
+.tree-value .string {
+    color: #0a3069;
+    background-color: rgba(10, 48, 105, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-style: italic;
+}
+
+.tree-value .number {
+    color: #d1242f;
+    font-weight: 600;
+    background-color: rgba(209, 36, 47, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.tree-value .boolean {
+    color: #bc4c00;
+    font-weight: bold;
+    background-color: rgba(188, 76, 0, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+}
+
+.tree-value .null {
+    color: #656d76;
+    font-style: italic;
+    opacity: 0.8;
+}
+
+.tree-value .unknown {
+    color: #8250df;
+    font-style: italic;
+}
+
+/* Dzieci drzewa z wcięciami */
+.tree-children {
+    border-left: 2px solid #e1e5e9;
+    margin-left: 8px;
+    padding-left: 16px;
+    position: relative;
+}
+
+.tree-children::before {
+    content: '';
+    position: absolute;
+    left: -2px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, #0d6efd 0%, rgba(13, 110, 253, 0.1) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.tree-children:hover::before {
+    opacity: 1;
+}
+
+/* Tablice - specjalne traktowanie */
+.tree-array {
+    position: relative;
+}
+
+.tree-array .tree-key {
+    color: #8250df;
+    font-weight: 500;
+}
+
+/* Obiekty - specjalne traktowanie */
+.tree-object {
+    position: relative;
+}
+
+/* -------------------------------------- 
+   SZCZEGÓŁY SERWISU W MODALU 
+   -------------------------------------- */
+.service-details-table {
+    margin-bottom: 0;
+}
+
+.service-details-table td {
+    border-top: 1px solid #f0f0f0;
+    padding: 8px 12px;
+    vertical-align: middle;
+}
+
+.service-details-table td:first-child {
+    font-weight: 600;
+    color: #495057;
+    width: 40%;
+}
+
+/* -------------------------------------- 
+   LOADING I STATUS MESSAGES 
+   -------------------------------------- */
+.status-messages .alert {
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.status-messages .spinner-border {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-width: 0.3em;
+}
+
+/* -------------------------------------- 
+   RESPONSYWNOŚĆ 
+   -------------------------------------- */
+@media (max-width: 768px) {
+    .dashboard-header .col-auto {
+        text-align: center;
+        margin-top: 1rem;
+    }
+    
+    .service-card {
+        margin-bottom: 1.5rem;
+    }
+    
+    .service-actions .btn {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.6rem;
+    }
+    
+    .tree-container {
+        font-size: 12px;
+        padding: 15px;
+        max-height: 400px;
+    }
+    
+    .modal-lg {
+        max-width: 95%;
+        margin: 1rem;
+    }
+    
+    .metrics-section .col-md-3 {
+        margin-bottom: 1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .filters-section .col-md-6,
+    .filters-section .col-md-3 {
+        margin-bottom: 0.5rem;
+    }
+    
+    .service-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .service-status {
+        margin-top: 0.5rem;
+    }
+    
+    .tree-children {
+        margin-left: 4px;
+        padding-left: 12px;
+    }
+}
+
+/* -------------------------------------- 
+   DARK MODE SUPPORT 
+   -------------------------------------- */
+@media (prefers-color-scheme: dark) {
+    .dashboard-container {
+        color: #e9ecef;
+    }
+    
+    .dashboard-header h1 {
+        color: #f8f9fa;
+    }
+    
+    .tree-container {
+        background: linear-gradient(135deg, #2b2b2b 0%, #1a1a1a 100%);
+        border-color: #495057;
+        color: #e9ecef;
+    }
+    
+    .tree-key {
+        color: #79c0ff;
+    }
+    
+    .tree-value .string {
+        color: #a5d6ff;
+        background-color: rgba(165, 214, 255, 0.1);
+    }
+    
+    .tree-value .number {
+        color: #ffa198;
+        background-color: rgba(255, 161, 152, 0.1);
+    }
+    
+    .tree-value .boolean {
+        color: #ffa657;
+        background-color: rgba(255, 166, 87, 0.1);
+    }
+    
+    .tree-value .null {
+        color: #8b949e;
+    }
+    
+    .tree-children {
+        border-left-color: #495057;
+    }
+    
+    .service-details-table td {
+        border-top-color: #495057;
+        color: #e9ecef;
+    }
+    
+    .service-details-table td:first-child {
+        color: #adb5bd;
+    }
+}
+
+/* -------------------------------------- 
+   ACCESSIBILITY IMPROVEMENTS 
+   -------------------------------------- */
+.tree-node[tabindex] {
+    outline: none;
+}
+
+.tree-node:focus {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+}
+
+.service-card:focus-within {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+}
+
+/* Reducuced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .service-card,
+    .metric-card,
+    .tree-node,
+    .tree-toggle {
+        transition: none;
+    }
+    
+    .service-card:hover,
+    .metric-card:hover {
+        transform: none;
+    }
+}
+
+/* -------------------------------------- 
+   PRINT STYLES 
+   -------------------------------------- */
+@media print {
+    .dashboard-header .btn,
+    .filters-section,
+    .service-actions {
+        display: none !important;
+    }
+    
+    .service-card {
+        break-inside: avoid;
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+    }
+    
+    .tree-container {
+        background: white !important;
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+    }
+} 

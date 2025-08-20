@@ -254,3 +254,117 @@ class MA01:
             )
         self.__buffer_write(1, value)
         return value
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia MA01 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan cewek i wejść cyfrowych
+        """
+        try:
+            # Określenie głównego stanu urządzenia
+            if self.buffer_modified:
+                main_state = "BUFFER_MODIFIED"
+            elif any(self.coil_buffer):
+                main_state = "COILS_ACTIVE"
+            else:
+                main_state = "IDLE"
+
+            # Formatowanie stanu cewek
+            coil_states = [f"DO{i}={self.coil_buffer[i]}" for i in range(len(self.coil_buffer))]
+            coil_info = ", ".join(coil_states)
+
+            # Formatowanie stanu wejść cyfrowych
+            di_info = f"DI={bin(self.di_cache)}"
+
+            # Informacja o stanie bufora
+            buffer_info = f", buffer_cycle={'new' if self.new_buffer_cycle else 'active'}"
+
+            return f"MA01(name='{self.device_name}', state={main_state}, {coil_info}, {di_info}{buffer_info})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"MA01(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia MA01 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            import time
+            cache_age = time.time() - self.di_cache_time
+            
+            return (
+                f"MA01(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"coil_buffer={self.coil_buffer}, "
+                f"di_cache={self.di_cache})"
+            )
+        except Exception as e:
+            return f"MA01(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia MA01.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - coil_buffer: aktualny stan cewek
+                - di_cache: cache wartości wejść cyfrowych
+                - di_cache_time: czas ostatniego odczytu DI
+                - buffer_modified: czy buffer został zmodyfikowany
+                - new_buffer_cycle: czy rozpoczynamy nowy cykl bufora
+                - buffer_timeout: timeout bufora
+                - di_cache_timeout: timeout cache wejść cyfrowych
+                - main_state: główny stan urządzenia
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+        }
+
+        try:            
+            # Dodanie stanu cewek
+            result["coil_buffer"] = self.coil_buffer.copy()
+            
+            # Dodanie stanu wejść cyfrowych
+            result["di_cache"] = self.di_cache
+
+            # Dodanie informacji o aktywnych cewkach
+            result["active_coils"] = [i for i, value in enumerate(self.coil_buffer) if value]
+            
+            # Dodanie stanu poszczególnych wejść cyfrowych
+            result["di_states"] = {}
+            for i in range(8):  # Zakładamy maksymalnie 8 wejść cyfrowych
+                result["di_states"][f"DI{i}"] = 1 if (self.di_cache & (1 << i)) else 0
+
+            # Określenie głównego stanu urządzenia
+            if self.buffer_modified:
+                result["main_state"] = "BUFFER_MODIFIED"
+            elif any(self.coil_buffer):
+                result["main_state"] = "COILS_ACTIVE"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result

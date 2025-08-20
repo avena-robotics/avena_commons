@@ -5,6 +5,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from avena_commons.event_listener import Event, EventListener
 from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
+from avena_commons.util.worker import Connector, Worker
 
 
 class TestServer(EventListener):
@@ -37,15 +38,15 @@ class TestServer(EventListener):
         self.start()
 
     async def _analyze_event(self, event: Event) -> bool:
-        self._find_and_remove_processing_event(event)
+        self._find_and_remove_processing_event(event=event)
         return True
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         for client in range(1, self.clients + 1):
-            client_port = self._EventListener__port + client + 1
+            client_port = self._EventListener__port + client
             for i in range(self.payload):
                 event = await self._event(
-                    f"test_client_{client_port}",
+                    destination=f"test_client_{client_port}",
                     destination_address=self._EventListener__address,
                     destination_port=client_port,
                     event_type=f"test_from_{self._EventListener__port}",
@@ -55,7 +56,7 @@ class TestServer(EventListener):
                 self._add_to_processing(event)
         debug(
             f"incommming = {self.size_of_incomming_events_queue()}, processing = {self.size_of_processing_events_queue()}, to_send = {self.size_of_events_to_send_queue()}, [{self.sended_events}, {self.received_events}, {self.sended_events - self.received_events}]",
-            message_logger=self.message_logger_queues,
+            message_logger=self._message_logger,
         )
         pass
 
@@ -71,15 +72,15 @@ if __name__ == "__main__":
         "-c",
         "--clients",
         type=int,
-        default=1,
-        help="test clients number (default: 1)",
+        default=3,
+        help="test clients number (default: 3)",
     )
     parser.add_argument(
         "-p",
         "--payload",
         type=int,
-        default=1,
-        help="payload size (default: 1)",
+        default=3,
+        help="payload size (default: 3)",
     )
     args = parser.parse_args()
 
@@ -88,12 +89,6 @@ if __name__ == "__main__":
         filename=f"{temp_path}/test_server.log",
         period=LoggerPolicyPeriod.LAST_15_MINUTES,
     )
-    # message_logger = None
-    message_logger_queues = MessageLogger(
-        filename=f"{temp_path}/test_server_queues.log",
-        period=LoggerPolicyPeriod.LAST_15_MINUTES,
-    )
-    # message_logger = None
     port = 9200
     try:
         app = TestServer(
@@ -101,14 +96,10 @@ if __name__ == "__main__":
             address="127.0.0.1",
             port=port,
             message_logger=message_logger,
-            message_logger_queues=message_logger_queues,
             debug=True,
             clients=args.clients,
             payload=args.payload,
-            # use_http_session=args.session,
-            # use_parallel_send=args.parallel,
         )
-        # app.start()
 
     except KeyboardInterrupt:
         pass

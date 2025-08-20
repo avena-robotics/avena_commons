@@ -12,7 +12,7 @@ class N4AIA04:
         self,
         device_name: str,
         bus=None,
-        address=None,
+        address: int | None = None,
         offset=0,
         period: float = 0.05,
         message_logger: MessageLogger | None = None,
@@ -90,7 +90,7 @@ class N4AIA04:
 
                 # Read all 4 holding registers at once (0x0000-0x0003)
                 raw_data = self.bus.read_holding_registers(
-                    address=self.address, register=0x0000, count=4
+                    address=self.address, first_register=0x0000, count=4
                 )
 
                 if raw_data is not None and len(raw_data) == 4:
@@ -104,15 +104,17 @@ class N4AIA04:
                         v2 = raw_data[1] * 0.01
                         c1 = raw_data[2] * 0.1
                         c2 = raw_data[3] * 0.1
-                        debug(
-                            f"{self.device_name} - Raw values updated: {raw_data} -> V1={v1:.2f}V, V2={v2:.2f}V, C1={c1:.1f}mA, C2={c2:.1f}mA",
+                        if self.message_logger:
+                            debug(
+                                f"{self.device_name} - Raw values updated: {raw_data} -> V1={v1:.2f}V, V2={v2:.2f}V, C1={c1:.1f}mA, C2={c2:.1f}mA",
+                                message_logger=self.message_logger,
+                            )
+                else:
+                    if self.message_logger:
+                        warning(
+                            f"{self.device_name} - Unable to read holding registers 0x0000-0x0003",
                             message_logger=self.message_logger,
                         )
-                else:
-                    warning(
-                        f"{self.device_name} - Unable to read holding registers 0x0000-0x0003",
-                        message_logger=self.message_logger,
-                    )
 
             except Exception as e:
                 error(
@@ -156,6 +158,95 @@ class N4AIA04:
         """Get raw values from registers as list [V1_raw, V2_raw, C1_raw, C2_raw]"""
         with self.__lock:
             return self.raw_values.copy()
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia N4AIA04 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę i aktualne wartości analogowe
+        """
+        try:
+            values = self.get_all_values()
+
+            return (
+                f"N4AIA04(name='{self.device_name}', "
+                f"V1={values['voltage_1']:.2f}V, V2={values['voltage_2']:.2f}V, "
+                f"C1={values['current_1']:.1f}mA, C2={values['current_2']:.1f}mA)"
+            )
+
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"N4AIA04(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia N4AIA04 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            values = self.get_all_values()
+            raw_values = self.get_raw_values()
+
+            return (
+                f"N4AIA04(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"offset={self.offset}, "
+                f"period={self.period}, "
+                f"raw_values={raw_values}, "
+                f"voltage_1={values['voltage_1']:.2f}V, "
+                f"voltage_2={values['voltage_2']:.2f}V, "
+                f"current_1={values['current_1']:.1f}mA, "
+                f"current_2={values['current_2']:.1f}mA)"
+            )
+
+        except Exception as e:
+            return f"N4AIA04(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia N4AIA04.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - offset: offset dla numeracji
+                - period: okres odczytu danych
+                - raw_values: surowe wartości z rejestrów
+                - values: przeliczone wartości analogowe (napięcia i prądy)
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "offset": self.offset,
+            "period": self.period,
+        }
+
+        try:
+            # Dodanie surowych wartości
+            result["raw_values"] = self.get_raw_values()
+
+            # Dodanie przeliczonych wartości
+            result["values"] = self.get_all_values()
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
 
     def __del__(self):
         """Cleanup when object is destroyed"""

@@ -52,7 +52,7 @@ class P7674:
             self._coil_state_changed: bool = False  # Flag to indicate buffer changes
 
             self.__setup()
-            self.__reset_all_coils()
+            # self.__reset_all_coils()
             self.check_device_connection()
         except Exception as e:
             error(
@@ -257,3 +257,103 @@ class P7674:
             register=4,
             message_logger=self.message_logger,
         )
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia P7674 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan DI i DO
+        """
+        try:
+            # Sprawdzenie czy są aktywne jakieś wejścia cyfrowe
+            active_di_count = bin(self.di_value).count("1")
+
+            # Sprawdzenie czy są aktywne jakieś wyjścia cyfrowe
+            active_do_count = sum(self.coil_state)
+
+            # Określenie głównego stanu urządzenia
+            if active_di_count > 0 or active_do_count > 0:
+                main_state = "ACTIVE"
+            else:
+                main_state = "IDLE"
+
+            return f"P7674(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.coil_state})"
+
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"P7674(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia P7674 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            return (
+                f"P7674(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"offset={self.offset}, "
+                f"period={self.period}, "
+                f"di_value={self.di_value}, "
+                f"coil_state={self.coil_state})"
+            )
+        except Exception as e:
+            return f"P7674(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia P7674.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - offset: przesunięcie numeracji
+                - period: okres odczytu/zapisu
+                - di_value: wartość wejść cyfrowych
+                - coil_state: aktualny stan wyjść cyfrowych
+                - active_di_count: liczba aktywnych wejść
+                - active_do_count: liczba aktywnych wyjść
+                - main_state: główny stan urządzenia
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "offset": self.offset,
+            "period": self.period,
+        }
+
+        try:
+            # Dodanie stanu DI/DO
+            result["di_value"] = self.di_value
+            result["coil_state"] = self.coil_state.copy()
+
+            # Obliczenie liczby aktywnych I/O
+            result["active_di_count"] = bin(self.di_value).count("1")
+            result["active_do_count"] = sum(self.coil_state)
+
+            # Dodanie głównego stanu urządzenia
+            if result["active_di_count"] > 0 or result["active_do_count"] > 0:
+                result["main_state"] = "ACTIVE"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result

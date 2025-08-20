@@ -26,6 +26,7 @@ class Path(BaseModel):
     testing_move: Optional[bool] = False
     interruption_move: Optional[bool] = False
     interruption_duration: Optional[float] = None
+    collision_override: Optional[bool] = False
 
     def to_dict(self) -> dict:
         return self.model_dump()
