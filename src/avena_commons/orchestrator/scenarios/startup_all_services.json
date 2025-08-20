@@ -1,0 +1,84 @@
+{
+  "name": "Uruchomienie wszystkich usług systemu (@all)",
+  "description": "Autonomiczny scenariusz startowy - uruchamiany gdy którakolwiek usługa jest zatrzymana ale żadna nie ma błędu",
+  "priority": 100,
+  "cooldown": 60,
+  "trigger": {
+    "type": "automatic",
+    "conditions": {
+      "client_state": {
+        "all_services_in_state": "STOPPED"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🤖 AUTONOMICZNY START: Wykryto zatrzymane usługi - rozpoczynam automatyczne uruchomienie",
+      "description": "Informacja o autonomicznym wyzwoleniu scenariusza"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔍 Warunki spełnione: znaleziono komponenty w stanie STOPPED, brak komponentów w ERROR",
+      "description": "Potwierdzenie spełnienia warunków autonomicznych"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "⚙️ Autonomiczna inicjalizacja wszystkich komponentów (@all)...",
+      "description": "Rozpoczęcie autonomicznej inicjalizacji"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_INITIALIZED",
+      "description": "Inicjalizacja wszystkich komponentów systemu"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "INITIALIZED",
+      "timeout": "30s",
+      "description": "Oczekiwanie na inicjalizację wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔄 Autonomiczne uruchamianie wszystkich komponentów (@all) - przejście do stanu RUN...",
+      "description": "Rozpoczęcie autonomicznego uruchomienia"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_RUN",
+      "description": "Uruchomienie wszystkich komponentów systemu"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "RUN",
+      "timeout": "10s",
+      "description": "Oczekiwanie na uruchomienie wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "✅ AUTONOMICZNY START ZAKOŃCZONY: Wszystkie usługi uruchomione pomyślnie!",
+      "description": "Potwierdzenie pomyślnego autonomicznego startu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📋 Autonomicznie uruchomione komponenty: io, supervisor_1, supervisor_2, munchies_algo",
+      "description": "Lista autonomicznie uruchomionych komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🎯 System autonomicznie przywrócony do pracy - wszystkie usługi w stanie RUN",
+      "description": "Potwierdzenie autonomicznego przywrócenia gotowości systemu"
+    }
+  ]
+}

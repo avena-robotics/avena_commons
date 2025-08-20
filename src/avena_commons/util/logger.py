@@ -354,28 +354,44 @@ def format_message(
 
 
 def debug(message: str, message_logger: MessageLogger = None, colors: bool = True):
-    if message_logger is not None:
-        message_logger.debug(message)
-    else:
-        print(format_message(message, LogLevelType.debug, colors))
+    try:
+        if message_logger is not None:
+            message_logger.debug(message)
+        else:
+            print(format_message(message, LogLevelType.debug, colors))
+    except BrokenPipeError:
+        # Handle the case where the pipe is broken, e.g., the receiver process has terminated
+        print(f"Warning: Could not log message due to broken pipe: {message}")
 
 
 def info(message: str, message_logger: MessageLogger = None, colors: bool = True):
-    if message_logger is not None:
-        message_logger.info(str(message))
-    else:
-        print(format_message(message, LogLevelType.info, colors))
+    try:
+        if message_logger is not None:
+            message_logger.info(str(message))
+        else:
+            print(format_message(message, LogLevelType.info, colors))
+    except BrokenPipeError:
+        # Handle the case where the pipe is broken, e.g., the receiver process has terminated
+        print(f"Warning: Could not log message due to broken pipe: {message}")
 
 
 def warning(message: str, message_logger: MessageLogger = None, colors: bool = True):
-    if message_logger is not None:
-        message_logger.warning(message)
-    else:
-        print(format_message(message, LogLevelType.warning, colors))
+    try:
+        if message_logger is not None:
+            message_logger.warning(message)
+        else:
+            print(format_message(message, LogLevelType.warning, colors))
+    except BrokenPipeError:
+        # Handle the case where the pipe is broken, e.g., the receiver process has terminated
+        print(f"Warning: Could not log message due to broken pipe: {message}")
 
 
 def error(message: str, message_logger: MessageLogger = None, colors: bool = True):
-    if message_logger is not None:
-        message_logger.error(message)
-    else:
-        print(format_message(message, LogLevelType.error, colors))
+    try:
+        if message_logger is not None:
+            message_logger.error(message)
+        else:
+            print(format_message(message, LogLevelType.error, colors))
+    except BrokenPipeError:
+        # Handle the case where the pipe is broken, e.g., the receiver process has terminated
+        print(f"Warning: Could not log message due to broken pipe: {message}")

@@ -522,6 +522,160 @@ class DSR:
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
+    def check_device_connection(self) -> bool:
+        return modbus_check_device_connection(
+            device_name=self.device_name,
+            bus=self.bus,
+            address=self.address,
+            register=0,
+            message_logger=self.message_logger,
+        )
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia DSR w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan silnika i podstawowe statusy
+        """
+        try:
+            # Określenie głównego stanu urządzenia
+            if self.operation_status_error_bit or self.is_failure():
+                main_state = "FAILURE"
+            elif self.operation_status_motor_enabling:
+                main_state = "RUNNING"
+            elif self.operation_status_in_place:
+                main_state = "IN_PLACE"
+            elif self.operation_status_homing_completed:
+                main_state = "HOMED"
+            else:
+                main_state = "IDLE"
+
+            # Dodaj informacje o błędach/alarmach jeśli występują
+            errors = []
+            if self.operation_status_out_of_tolerance:
+                errors.append("OUT_OF_TOLERANCE")
+            if self.operation_status_undervoltage:
+                errors.append("UNDERVOLTAGE")
+            if self.operation_status_overvoltage:
+                errors.append("OVERVOLTAGE")
+            if self.operation_status_overcurrent:
+                errors.append("OVERCURRENT")
+            if self.operation_status_encoder_fault:
+                errors.append("ENCODER_FAULT")
+            if self.operation_status_overload:
+                errors.append("OVERLOAD")
+
+            error_info = f", errors={errors}" if errors else ""
+
+            return f"DSR(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.do_current_state}{error_info})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"DSR(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia DSR dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            return (
+                f"DSR(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"config_type={self.configuration_type}, "
+                f"reverse_direction={self.reverse_direction}, "
+                f"operation_status={{out_of_tolerance={self.operation_status_out_of_tolerance}, "
+                f"undervoltage={self.operation_status_undervoltage}, "
+                f"overvoltage={self.operation_status_overvoltage}, "
+                f"overcurrent={self.operation_status_overcurrent}, "
+                f"encoder_fault={self.operation_status_encoder_fault}, "
+                f"overload={self.operation_status_overload}, "
+                f"error_bit={self.operation_status_error_bit}, "
+                f"motor_enabling={self.operation_status_motor_enabling}, "
+                f"homing_completed={self.operation_status_homing_completed}, "
+                f"positive_limit={self.operation_status_positive_software_limit}, "
+                f"negative_limit={self.operation_status_negative_software_limit}, "
+                f"in_place={self.operation_status_in_place}}}, "
+                f"di_value={self.di_value}, "
+                f"do_current_state={self.do_current_state})"
+            )
+        except Exception as e:
+            return f"DSR(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia DSR.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - configuration_type: typ konfiguracji
+                - reverse_direction: kierunek obrotu
+                - operation_status: słownik ze statusami operacyjnymi
+                - di_value: wartość wejść cyfrowych
+                - do_current_state: aktualny stan wyjść cyfrowych
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "configuration_type": self.configuration_type,
+            "reverse_direction": self.reverse_direction,
+        }
+
+        try:
+            # Dodanie statusów operacyjnych
+            result["operation_status"] = {
+                "out_of_tolerance": self.operation_status_out_of_tolerance,
+                "undervoltage": self.operation_status_undervoltage,
+                "overvoltage": self.operation_status_overvoltage,
+                "overcurrent": self.operation_status_overcurrent,
+                "encoder_fault": self.operation_status_encoder_fault,
+                "overload": self.operation_status_overload,
+                "error_bit": self.operation_status_error_bit,
+                "motor_enabling": self.operation_status_motor_enabling,
+                "homing_completed": self.operation_status_homing_completed,
+                "positive_software_limit": self.operation_status_positive_software_limit,
+                "negative_software_limit": self.operation_status_negative_software_limit,
+                "in_place": self.operation_status_in_place,
+            }
+
+            # Dodanie stanu DI/DO
+            result["di_value"] = self.di_value
+            result["do_current_state"] = self.do_current_state.copy()
+
+            # Dodanie głównego stanu urządzenia
+            if self.operation_status_error_bit or self.is_failure():
+                result["main_state"] = "FAILURE"
+            elif self.operation_status_motor_enabling:
+                result["main_state"] = "RUNNING"
+            elif self.operation_status_in_place:
+                result["main_state"] = "IN_PLACE"
+            elif self.operation_status_homing_completed:
+                result["main_state"] = "HOMED"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
+
     def __del__(self):
         try:
             # Stop DI thread
@@ -559,12 +713,3 @@ class DSR:
 
         except Exception:
             pass  # nie loguj tutaj!
-
-    def check_device_connection(self) -> bool:
-        return modbus_check_device_connection(
-            device_name=self.device_name,
-            bus=self.bus,
-            address=self.address,
-            register=0,
-            message_logger=self.message_logger,
-        )

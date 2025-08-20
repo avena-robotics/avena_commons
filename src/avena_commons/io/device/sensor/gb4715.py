@@ -157,3 +157,89 @@ class GB4715:
             register=3,
             message_logger=self.message_logger,
         )
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia GB4715 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę i stan alarmu
+        """
+        try:
+            # Określenie głównego stanu urządzenia na podstawie alarm_status
+            if self.alarm_status == 1:
+                main_state = "ALARM"
+            elif self.alarm_status == 0:
+                main_state = "OK"
+            else:
+                main_state = "UNKNOWN"
+
+            return f"GB4715(name='{self.device_name}', state={main_state})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"GB4715(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia GB4715 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            return (
+                f"GB4715(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"period={self.period}, "
+                f"alarm_status={self.alarm_status})"
+            )
+        except Exception as e:
+            return f"GB4715(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia GB4715.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - period: okres odczytu alarmu
+                - alarm_status: aktualny stan alarmu (0=OK, 1=Alarm)
+                - main_state: główny stan urządzenia w postaci tekstowej
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "period": self.period,
+        }
+
+        try:
+            # Dodanie stanu alarmu
+            result["alarm_status"] = self.alarm_status
+
+            # Dodanie głównego stanu urządzenia w postaci tekstowej
+            if self.alarm_status == 1:
+                result["main_state"] = "ALARM"
+            elif self.alarm_status == 0:
+                result["main_state"] = "OK"
+            else:
+                result["main_state"] = "UNKNOWN"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result

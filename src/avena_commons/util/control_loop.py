@@ -1,5 +1,6 @@
 import gc
 import time
+from typing import Callable, Optional
 
 from .logger import Logger, warning
 
@@ -18,6 +19,9 @@ class ControlLoop:
     :type warning_printer: bool
     :param message_logger: The message logger.
     :type message_logger: None
+    :param overtime_info_callback: Opcjonalny callback zwracający dodatkowy tekst do logu
+        przy overtime. Sygnatura: () -> str
+    :type overtime_info_callback: Optional[Callable[[], str]]
     """
 
     def __init__(
@@ -27,6 +31,7 @@ class ControlLoop:
         fill_idle_time: bool = False,
         warning_printer=True,
         message_logger=None,
+        overtime_info_callback: Optional[Callable[[], str]] = None,
     ):
         """Constructor for ControlLoop class."""
         self.name = name
@@ -42,6 +47,7 @@ class ControlLoop:
         self.warning_printer = warning_printer
         self.message_logger = message_logger
         self.fill_idle_time = fill_idle_time
+        self.overtime_info_callback = overtime_info_callback
 
     def loop_begin(self):
         """
@@ -79,14 +85,25 @@ class ControlLoop:
         if self.warning_printer:
             if period > self.period:
                 self.overtime_counter += 1
+
+                suffix = ""
+                cb = getattr(self, "overtime_info_callback", None)
+                if cb is not None:
+                    try:
+                        extra = cb()
+                        if extra is not None and str(extra):
+                            suffix = f" | {str(extra)}"
+                    except Exception as e:
+                        suffix = f" | overtime_info_callback error: {e!r}"
+
                 if gc.isenabled():
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC ENABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC ENABLED{suffix}",
                         message_logger=self.message_logger,
                     )
                 else:
                     warning(
-                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC DISABLED",
+                        f"OVERTIME ERROR: {self.name.upper()} exec time: {period * 1000:.5}ms exceed: {(period - self.period) * 1000:.5}ms GC DISABLED{suffix}",
                         message_logger=self.message_logger,
                     )
             elif self.fill_idle_time:

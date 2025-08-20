@@ -250,6 +250,69 @@ class EC3A_IO1632_Slave(EtherCatSlave):
         else:
             return False
 
+    def __str__(self) -> str:
+        """Reprezentacja slave'a EC3A_IO1632"""
+        try:
+            # Określenie stanu osi
+            active_axes = sum(
+                1 for axis in self.axis if axis.ImpulseFSM != ImpulseFSM.IDLE
+            )
+
+            return (
+                f"EC3A_IO1632_Slave(name='{self.device_name}', "
+                f"addr={self.address}, "
+                f"axes={len(self.axis)}, "
+                f"active_axes={active_axes}, "
+                f"DI={bin(sum(self.inputs_ports[i] << i for i in range(16)))}, "
+                f"DO={bin(sum(self.outputs_ports[i] << i for i in range(16)))})"
+            )
+        except Exception as e:
+            return f"EC3A_IO1632_Slave(name='{self.device_name}', error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """Szczegółowa reprezentacja dla developerów"""
+        try:
+            axis_states = [axis.ImpulseFSM.name for axis in self.axis]
+            return (
+                f"EC3A_IO1632_Slave(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"debug={self.debug}, "
+                f"axis_count={len(self.axis)}, "
+                f"axis_states={axis_states}, "
+                f"inputs_ports={self.inputs_ports}, "
+                f"outputs_ports={self.outputs_ports})"
+            )
+        except Exception as e:
+            return (
+                f"EC3A_IO1632_Slave(device_name='{self.device_name}', error='{str(e)}')"
+            )
+
+    def to_dict(self) -> dict:
+        """Słownikowa reprezentacja EC3A_IO1632_Slave"""
+        result = {
+            "type": "EC3A_IO1632_Slave",
+            "device_name": self.device_name,
+            "address": self.address,
+        }
+
+        try:
+            # Stany portów I/O
+            result["inputs_ports"] = self.inputs_ports.copy()
+            result["outputs_ports"] = self.outputs_ports.copy()
+
+            # Wartości binarne dla łatwego odczytu
+            result["inputs_binary"] = bin(
+                sum(self.inputs_ports[i] << i for i in range(16))
+            )
+            result["outputs_binary"] = bin(
+                sum(self.outputs_ports[i] << i for i in range(16))
+            )
+
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
 
 class EC3A_IO1632(EtherCatDevice):
     def __init__(
@@ -428,6 +491,71 @@ class EC3A_IO1632(EtherCatDevice):
 
     def check_device_connection(self) -> bool:
         return True
+
+    def __str__(self) -> str:
+        """Reprezentacja urządzenia EC3A_IO1632"""
+        try:
+            connection_status = (
+                "connected" if self.check_device_connection() else "disconnected"
+            )
+
+            return (
+                f"EC3A_IO1632(name='{self.device_name}', "
+                f"addr={self.address}, "
+                f"axes={self.number_of_axis}, "
+                f"status={connection_status}, "
+                f"DI={bin(sum(self.inputs_ports[i] << i for i in range(16)))}, "
+                f"DO={bin(sum(self.outputs_ports[i] << i for i in range(16)))})"
+            )
+        except Exception as e:
+            return f"EC3A_IO1632(name='{self.device_name}', error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """Szczegółowa reprezentacja dla developerów"""
+        try:
+            return (
+                f"EC3A_IO1632(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"number_of_axis={self.number_of_axis}, "
+                f"vendor_code={self.vendor_code}, "
+                f"product_code={self.product_code}, "
+                f"inputs_ports={self.inputs_ports}, "
+                f"outputs_ports={self.outputs_ports})"
+            )
+        except Exception as e:
+            return f"EC3A_IO1632(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """Słownikowa reprezentacja EC3A_IO1632"""
+        result = {
+            "type": "EC3A_IO1632",
+            "device_name": self.device_name,
+            "address": self.address,
+            "number_of_axis": self.number_of_axis,
+            "vendor_code": self.vendor_code,
+            "product_code": self.product_code,
+        }
+
+        try:
+            # Stany portów I/O
+            result["inputs_ports"] = self.inputs_ports.copy()
+            result["outputs_ports"] = self.outputs_ports.copy()
+
+            # Wartości binarne
+            result["inputs_binary"] = bin(
+                sum(self.inputs_ports[i] << i for i in range(16))
+            )
+            result["outputs_binary"] = bin(
+                sum(self.outputs_ports[i] << i for i in range(16))
+            )
+
+            # Status połączenia
+            result["connection_status"] = self.check_device_connection()
+
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
 
 
 init_device_di(EC3A_IO1632, first_index=0, count=16)

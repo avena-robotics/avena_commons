@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -111,6 +112,7 @@ class Sequence(BaseModel):
     sequence_enum: str | type[Enum]
     status: SequenceStatus = Field(default_factory=SequenceStatus)
     parametry: dict[str, Any] = Field(default_factory=dict)
+    creation_timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     @field_validator("sequence_enum", mode="before")
     @classmethod
@@ -127,23 +129,14 @@ class Sequence(BaseModel):
         # Obsługa kompatybilności wstecznej
         if not enum_class and "sequence_enum" in data:
             # Stary styl inicjalizacji - używamy przekazanych danych
-            super().__init__(produkt_id=produkt_id, parametry=parametry or {}, **data)
-
-            # Pobieramy klasę enuma z globals() lub z podanych parametrów
+            # Unikamy podwójnego przekazania 'parametry'
+            if parametry is not None and "parametry" not in data:
+                super().__init__(produkt_id=produkt_id, parametry=parametry, **data)
+            else:
+                super().__init__(produkt_id=produkt_id, **data)
+            # Nie wymuszamy rozwiązywania klasy enuma przy wczytywaniu ze stanu.
+            # Jeżeli enum_class nie jest podany, pozostawiamy None i działamy na danych statusu.
             enum_class = data.pop("enum_class", None)
-            enum_name = (
-                self.sequence_enum
-                if isinstance(self.sequence_enum, str)
-                else self.sequence_enum.__name__
-            )
-
-            if enum_class is None:
-                try:
-                    enum_class = globals()[enum_name]
-                except KeyError:
-                    raise ValueError(
-                        f"Nie znaleziono klasy enumeracji o nazwie {enum_name}. Przekaż bezpośrednio klasę enumeracji jako parametr 'enum_class'."
-                    )
         else:
             # Nowy styl inicjalizacji - generujemy wszystko na podstawie enum_class
             if enum_class is None:
@@ -178,7 +171,7 @@ class Sequence(BaseModel):
                 parametry=parametry or {},
             )
 
-        # Zapisujemy klasę enuma do użycia później
+        # Zapisujemy klasę enuma do użycia później (może być None)
         self.__enum_class = enum_class
 
         # Nie musimy inicjalizować status, bo jest już zainicjalizowany przez BaseModel
@@ -273,10 +266,11 @@ class Sequence(BaseModel):
     def _get_step_name(self, step_id: int) -> str:
         """Pobiera nazwę kroku na podstawie jego ID."""
         # Zamiast szukać w globals(), używamy zapisanej referencji do klasy enuma
-        if not hasattr(self, "_Sequence__enum_class"):
+        enum_class = getattr(self, "_Sequence__enum_class", None)
+        if not enum_class:
             return f"STEP_{step_id}"
 
-        for member in self._Sequence__enum_class:
+        for member in enum_class:
             if member.value == step_id:
                 return member.name
 

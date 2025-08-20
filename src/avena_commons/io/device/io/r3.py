@@ -42,7 +42,51 @@ class R3_Slave(EtherCatSlave):
 
     def write_output(self, port: int, value: bool):
         self.outputs_ports[port] = value
+        
+    def __str__(self) -> str:
+        """Reprezentacja slave'a R3"""
+        try:
+            return (
+                f"R3_Slave(addr={self.address}, "
+                f"DI={bin(sum(self.inputs_ports[i] << i for i in range(16)))}, "
+                f"DO={bin(sum(self.outputs_ports[i] << i for i in range(16)))})"
+            )
+        except Exception as e:
+            return f"R3_Slave(addr={getattr(self, 'address', 'unknown')}, error='{str(e)}')"
 
+    def __repr__(self) -> str:
+        """Szczegółowa reprezentacja dla developerów"""
+        try:
+            return (
+                f"R3_Slave(address={self.address}, "
+                f"debug={self.debug}, "
+                f"inputs_ports={self.inputs_ports}, "
+                f"outputs_ports={self.outputs_ports})"
+            )
+        except Exception as e:
+            return f"R3_Slave(address={getattr(self, 'address', 'unknown')}, error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """Słownikowa reprezentacja R3_Slave"""
+        result = {
+            "type": "R3_Slave",
+            "address": getattr(self, 'address', None),
+            "debug": getattr(self, 'debug', None),
+        }
+        
+        try:
+            # Stany portów I/O
+            result["inputs_ports"] = self.inputs_ports.copy()
+            result["outputs_ports"] = self.outputs_ports.copy()
+            
+            # Wartości binarne
+            result["inputs_binary"] = bin(sum(self.inputs_ports[i] << i for i in range(16)))
+            result["outputs_binary"] = bin(sum(self.outputs_ports[i] << i for i in range(16)))
+            
+        except Exception as e:
+            result["error"] = str(e)
+        
+        return result
 
 class R3(EtherCatDevice):
     def __init__(
@@ -65,3 +109,58 @@ class R3(EtherCatDevice):
     def write_output(self, port: int, value: bool):
         self.outputs_ports[port] = value
         self.bus.write_output(self.address, port, value)
+    
+    def __str__(self) -> str:
+        """Reprezentacja urządzenia R3"""
+        try:
+            connection_status = "connected"  # R3 zawsze zwraca True dla check_device_connection
+            
+            return (
+                f"R3(addr={self.address}, "
+                f"status={connection_status}, "
+                f"DI={bin(sum(self.inputs_ports[i] << i for i in range(16)))}, "
+                f"DO={bin(sum(self.outputs_ports[i] << i for i in range(16)))})"
+            )
+        except Exception as e:
+            return f"R3(addr={getattr(self, 'address', 'unknown')}, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """Szczegółowa reprezentacja dla developerów"""
+        try:
+            return (
+                f"R3(address={self.address}, "
+                f"vendor_code={self.vendor_code}, "
+                f"product_code={self.product_code}, "
+                f"debug={self.debug}, "
+                f"inputs_ports={self.inputs_ports}, "
+                f"outputs_ports={self.outputs_ports})"
+            )
+        except Exception as e:
+            return f"R3(address={getattr(self, 'address', 'unknown')}, error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """Słownikowa reprezentacja R3"""
+        result = {
+            "type": "R3",
+            "address": getattr(self, 'address', None),
+            "vendor_code": getattr(self, 'vendor_code', None),
+            "product_code": getattr(self, 'product_code', None),
+            "debug": getattr(self, 'debug', None),
+        }
+        
+        try:
+            # Stany portów I/O
+            result["inputs_ports"] = self.inputs_ports.copy()
+            result["outputs_ports"] = self.outputs_ports.copy()
+            
+            # Wartości binarne
+            result["inputs_binary"] = bin(sum(self.inputs_ports[i] << i for i in range(16)))
+            result["outputs_binary"] = bin(sum(self.outputs_ports[i] << i for i in range(16)))
+            
+            # Status połączenia (R3 nie ma implementacji check_device_connection)
+            result["connection_status"] = True
+            
+        except Exception as e:
+            result["error"] = str(e)
+        
+        return result

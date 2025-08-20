@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "avena_commons"
+version = "1.8.5"
 version = "1.6.1"
 description = "A small utility library for working with Avena Robotics"
 authors = [
@@ -60,7 +61,7 @@ Homepage = "https://github.com/avena-robotics/avena_commons"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--cov=avena_commons --cov-report=term-missing --cov-fail-under=90"
+addopts = "--continue-on-collection-errors --tb=short --cov=avena_commons --cov-report=term-missing --cov-fail-under=90"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]

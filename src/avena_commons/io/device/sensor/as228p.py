@@ -135,3 +135,107 @@ class AS228P:
             register=0,
             message_logger=self.message_logger,
         )
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia AS228P w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę i wartości enkoderów
+        """
+        try:
+            with self.__lock:
+                encoder_1_val = self.encoder_1
+                encoder_2_val = self.encoder_2
+                encoder_3_val = self.encoder_3
+
+            # Określenie głównego stanu urządzenia na podstawie aktywności enkoderów
+            if encoder_1_val != 0 or encoder_2_val != 0 or encoder_3_val != 0:
+                main_state = "ACTIVE"
+            else:
+                main_state = "IDLE"
+
+            return f"AS228P(name='{self.device_name}', state={main_state}, encoder_1={encoder_1_val}, encoder_2={encoder_2_val}, encoder_3={encoder_3_val})"
+        
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return f"AS228P(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia AS228P dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            with self.__lock:
+                encoder_1_val = self.encoder_1
+                encoder_2_val = self.encoder_2
+                encoder_3_val = self.encoder_3
+
+            return (
+                f"AS228P(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"period={self.period}, "
+                f"encoder_1={encoder_1_val}, "
+                f"encoder_2={encoder_2_val}, "
+                f"encoder_3={encoder_3_val})"
+            )
+        except Exception as e:
+            return f"AS228P(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia AS228P.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - period: okres odczytu enkoderów
+                - encoder_1: wartość enkodera 1
+                - encoder_2: wartość enkodera 2
+                - encoder_3: wartość enkodera 3
+                - main_state: główny stan urządzenia
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "period": self.period,
+        }
+
+        try:
+            # Bezpieczne pobranie wartości enkoderów
+            with self.__lock:
+                encoder_1_val = self.encoder_1
+                encoder_2_val = self.encoder_2
+                encoder_3_val = self.encoder_3
+
+            # Dodanie wartości enkoderów
+            result["encoder_1"] = encoder_1_val
+            result["encoder_2"] = encoder_2_val
+            result["encoder_3"] = encoder_3_val
+
+            # Dodanie głównego stanu urządzenia
+            if encoder_1_val != 0 or encoder_2_val != 0 or encoder_3_val != 0:
+                result["main_state"] = "ACTIVE"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result

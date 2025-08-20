@@ -27,6 +27,7 @@ Zarządzanie urządzeniami przemysłowymi przez różne protokoły komunikacyjne
 - Typy urządzeń: moduły I/O, sterowniki silników, sensory
 - `IO_server`: Scentralizowane zarządzanie urządzeniami
 - `VirtualDevice`: Interfejsy do symulacji i testowania
+- `VirtualDeviceState`: Enum stanu urządzenia wirtualnego
 
 #### sequence - Maszyny Stanów
 Zarządzanie złożonymi operacjami sekwencyjnymi z logiką ponawiania i obsługą błędów.
@@ -42,6 +43,8 @@ Interfejs monitorowania systemu w czasie rzeczywistym oparty na Flask.
 #### util - Narzędzia Pomocnicze
 Funkcje matematyczne, pomiar wydajności i narzędzia systemowe.
 - `MeasureTime`: Pomiar czasu wykonania kodu
+- `ControlLoop`: Pętla kontrolna
+- `Connector`/`Worker`: Asynchroniczne połączenia i przetwarzanie
 - Funkcje 3D: transformacje, interpolacja, obliczenia robotyczne
 - Filtry sygnałów i systemy sterowania
 

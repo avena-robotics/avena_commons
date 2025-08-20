@@ -1,0 +1,80 @@
+{
+  "name": "Zatrzymanie wszystkich usług systemu (@all)",
+  "description": "Scenariusz zatrzymania wszystkich usług systemu",
+  "priority": 1,
+  "cooldown": 60,
+  "trigger": {
+    "type": "manual",
+    "conditions": {
+      "database_change": {
+        "aps_description": {
+          "key": "current_state",
+          "value": "inactive"
+        }
+      }
+    }
+  },
+  "metadata": {
+    "components_managed": "@all",
+    "autonomous": false
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "MANUALNY STOP: Wykryto zatrzymane usługi - rozpoczynam zatrzymanie",
+      "description": "Informacja o manualnym wyzwoleniu scenariusza"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Warunki spełnione: komponenty we wszystkich stanach",
+      "description": "Potwierdzenie spełnienia warunków manualnych"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_STOPPED",
+      "description": "Zatrzymanie wszystkich komponentów systemu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Zatrzymanie wszystkich komponentów (@all) - przejście do stanu STOPPED...",
+      "description": "Rozpoczęcie zatrzymania"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "STOPPED",
+      "timeout": "30s",
+      "description": "Oczekiwanie na zatrzymanie wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "MANUALNY STOP ZAKOŃCZONY: Wszystkie usługi zatrzymane pomyślnie!",
+      "description": "Potwierdzenie pomyślnego manualnego stopu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Zatrzymane komponenty: io, supervisor_1, supervisor_2, munchies_algo",
+      "description": "Lista zatrzymanych komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "System gotowy do zamknięcia serwisów - wszystkie usługi w stanie STOPPED",
+      "description": "Potwierdzenie gotowości systemu do zamknięcia serwisów"
+    },
+    {
+      "type": "systemctl",
+      "operation": "stop",
+      "services": "@all",
+      "timeout": "30s",
+      "use_sudo": false,
+      "description": "Zatrzymanie serwisów"
+    }
+  ]
+}

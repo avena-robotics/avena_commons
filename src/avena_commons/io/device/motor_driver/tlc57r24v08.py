@@ -2,7 +2,7 @@ import threading
 import time
 
 from avena_commons.io.device import modbus_check_device_connection
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
 
@@ -96,7 +96,8 @@ class TLC57R24V08:
 
             self.bus.write_holding_register(
                 address=self.address, register=79, value=0x0300
-            )
+            )  # reset błędów
+
             self.bus.write_holding_register(
                 address=self.address, register=34, value=int(self.reverse_direction)
             )  # ustalenie kierunku enkodera
@@ -209,7 +210,7 @@ class TLC57R24V08:
                     response_status = self.bus.read_holding_registers(
                         address=self.address, first_register=4, count=2
                     )
-                    if response_status in [0, 1]:
+                    if response_status and len(response_status) == 2:
                         # status_value = response_status[0] if isinstance(response_status, list) else response_status
                         status_value = response_status[0]
                         self.operation_status_in_place = bool(status_value & 1)
@@ -365,6 +366,13 @@ class TLC57R24V08:
 
     def is_failure(self):
         return self.operation_status_failure
+
+    def reset_error(self):
+        self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
+        debug(
+            f"{self.device_name} - Reset bo byciu w stanie failure",
+            message_logger=self.message_logger,
+        )
 
     def ujemna_na_uzupelnienie_do_dwoch(self, wartosc: int, bity: int = 16):
         if wartosc < 0:
@@ -639,3 +647,145 @@ class TLC57R24V08:
                 self._status_thread.join(timeout=1.0)
         except Exception:
             pass  # nie loguj tutaj!
+
+    def __str__(self) -> str:
+        """
+        Zwraca czytelną reprezentację urządzenia TLC57R24V08 w formie stringa.
+        Używane przy printowaniu urządzenia.
+
+        Returns:
+            str: Czytelna reprezentacja urządzenia zawierająca nazwę, stan silnika i podstawowe statusy
+        """
+        try:
+            # Określenie głównego stanu urządzenia
+            if self.operation_status_failure:
+                main_state = "FAILURE"
+            elif self.operation_status_motor_running:
+                main_state = "RUNNING"
+            elif self.operation_status_in_place:
+                main_state = "IN_PLACE"
+            elif self.operation_status_homing_completed:
+                main_state = "HOMED"
+            else:
+                main_state = "IDLE"
+
+            # Dodaj informacje o alarmach jeśli występują
+            alarms = []
+            if self.current_alarm_overcurrent:
+                alarms.append("OVERCURRENT")
+            if self.current_alarm_overvoltage:
+                alarms.append("OVERVOLTAGE")
+            if self.current_alarm_undervoltage:
+                alarms.append("UNDERVOLTAGE")
+
+            alarm_info = f", alarms={alarms}" if alarms else ""
+
+            return f"TLC57R24V08(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.do_current_state}{alarm_info})"
+
+        except Exception as e:
+            # Fallback w przypadku błędu - pokazujemy podstawowe informacje
+            return (
+                f"TLC57R24V08(name='{self.device_name}', state=ERROR, error='{str(e)}')"
+            )
+
+    def __repr__(self) -> str:
+        """
+        Zwraca reprezentację urządzenia TLC57R24V08 dla developerów.
+        Pokazuje więcej szczegółów technicznych.
+
+        Returns:
+            str: Szczegółowa reprezentacja urządzenia
+        """
+        try:
+            return (
+                f"TLC57R24V08(device_name='{self.device_name}', "
+                f"address={self.address}, "
+                f"config_type={self.configuration_type}, "
+                f"reverse_direction={self.reverse_direction}, "
+                f"operation_status={{in_place={self.operation_status_in_place}, "
+                f"homing_completed={self.operation_status_homing_completed}, "
+                f"motor_running={self.operation_status_motor_running}, "
+                f"failure={self.operation_status_failure}, "
+                f"motor_enabling={self.operation_status_motor_enabling}, "
+                f"positive_limit={self.operation_status_positive_software_limit}, "
+                f"negative_limit={self.operation_status_negative_software_limit}}}, "
+                f"current_alarms={{overcurrent={self.current_alarm_overcurrent}, "
+                f"overvoltage={self.current_alarm_overvoltage}, "
+                f"undervoltage={self.current_alarm_undervoltage}}}, "
+                f"di_value={self.di_value}, "
+                f"do_current_state={self.do_current_state})"
+            )
+        except Exception as e:
+            return f"TLC57R24V08(device_name='{self.device_name}', error='{str(e)}')"
+
+    def to_dict(self) -> dict:
+        """
+        Zwraca słownikową reprezentację urządzenia TLC57R24V08.
+        Używane do zapisywania stanu urządzenia w strukturach danych.
+
+        Returns:
+            dict: Słownik zawierający:
+                - name: nazwa urządzenia
+                - address: adres Modbus urządzenia
+                - configuration_type: typ konfiguracji
+                - reverse_direction: kierunek obrotu
+                - operation_status: słownik ze statusami operacyjnymi
+                - current_alarms: słownik z alarmami
+                - di_value: wartość wejść cyfrowych
+                - do_current_state: aktualny stan wyjść cyfrowych
+                - error: informacja o błędzie (jeśli wystąpił)
+        """
+        result = {
+            "name": self.device_name,
+            "address": self.address,
+            "configuration_type": self.configuration_type,
+            "reverse_direction": self.reverse_direction,
+        }
+
+        try:
+            # Dodanie statusów operacyjnych
+            result["operation_status"] = {
+                "in_place": self.operation_status_in_place,
+                "homing_completed": self.operation_status_homing_completed,
+                "motor_running": self.operation_status_motor_running,
+                "failure": self.operation_status_failure,
+                "motor_enabling": self.operation_status_motor_enabling,
+                "positive_software_limit": self.operation_status_positive_software_limit,
+                "negative_software_limit": self.operation_status_negative_software_limit,
+            }
+
+            # Dodanie alarmów
+            result["current_alarms"] = {
+                "overcurrent": self.current_alarm_overcurrent,
+                "overvoltage": self.current_alarm_overvoltage,
+                "undervoltage": self.current_alarm_undervoltage,
+            }
+
+            # Dodanie stanu DI/DO
+            result["di_value"] = self.di_value
+            result["do_current_state"] = self.do_current_state.copy()
+
+            # Dodanie głównego stanu urządzenia
+            if self.operation_status_failure:
+                result["main_state"] = "FAILURE"
+            elif self.operation_status_motor_running:
+                result["main_state"] = "RUNNING"
+            elif self.operation_status_in_place:
+                result["main_state"] = "IN_PLACE"
+            elif self.operation_status_homing_completed:
+                result["main_state"] = "HOMED"
+            else:
+                result["main_state"] = "IDLE"
+
+        except Exception as e:
+            # W przypadku błędu dodajemy informację o błędzie
+            result["main_state"] = "ERROR"
+            result["error"] = str(e)
+
+            if self.message_logger:
+                error(
+                    f"{self.device_name} - Error creating dict representation: {e}",
+                    message_logger=self.message_logger,
+                )
+
+        return result
