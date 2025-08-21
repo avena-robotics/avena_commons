@@ -30,7 +30,7 @@ dependencies = [
     "flask",
     "dotenv",
     "pysoem",
-    "pymodbus",
+    "pymodbus==3.9.2",
     "ruff",
     "aiohttp"
 ]
