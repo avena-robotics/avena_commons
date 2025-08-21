@@ -1181,6 +1181,7 @@ class Orchestrator(EventListener):
                         )
                     finally:
                         del self._running_scenarios[scenario_name]
+                await asyncio.sleep(0)
             return
 
         # Iteruj przez scenariusze (już posortowane według priorytetu)
