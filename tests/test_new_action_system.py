@@ -10,7 +10,11 @@ import sys
 # Dodaj ścieżkę do modułów
 sys.path.append(os.path.join(os.path.dirname(__file__), "avena_commons/src"))
 
-from avena_commons.orchestrator.actions import ActionContext, ActionExecutionError, ActionExecutor
+from avena_commons.orchestrator.actions import (
+    ActionContext,
+    ActionExecutionError,
+    ActionExecutor,
+)
 from avena_commons.util.logger import MessageLogger
 
 
@@ -35,8 +39,16 @@ async def test_action_system():
             self._configuration = {
                 "components": {
                     "io": {"address": "127.0.0.1", "port": 8001, "group": "base_io"},
-                    "supervisor_1": {"address": "127.0.0.1", "port": 8002, "group": "supervisors"},
-                    "munchies_algo": {"address": "127.0.0.1", "port": 8004, "group": "main_logic"},
+                    "supervisor_1": {
+                        "address": "127.0.0.1",
+                        "port": 8002,
+                        "group": "supervisors",
+                    },
+                    "munchies_algo": {
+                        "address": "127.0.0.1",
+                        "port": 8004,
+                        "group": "main_logic",
+                    },
                 }
             }
             self._state = {}
@@ -48,24 +60,52 @@ async def test_action_system():
     mock_orchestrator = MockOrchestrator()
 
     # Utwórz kontekst
-    context = ActionContext(orchestrator=mock_orchestrator, message_logger=logger, scenario_name="test_scenario")
+    context = ActionContext(
+        orchestrator=mock_orchestrator,
+        message_logger=logger,
+        scenario_name="test_scenario",
+    )
 
     try:
         print("\n--- Test 1: log_event ---")
-        await action_executor.execute_action({"type": "log_event", "level": "info", "message": "Test komunikatu info"}, context)
+        await action_executor.execute_action(
+            {"type": "log_event", "level": "info", "message": "Test komunikatu info"},
+            context,
+        )
 
-        await action_executor.execute_action({"type": "log_event", "level": "success", "message": "Test komunikatu success"}, context)
+        await action_executor.execute_action(
+            {
+                "type": "log_event",
+                "level": "success",
+                "message": "Test komunikatu success",
+            },
+            context,
+        )
 
         print("\n--- Test 2: send_command do pojedynczego komponentu ---")
-        await action_executor.execute_action({"type": "send_command", "component": "io", "command": "CMD_INITIALIZE"}, context)
+        await action_executor.execute_action(
+            {"type": "send_command", "component": "io", "command": "CMD_INITIALIZE"},
+            context,
+        )
 
         print("\n--- Test 3: send_command do grupy ---")
-        await action_executor.execute_action({"type": "send_command", "group": "supervisors", "command": "CMD_INITIALIZE"}, context)
+        await action_executor.execute_action(
+            {
+                "type": "send_command",
+                "group": "supervisors",
+                "command": "CMD_INITIALIZE",
+            },
+            context,
+        )
 
         print("\n--- Test 4: send_command do wszystkich (@all) ---")
-        await action_executor.execute_action({"type": "send_command", "target": "@all", "command": "CMD_RUN"}, context)
+        await action_executor.execute_action(
+            {"type": "send_command", "target": "@all", "command": "CMD_RUN"}, context
+        )
 
-        print("\n--- Test 5: wait_for_state (skipped - brak rzeczywistych komponentów) ---")
+        print(
+            "\n--- Test 5: wait_for_state (skipped - brak rzeczywistych komponentów) ---"
+        )
         print("Test wait_for_state pominięty - wymaga rzeczywistych komponentów")
 
         print("\n✓ Wszystkie testy zakończone pomyślnie!")

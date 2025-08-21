@@ -1,5 +1,5 @@
 from datetime import datetime, time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
 

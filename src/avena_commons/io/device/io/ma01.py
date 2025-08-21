@@ -273,17 +273,21 @@ class MA01:
                 main_state = "IDLE"
 
             # Formatowanie stanu cewek
-            coil_states = [f"DO{i}={self.coil_buffer[i]}" for i in range(len(self.coil_buffer))]
+            coil_states = [
+                f"DO{i}={self.coil_buffer[i]}" for i in range(len(self.coil_buffer))
+            ]
             coil_info = ", ".join(coil_states)
 
             # Formatowanie stanu wejść cyfrowych
             di_info = f"DI={bin(self.di_cache)}"
 
             # Informacja o stanie bufora
-            buffer_info = f", buffer_cycle={'new' if self.new_buffer_cycle else 'active'}"
+            buffer_info = (
+                f", buffer_cycle={'new' if self.new_buffer_cycle else 'active'}"
+            )
 
             return f"MA01(name='{self.device_name}', state={main_state}, {coil_info}, {di_info}{buffer_info})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"MA01(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -298,8 +302,9 @@ class MA01:
         """
         try:
             import time
+
             cache_age = time.time() - self.di_cache_time
-            
+
             return (
                 f"MA01(device_name='{self.device_name}', "
                 f"address={self.address}, "
@@ -333,16 +338,18 @@ class MA01:
             "address": self.address,
         }
 
-        try:            
+        try:
             # Dodanie stanu cewek
             result["coil_buffer"] = self.coil_buffer.copy()
-            
+
             # Dodanie stanu wejść cyfrowych
             result["di_cache"] = self.di_cache
 
             # Dodanie informacji o aktywnych cewkach
-            result["active_coils"] = [i for i, value in enumerate(self.coil_buffer) if value]
-            
+            result["active_coils"] = [
+                i for i, value in enumerate(self.coil_buffer) if value
+            ]
+
             # Dodanie stanu poszczególnych wejść cyfrowych
             result["di_states"] = {}
             for i in range(8):  # Zakładamy maksymalnie 8 wejść cyfrowych

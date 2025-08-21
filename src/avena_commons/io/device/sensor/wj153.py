@@ -149,7 +149,7 @@ class WJ153:
             result["encoder"] = self.encoder
             result["counter_1"] = self.counter_1
             result["counter_2"] = self.counter_2
-            
+
             # Określenie głównego stanu urządzenia
             result["main_state"] = "ACTIVE"  # WJ153 jest aktywny gdy thread działa
 

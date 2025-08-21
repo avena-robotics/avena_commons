@@ -570,7 +570,7 @@ class DSR:
             error_info = f", errors={errors}" if errors else ""
 
             return f"DSR(name='{self.device_name}', state={main_state}, DI={bin(self.di_value)}, DO={self.do_current_state}{error_info})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"DSR(name='{self.device_name}', state=ERROR, error='{str(e)}')"

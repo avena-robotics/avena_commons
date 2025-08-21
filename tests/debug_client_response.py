@@ -7,7 +7,7 @@ import requests
 import uvicorn
 from fastapi import FastAPI
 
-from avena_commons.event_listener import Event, Result
+from avena_commons.event_listener import Event
 
 # Serwer do odbierania odpowiedzi zwrotnych
 response_app = FastAPI()

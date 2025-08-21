@@ -1,7 +1,7 @@
 import os
 
 from avena_commons.orchestrator.orchestrator import Orchestrator
-from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
+from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger
 
 
 class TestOrchestrator(Orchestrator):

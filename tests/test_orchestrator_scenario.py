@@ -21,7 +21,13 @@ async def test_startup_scenario():
     logger = MessageLogger(name="orchestrator_test")
 
     # Utwórz Orchestrator
-    orchestrator = Orchestrator(name="orchestrator", port=8000, address="127.0.0.1", message_logger=logger, debug=True)
+    orchestrator = Orchestrator(
+        name="orchestrator",
+        port=8000,
+        address="127.0.0.1",
+        message_logger=logger,
+        debug=True,
+    )
 
     try:
         print("=== Uruchamianie Orchestratora ===")

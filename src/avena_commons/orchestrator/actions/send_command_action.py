@@ -4,7 +4,7 @@ Implementacja akcji send_command dla scenariuszy.
 
 from typing import Any, Dict, List
 
-from avena_commons.util.logger import debug, info, warning
+from avena_commons.util.logger import debug, info
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 

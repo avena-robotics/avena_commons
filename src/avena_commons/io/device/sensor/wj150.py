@@ -149,8 +149,12 @@ class WJ150:
         """
         try:
             # Określenie trybu pracy
-            mode_str = "AB_ENCODER" if self.working_mode == WorkingMode.AB_ENCODER else "INDEPENDENT_COUNTERS"
-            
+            mode_str = (
+                "AB_ENCODER"
+                if self.working_mode == WorkingMode.AB_ENCODER
+                else "INDEPENDENT_COUNTERS"
+            )
+
             # Pobranie wartości w zależności od trybu pracy
             if self.working_mode == WorkingMode.AB_ENCODER:
                 with self.__lock:
@@ -160,7 +164,7 @@ class WJ150:
                     value_info = f"counter1={self.counter_1}, counter2={self.counter_2}"
 
             return f"WJ150(name='{self.device_name}', mode={mode_str}, {value_info})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"WJ150(name='{self.device_name}', mode=ERROR, error='{str(e)}')"
@@ -174,8 +178,12 @@ class WJ150:
             str: Szczegółowa reprezentacja urządzenia
         """
         try:
-            mode_str = "AB_ENCODER" if self.working_mode == WorkingMode.AB_ENCODER else "INDEPENDENT_COUNTERS"
-            
+            mode_str = (
+                "AB_ENCODER"
+                if self.working_mode == WorkingMode.AB_ENCODER
+                else "INDEPENDENT_COUNTERS"
+            )
+
             return (
                 f"WJ150(device_name='{self.device_name}', "
                 f"address={self.address}, "
@@ -214,7 +222,7 @@ class WJ150:
                 result["encoder"] = self.encoder
                 result["counter_1"] = self.counter_1
                 result["counter_2"] = self.counter_2
-                
+
                 # Dodanie informacji o aktywnych wartościach w zależności od trybu
                 if self.working_mode == WorkingMode.AB_ENCODER:
                     result["active_value"] = self.encoder
@@ -222,7 +230,7 @@ class WJ150:
                 else:
                     result["active_values"] = {
                         "counter_1": self.counter_1,
-                        "counter_2": self.counter_2
+                        "counter_2": self.counter_2,
                     }
                     result["active_mode"] = "counters"
 

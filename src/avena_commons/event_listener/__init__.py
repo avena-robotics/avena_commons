@@ -25,7 +25,7 @@ await listener._event(
     event_type="CMD_INITIALIZED"  # STOPPED → INITIALIZED
 )
 await listener._event(
-    destination="controller", 
+    destination="controller",
     event_type="CMD_RUN"  # INITIALIZED → RUN
 )
 ```
@@ -36,11 +36,11 @@ class MyEventListener(EventListener):
     # Callback'i FSM (wszystkie opcjonalne)
     async def on_initialize(self):
         self.database = await connect_to_db()
-        
+
     async def on_run(self):
         # local_check_thread już uruchomiony automatycznie
         self.background_task = asyncio.create_task(self.work())
-        
+
     async def on_pausing(self):
         # local_check_thread zatrzymany automatycznie
         self.background_task.cancel()
@@ -53,7 +53,7 @@ class MyEventListener(EventListener):
                 return True
             case _:
                 return True
-    
+
     async def _check_local_data(self):
         # Wywoływane tylko w stanie RUN
         self._state["current_errors"] = self._get_current_errors()
@@ -62,7 +62,7 @@ class MyEventListener(EventListener):
 
 #### Funkcjonalności FSM:
 - **Stany główne**: STOPPED, INITIALIZED, RUN, PAUSE, FAULT
-- **Komendy sterujące**: CMD_INITIALIZED, CMD_RUN, CMD_PAUSE, CMD_STOPPED, CMD_ACK  
+- **Komendy sterujące**: CMD_INITIALIZED, CMD_RUN, CMD_PAUSE, CMD_STOPPED, CMD_ACK
 - **Automatyczne zarządzanie wątkami**: local_check_thread tylko w RUN
 - **Wzorce przetwarzania**: pełne w RUN, buffering w PAUSE, error w FAULT/STOPPED
 - **Obsługa błędów**: automatyczne przejście do FAULT, wymaga CMD_ACK

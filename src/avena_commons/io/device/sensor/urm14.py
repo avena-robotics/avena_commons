@@ -115,7 +115,8 @@ class URM14:
         except Exception as e:
             if self.message_logger:
                 warning(
-                    f"Failed to initialize sensor: {e}", message_logger=self.message_logger
+                    f"Failed to initialize sensor: {e}",
+                    message_logger=self.message_logger,
                 )
 
     def read_register(self, register):
@@ -508,7 +509,7 @@ class URM14:
                 distance_info = f"{self.distance_cache}mm"
 
             return f"URM14(name='{self.device_name}', addr={self.slave_addr}, distance={distance_info}, state={distance_state})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"URM14(name='{self.device_name}', addr={self.slave_addr}, state=ERROR, error='{str(e)}')"
@@ -522,8 +523,12 @@ class URM14:
             str: Szczegółowa reprezentacja czujnika
         """
         try:
-            cache_age = time.time() - self.distance_cache_time if self.distance_cache_time > 0 else 0
-            
+            cache_age = (
+                time.time() - self.distance_cache_time
+                if self.distance_cache_time > 0
+                else 0
+            )
+
             return (
                 f"URM14(device_name='{self.device_name}', "
                 f"slave_addr={self.slave_addr}, "
@@ -553,7 +558,7 @@ class URM14:
         try:
             # Dodanie informacji o cache
             result["distance_cache"] = self.distance_cache
-            
+
             # Określenie głównego stanu czujnika
             if self.distance_cache is None:
                 result["main_state"] = "NO_DATA"

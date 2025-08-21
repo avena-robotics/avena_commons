@@ -4,7 +4,6 @@ ActionExecutor - klasa zarządzająca wykonywaniem akcji scenariuszy.
 
 from typing import Any, Dict
 
-from avena_commons.util.logger import error, warning
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .log_action import LogAction

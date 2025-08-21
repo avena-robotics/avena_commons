@@ -1,11 +1,9 @@
-import argparse
 import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from avena_commons.dashboard.dashboard import Dashboard
-from avena_commons.event_listener import Event, EventListener
-from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug
+from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger
 
 
 class TestDashboard(Dashboard):

@@ -72,24 +72,20 @@ class Dashboard(EventListener):
             status = self._get_system_status()
             online_services = [s for s in status.values() if s.get("online", False)]
 
-            return JSONResponse(
-                {
-                    "status": "healthy"
-                    if len(online_services) == len(status)
-                    else "degraded",
-                    "timestamp": datetime.now().isoformat(),
-                    "services": {
-                        "total": len(status),
-                        "online": len(online_services),
-                        "offline": len(status) - len(online_services),
-                    },
-                    "uptime_seconds": (
-                        datetime.now() - self._start_time
-                    ).total_seconds()
-                    if hasattr(self, "_start_time")
-                    else 0,
-                }
-            )
+            return JSONResponse({
+                "status": "healthy"
+                if len(online_services) == len(status)
+                else "degraded",
+                "timestamp": datetime.now().isoformat(),
+                "services": {
+                    "total": len(status),
+                    "online": len(online_services),
+                    "offline": len(status) - len(online_services),
+                },
+                "uptime_seconds": (datetime.now() - self._start_time).total_seconds()
+                if hasattr(self, "_start_time")
+                else 0,
+            })
 
     def _setup_flask_app(self):
         """Konfiguruje Flask app dla web interface z debug informacjami"""

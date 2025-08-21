@@ -335,9 +335,11 @@ class CWTTH01S:
         """
         try:
             # Formatowanie wartości temperatury i wilgotności
-            temp_str = f"{self.temperature:.1f}°C" if self.temperature is not None else "N/A"
+            temp_str = (
+                f"{self.temperature:.1f}°C" if self.temperature is not None else "N/A"
+            )
             hum_str = f"{self.humidity:.1f}%RH" if self.humidity is not None else "N/A"
-            
+
             # Określenie głównego stanu sensora
             if self.temperature is None and self.humidity is None:
                 main_state = "NO_DATA"
@@ -347,7 +349,7 @@ class CWTTH01S:
                 main_state = "ACTIVE"
 
             return f"CWTTH01S(name='{self.device_name}', state={main_state}, temp={temp_str}, humidity={hum_str})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"CWTTH01S(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -396,7 +398,7 @@ class CWTTH01S:
             # Dodanie wartości pomiarowych
             result["temperature"] = self.temperature
             result["humidity"] = self.humidity
-            
+
             # Określenie głównego stanu sensora
             if self.temperature is None and self.humidity is None:
                 result["main_state"] = "NO_DATA"
