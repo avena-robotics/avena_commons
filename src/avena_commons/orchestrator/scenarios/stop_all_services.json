@@ -1,28 +1,34 @@
 {
-  "name": "Zatrzymanie wszystkich usług systemu (@all)",
-  "description": "Autonomiczny scenariusz zatrzymania - uruchamiany gdy którakolwiek usługa jest uruchomiona",
+  "name": "Zatrzymanie wszystkich usług systemu (database-driven)",
+  "description": "Autonomiczny scenariusz zatrzymania - uruchamiany gdy goal_state=inactive a current_state=active w bazie aps_description",
   "priority": 99,
   "cooldown": 60,
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "client_state": {
-        "all_services_in_state": "RUN"
-      }
+      "type": "database",
+      "component": "main_database",
+      "table": "aps_description",
+      "column": "goal_state",
+      "where": {
+        "current_state": "active"
+      },
+      "expected_value": "inactive",
+      "operator": "equals"
     }
   },
   "actions": [
     {
       "type": "log_event",
       "level": "info",
-      "message": "AUTONOMICZNY STOP: Wykryto uruchomione usługi - rozpoczynam automatyczne zatrzymanie",
-      "description": "Informacja o autonomicznym wyzwoleniu scenariusza"
+      "message": "AUTONOMICZNY STOP: Wykryto w bazie aps_description goal_state=inactive z current_state=active - rozpoczynam zatrzymanie",
+      "description": "Informacja o autonomicznym wyzwoleniu scenariusza na podstawie bazy danych"
     },
     {
       "type": "log_event",
       "level": "info",
-      "message": "Warunki spełnione: znaleziono komponenty w stanie RUN",
-      "description": "Potwierdzenie spełnienia warunków autonomicznych"
+      "message": "Warunki spełnione: znaleziono rekordy w aps_description gdzie goal_state=inactive ale current_state=active",
+      "description": "Potwierdzenie spełnienia warunków bazodanowych"
     },
     {
       "type": "log_event",

@@ -20,6 +20,9 @@ from .actions import ActionContext, ActionExecutionError, ActionExecutor
 from .actions.base_action import BaseAction
 from .base.base_condition import BaseCondition
 
+# Import komponentów
+from .components import DatabaseComponent
+
 # Import nowego systemu warunków
 from .factories.condition_factory import ConditionFactory
 
@@ -42,16 +45,15 @@ class Orchestrator(EventListener):
         # Konfiguracja domyślna z komponentami systemu
         self._default_configuration = {
             "clients": {},
+            "components": {},  # Komponenty zewnętrzne (bazy danych)
             # Systemowe źródła (built-in z paczki)
             "builtin_scenarios_directory": str(Path(__file__).parent / "scenarios"),
             "builtin_actions_directory": str(Path(__file__).parent / "actions"),
-            "builtin_conditions_directory": str(
-                Path(__file__).parent / "conditions"
-            ),  # ← NOWE
+            "builtin_conditions_directory": str(Path(__file__).parent / "conditions"),
             # Źródła użytkownika (z JSON) - opcjonalne
             "scenarios_directory": None,  # Użytkownik może nadpisać w JSON
             "actions_directory": None,  # Użytkownik może nadpisać w JSON
-            "conditions_directory": None,  # Użytkownik może nadpisać w JSON ← NOWE
+            "conditions_directory": None,  # Użytkownik może nadpisać w JSON
             # Limity wykonywania scenariuszy
             "max_concurrent_scenarios": 1,  # Maksymalna liczba jednoczesnych scenariuszy (domyślnie 1)
         }
@@ -63,6 +65,9 @@ class Orchestrator(EventListener):
         # Tracking aktywnych scenariuszy - zabezpieczenie przed wielokrotnym uruchamianiem
         self._running_scenarios: Dict[str, asyncio.Task] = {}
         self._scenario_execution_count: Dict[str, int] = {}
+
+        # Komponenty zewnętrzne (bazy danych)
+        self._components: Dict[str, DatabaseComponent] = {}
 
         self._action_executor = ActionExecutor(
             register_default_actions=False
@@ -207,6 +212,234 @@ class Orchestrator(EventListener):
                 f"Traceback: {traceback.format_exc()}",
                 message_logger=self._message_logger,
             )
+
+    def _load_components(self):
+        """
+        Ładuje komponenty zewnętrzne z konfiguracji.
+
+        Na razie obsługujemy tylko komponenty typu database.
+        """
+        try:
+            info(
+                "🔧 Rozpoczynam ładowanie komponentów...",
+                message_logger=self._message_logger,
+            )
+
+            components_config = self._configuration.get("components", {})
+            if not components_config:
+                info(
+                    "ℹ️ Brak komponentów w konfiguracji",
+                    message_logger=self._message_logger,
+                )
+                return
+
+            info(
+                f"Znaleziono {len(components_config)} komponentów do załadowania: {list(components_config.keys())}",
+                message_logger=self._message_logger,
+            )
+
+            # Wczytaj każdy komponent
+            for component_name, component_config in components_config.items():
+                try:
+                    component_type = component_config.get(
+                        "type", "database"
+                    )  # Domyślnie database
+
+                    if component_type == "database":
+                        info(
+                            f"🔧 Ładowanie komponentu bazodanowego: {component_name}",
+                            message_logger=self._message_logger,
+                        )
+
+                        # Utwórz komponent bazodanowy
+                        component = DatabaseComponent(
+                            name=component_name,
+                            config=component_config,
+                            message_logger=self._message_logger,
+                        )
+
+                        # Zapisz komponent
+                        self._components[component_name] = component
+
+                        info(
+                            f"✅ Komponent bazodanowy '{component_name}' załadowany",
+                            message_logger=self._message_logger,
+                        )
+                    else:
+                        warning(
+                            f"⚠️ Nieznany typ komponentu '{component_type}' dla '{component_name}' - pomijam",
+                            message_logger=self._message_logger,
+                        )
+
+                except Exception as e:
+                    error(
+                        f"❌ Błąd ładowania komponentu '{component_name}': {e}",
+                        message_logger=self._message_logger,
+                    )
+                    # Kontynuuj z innymi komponentami
+                    continue
+
+            # Podsumowanie
+            loaded_count = len(self._components)
+            if loaded_count > 0:
+                info(
+                    f"🎯 Łącznie załadowanych komponentów: {loaded_count}",
+                    message_logger=self._message_logger,
+                )
+                for i, component_name in enumerate(self._components.keys(), 1):
+                    info(
+                        f"   {i}. {component_name} (database)",
+                        message_logger=self._message_logger,
+                    )
+            else:
+                warning(
+                    "⚠️ Nie załadowano żadnych komponentów",
+                    message_logger=self._message_logger,
+                )
+
+        except Exception as e:
+            error(
+                f"❌ Błąd ładowania komponentów: {e}",
+                message_logger=self._message_logger,
+            )
+            error(
+                f"Traceback: {traceback.format_exc()}",
+                message_logger=self._message_logger,
+            )
+
+    async def _initialize_components(self):
+        """
+        Inicjalizuje wszystkie załadowane komponenty.
+
+        Wywołuje initialize() i connect() na każdym komponencie.
+        """
+        if not self._components:
+            info(
+                "ℹ️ Brak komponentów do inicjalizacji",
+                message_logger=self._message_logger,
+            )
+            return
+
+        info(
+            f"🚀 Inicjalizacja {len(self._components)} komponentów...",
+            message_logger=self._message_logger,
+        )
+
+        failed_components = []
+
+        for component_name, component in self._components.items():
+            try:
+                info(
+                    f"🔧 Inicjalizacja komponentu: {component_name}",
+                    message_logger=self._message_logger,
+                )
+
+                # KROK 1: Inicjalizacja (walidacja konfiguracji)
+                if not await component.initialize():
+                    error(
+                        f"❌ Inicjalizacja komponentu '{component_name}' nie powiodła się",
+                        message_logger=self._message_logger,
+                    )
+                    failed_components.append(component_name)
+                    continue
+
+                # KROK 2: Nawiązanie połączenia
+                if not await component.connect():
+                    error(
+                        f"❌ Połączenie komponentu '{component_name}' nie powiodło się",
+                        message_logger=self._message_logger,
+                    )
+                    failed_components.append(component_name)
+                    continue
+
+                # KROK 3: Health check
+                if not await component.health_check():
+                    warning(
+                        f"⚠️ Health check komponentu '{component_name}' nie powiódł się",
+                        message_logger=self._message_logger,
+                    )
+                    # Nie usuwamy komponentu - może się naprawić później
+
+                info(
+                    f"✅ Komponent '{component_name}' zainicjalizowany i połączony",
+                    message_logger=self._message_logger,
+                )
+
+            except Exception as e:
+                error(
+                    f"❌ Błąd inicjalizacji komponentu '{component_name}': {e}",
+                    message_logger=self._message_logger,
+                )
+                failed_components.append(component_name)
+
+        # Usuń komponenty które nie mogły się zainicjalizować
+        for component_name in failed_components:
+            if component_name in self._components:
+                error(
+                    f"🗑️ Usuwanie nieudanego komponentu: {component_name}",
+                    message_logger=self._message_logger,
+                )
+                del self._components[component_name]
+
+        # Podsumowanie
+        successful_count = len(self._components)
+        failed_count = len(failed_components)
+
+        if successful_count > 0:
+            info(
+                f"🎯 Pomyślnie zainicjalizowanych komponentów: {successful_count}",
+                message_logger=self._message_logger,
+            )
+
+        if failed_count > 0:
+            warning(
+                f"⚠️ Komponenty które nie mogły się zainicjalizować: {failed_count} ({failed_components})",
+                message_logger=self._message_logger,
+            )
+
+    async def _disconnect_components(self):
+        """
+        Rozłącza wszystkie komponenty podczas zamykania orchestratora.
+        """
+        if not self._components:
+            return
+
+        info(
+            f"🔌 Rozłączanie {len(self._components)} komponentów...",
+            message_logger=self._message_logger,
+        )
+
+        for component_name, component in self._components.items():
+            try:
+                await component.disconnect()
+                info(
+                    f"✅ Komponent '{component_name}' rozłączony",
+                    message_logger=self._message_logger,
+                )
+            except Exception as e:
+                error(
+                    f"❌ Błąd rozłączania komponentu '{component_name}': {e}",
+                    message_logger=self._message_logger,
+                )
+
+        self._components.clear()
+
+    def get_components_status(self) -> Dict[str, Any]:
+        """
+        Zwraca status wszystkich komponentów.
+
+        Returns:
+            Słownik ze statusem komponentów
+        """
+        components_status = {}
+
+        for component_name, component in self._components.items():
+            components_status[component_name] = component.get_status()
+
+        return {
+            "total_components": len(self._components),
+            "components": components_status,
+        }
 
     def _load_scenarios_from_directory(self, scenarios_dir: Path, source_type: str):
         """Ładuje scenariusze z konkretnego katalogu."""
@@ -978,6 +1211,8 @@ class Orchestrator(EventListener):
                 message_logger=self._message_logger,
             )
 
+        self._load_components()  # Wczytaj komponenty z konfiguracji
+        await self._initialize_components()  # Inicjalizuj i połącz komponenty
         self._load_actions()  # Wczytaj akcje: systemowe i użytkownika
         self._load_scenarios()  # Wczytaj scenariusze: systemowe i użytkownika
 
@@ -1037,6 +1272,7 @@ class Orchestrator(EventListener):
     async def on_stopped(self):
         """Metoda wywoływana po przejściu w stan STOPPED.
         Tu komponent jest całkowicie zatrzymany i wyczyszczony."""
+        await self._disconnect_components()  # Rozłącz komponenty
         self._change_fsm_state(EventListenerState.INITIALIZING)
 
     async def on_soft_stopping(self):
@@ -1083,6 +1319,7 @@ class Orchestrator(EventListener):
 
             context = {
                 "clients": filtered_clients_state,
+                "components": self._components,  # Dodaj komponenty do kontekstu
             }
 
             # Ewaluuj warunek
