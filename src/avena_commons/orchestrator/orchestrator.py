@@ -2,20 +2,18 @@ import asyncio
 import importlib
 import inspect
 import json
-import os
 import traceback
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from avena_commons.event_listener.event import Event, Result
+from avena_commons.event_listener.event import Event
 from avena_commons.event_listener.event_listener import (
     EventListener,
     EventListenerState,
 )
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
-from avena_commons.util.measure_time import MeasureTime
 
 # Import nowego systemu akcji
 from .actions import ActionContext, ActionExecutionError, ActionExecutor
@@ -1183,6 +1181,7 @@ class Orchestrator(EventListener):
                         )
                     finally:
                         del self._running_scenarios[scenario_name]
+                await asyncio.sleep(0)
             return
 
         # Iteruj przez scenariusze (już posortowane według priorytetu)

@@ -2,7 +2,6 @@
 Bazowa klasa dla testowych usług - implementuje podstawową maszynę stanów FSM.
 """
 
-import asyncio
 from typing import Optional
 
 from avena_commons.event_listener.event import Event, Result
@@ -10,7 +9,7 @@ from avena_commons.event_listener.event_listener import (
     EventListener,
     EventListenerState,
 )
-from avena_commons.util.logger import MessageLogger, error, info, warning
+from avena_commons.util.logger import MessageLogger, info, warning
 
 
 class BaseTestService(EventListener):

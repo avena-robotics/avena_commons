@@ -22,6 +22,7 @@ class EtherCatSlave:
 
     def _process(self):
         pass
+
     def __str__(self) -> str:
         """Podstawowa reprezentacja dla slave'a EtherCat"""
         try:
@@ -44,17 +45,20 @@ class EtherCatSlave:
         """Słownikowa reprezentacja bazowego slave'a"""
         result = {
             "type": self.__class__.__name__,
-            "address": getattr(self, 'address', None),
-            "debug": getattr(self, 'debug', None),
+            "address": getattr(self, "address", None),
+            "debug": getattr(self, "debug", None),
         }
-        
+
         try:
             # Dodanie podstawowych informacji o master
-            result["master_type"] = type(self.master).__name__ if hasattr(self, 'master') else None
+            result["master_type"] = (
+                type(self.master).__name__ if hasattr(self, "master") else None
+            )
         except Exception as e:
             result["error"] = str(e)
-        
+
         return result
+
 
 class EtherCatDevice:
     def __init__(

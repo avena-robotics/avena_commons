@@ -102,7 +102,7 @@ class PTA9B01:
                 main_state = "IDLE"
 
             return f"PTA9B01(name='{self.device_name}', state={main_state}, temperature={self.temperature}°C)"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"PTA9B01(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -116,7 +116,6 @@ class PTA9B01:
             str: Szczegółowa reprezentacja urządzenia
         """
         try:
-            
             return (
                 f"PTA9B01(device_name='{self.device_name}', "
                 f"address={self.address}, "

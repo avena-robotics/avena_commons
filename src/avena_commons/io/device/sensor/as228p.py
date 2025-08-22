@@ -157,7 +157,7 @@ class AS228P:
                 main_state = "IDLE"
 
             return f"AS228P(name='{self.device_name}', state={main_state}, encoder_1={encoder_1_val}, encoder_2={encoder_2_val}, encoder_3={encoder_3_val})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"AS228P(name='{self.device_name}', state=ERROR, error='{str(e)}')"

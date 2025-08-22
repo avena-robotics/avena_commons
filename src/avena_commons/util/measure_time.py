@@ -14,7 +14,15 @@ class MeasureTime(ContextDecorator):
     count: int = 0
     missed: int = 0
 
-    def __init__(self, label="Czas wykonania", max_execution_time: float = 1.0, resolution: int = 3, silent_mode: bool = False, show_only_errors:bool = False, message_logger: MessageLogger | None = None):
+    def __init__(
+        self,
+        label="Czas wykonania",
+        max_execution_time: float = 1.0,
+        resolution: int = 3,
+        silent_mode: bool = False,
+        show_only_errors: bool = False,
+        message_logger: MessageLogger | None = None,
+    ):
         self.label = label
         self.__message_logger = message_logger
         self.__max_execution_time = max_execution_time
@@ -31,11 +39,17 @@ class MeasureTime(ContextDecorator):
         self.elapsed = (self.end - self.start) * 1000
         if self.elapsed > self.__max_execution_time:
             if not self.__silent_mode:
-                error(f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms", message_logger=self.__message_logger)
+                error(
+                    f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms",
+                    message_logger=self.__message_logger,
+                )
             self.missed += 1
         else:
             if not self.__silent_mode and not self.__show_only_errors:
-                debug(f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms", message_logger=self.__message_logger)
+                debug(
+                    f"MeasureTime: {self.label} = {self.elapsed:.{self.__resolution}f}ms",
+                    message_logger=self.__message_logger,
+                )
         self.count += 1
 
     def get_missed(self):

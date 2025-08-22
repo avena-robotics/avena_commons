@@ -416,15 +416,15 @@ class DDS578R:
 
             # Formatowanie napięć fazowych
             voltage_str = f"V_A:{voltages['A']:.1f}V, V_B:{voltages['B']:.1f}V, V_C:{voltages['C']:.1f}V"
-            
+
             # Formatowanie prądów liniowych
             current_str = f"I_A:{currents['A']:.2f}A, I_B:{currents['B']:.2f}A, I_C:{currents['C']:.2f}A"
-            
+
             # Formatowanie mocy
             power_str = f"P:{active_total:.1f}W, Q:{reactive_total:.1f}VAR"
-            
+
             return f"DDS578R(name='{self.device_name}', freq={freq:.1f}Hz, {voltage_str}, {current_str}, {power_str})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"DDS578R(name='{self.device_name}', state=ERROR, error='{str(e)}')"
@@ -502,15 +502,12 @@ class DDS578R:
                 "reactive_power_total": result["reactive_power"]["total"],
                 "power_factor_avg": sum(result["power_factors"].values()) / 3,
                 "frequency": result["frequency"],
-                "status": "OK"
+                "status": "OK",
             }
 
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie
-            result["summary"] = {
-                "status": "ERROR",
-                "error_message": str(e)
-            }
+            result["summary"] = {"status": "ERROR", "error_message": str(e)}
             result["error"] = str(e)
 
             if self.message_logger:

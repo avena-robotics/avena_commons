@@ -9,15 +9,12 @@ numpy
 scipy
 opencv-python
 psutil
-pymodbus
+pymodbus==3.9.2
 httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
-# Development dependencies
-build
-pytest>=7.0
-pytest-cov
-tox
+# DEV
 ruff
 black
 mypy
+build

@@ -15,7 +15,7 @@ import aiohttp
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from avena_commons.util.logger import MessageLogger, error, info, warning
+from avena_commons.util.logger import MessageLogger
 
 
 class ScenarioTester:
@@ -65,7 +65,9 @@ class ScenarioTester:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=event_data, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                async with session.post(
+                    url, json=event_data, timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
                     if response.status == 200:
                         result = await response.json()
                         return {"status": "online", "data": result}
@@ -101,7 +103,9 @@ class ScenarioTester:
             elif status["status"] == "offline":
                 print(f"   ❌ {service_name:<15} - OFFLINE")
             else:
-                print(f"   ⚠️  {service_name:<15} - {status['status'].upper()} ({status.get('error', 'Unknown error')})")
+                print(
+                    f"   ⚠️  {service_name:<15} - {status['status'].upper()} ({status.get('error', 'Unknown error')})"
+                )
 
         return results
 
@@ -135,7 +139,9 @@ class ScenarioTester:
             async with aiohttp.ClientSession() as session:
                 print(f"   📤 Wysyłanie żądania wykonania scenariusza...")
 
-                async with session.post(url, json=event_data, timeout=aiohttp.ClientTimeout(total=200)) as response:
+                async with session.post(
+                    url, json=event_data, timeout=aiohttp.ClientTimeout(total=200)
+                ) as response:
                     if response.status == 200:
                         result = await response.json()
                         print(f"   ✅ Scenariusz wysłany pomyślnie")
@@ -174,7 +180,9 @@ class ScenarioTester:
         last_states = {}
 
         while time.time() - start_time < duration:
-            print(f"\n   🕐 {int(time.time() - start_time)}s - Sprawdzanie statusu usług...")
+            print(
+                f"\n   🕐 {int(time.time() - start_time)}s - Sprawdzanie statusu usług..."
+            )
 
             current_states = {}
             all_services_ready = True
@@ -188,8 +196,13 @@ class ScenarioTester:
                     current_states[service_name] = fsm_state
 
                     # Sprawdź czy stan się zmienił
-                    if service_name in last_states and last_states[service_name] != fsm_state:
-                        print(f"   🔄 {service_name}: {last_states[service_name]} → {fsm_state}")
+                    if (
+                        service_name in last_states
+                        and last_states[service_name] != fsm_state
+                    ):
+                        print(
+                            f"   🔄 {service_name}: {last_states[service_name]} → {fsm_state}"
+                        )
                     elif service_name not in last_states:
                         print(f"   📍 {service_name}: {fsm_state}")
 
@@ -223,7 +236,11 @@ class ScenarioTester:
         initial_status = await self.check_all_services()
 
         # Sprawdź czy wszystkie usługi są dostępne
-        offline_services = [name for name, status in initial_status.items() if status["status"] == "offline"]
+        offline_services = [
+            name
+            for name, status in initial_status.items()
+            if status["status"] == "offline"
+        ]
         if offline_services:
             print(f"\n❌ Następujące usługi są niedostępne: {offline_services}")
             print("   Upewnij się, że wszystkie usługi są uruchomione!")
@@ -261,11 +278,15 @@ class ScenarioTester:
 
         if success_count == len(final_states):
             print(f"\n🎉 TEST ZAKOŃCZONY SUKCESEM!")
-            print(f"   Wszystkie {success_count}/{len(final_states)} usług osiągnęły stan operacyjny")
+            print(
+                f"   Wszystkie {success_count}/{len(final_states)} usług osiągnęły stan operacyjny"
+            )
             return True
         else:
             print(f"\n⚠️  TEST CZĘŚCIOWO UDANY")
-            print(f"   {success_count}/{len(final_states)} usług osiągnęło stan operacyjny")
+            print(
+                f"   {success_count}/{len(final_states)} usług osiągnęło stan operacyjny"
+            )
             return False
 
 

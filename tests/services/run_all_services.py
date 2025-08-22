@@ -19,7 +19,9 @@ class ServiceManager:
         self.project_root = Path(__file__).parent.parent.parent
         self.services_dir = Path(__file__).parent
 
-    def start_service(self, service_name: str, script_path: str, args: list = None) -> bool:
+    def start_service(
+        self, service_name: str, script_path: str, args: list = None
+    ) -> bool:
         """
         Uruchamia pojedynczą usługę w osobnym procesie.
 
@@ -44,7 +46,15 @@ class ServiceManager:
             print(f"🚀 Uruchamianie {service_name}...")
 
             # Uruchom proces
-            process = subprocess.Popen(cmd, env=env, cwd=str(self.services_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=str(self.services_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+                universal_newlines=True,
+            )
 
             self.processes[service_name] = process
 
@@ -208,7 +218,9 @@ def main():
                 return
             elif command in ["help", "-h", "--help"]:
                 print("Użycie:")
-                print("  python run_all_services.py          # Uruchom wszystkie usługi")
+                print(
+                    "  python run_all_services.py          # Uruchom wszystkie usługi"
+                )
                 print("  python run_all_services.py status   # Pokaż status")
                 print("  python run_all_services.py stop     # Zatrzymaj wszystkie")
                 print("  python run_all_services.py help     # Pokaż pomoc")

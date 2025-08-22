@@ -176,7 +176,7 @@ class GB4715:
                 main_state = "UNKNOWN"
 
             return f"GB4715(name='{self.device_name}', state={main_state})"
-        
+
         except Exception as e:
             # Fallback w przypadku błędu - pokazujemy podstawowe informacje
             return f"GB4715(name='{self.device_name}', state=ERROR, error='{str(e)}')"

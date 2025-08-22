@@ -104,16 +104,11 @@ class WaitForStateAction(BaseAction):
                 f"🚀 Rozpoczynam asyncio.wait_for...",
                 message_logger=context.message_logger,
             )
-            print(
-                f"[DEBUG] Przed wywołaniem _wait_for_clients_state - clients={target_clients}, state={target_state}"
-            )
             try:
-                print(f"[DEBUG] Wywołuję _wait_for_clients_state...")
                 await asyncio.wait_for(
                     self._wait_for_clients_state(target_clients, target_state, context),
                     timeout=timeout_seconds,
                 )
-                print(f"[DEBUG] _wait_for_clients_state zakończone POMYŚLNIE")
 
                 info(
                     f"Wszystkie serwisy osiągnęły stan '{target_state}'",
@@ -121,7 +116,6 @@ class WaitForStateAction(BaseAction):
                 )
 
             except asyncio.TimeoutError:
-                print(f"[DEBUG] 💥 TIMEOUT! asyncio.TimeoutError po {timeout_seconds}s")
                 debug(
                     f"💥 asyncio.TimeoutError po {timeout_seconds}s",
                     message_logger=context.message_logger,
@@ -231,7 +225,6 @@ class WaitForStateAction(BaseAction):
     async def _wait_for_clients_state(
         self, clients: List[str], target_state: str, context: ActionContext
     ) -> None:
-        print(f"[CRITICAL] _wait_for_clients_state: ABSOLUTNE WEJŚCIE DO METODY!")
         """
         Czeka aż wszystkie serwisy osiągną określony stan.
 
@@ -240,13 +233,7 @@ class WaitForStateAction(BaseAction):
             target_state: Oczekiwany stan
             context: Kontekst wykonania
         """
-        print(
-            f"[DEBUG] _wait_for_clients_state: WEJŚCIE DO METODY - clients={clients}, target_state={target_state}"
-        )
-
         orchestrator = context.orchestrator
-
-        print(f"[DEBUG] _wait_for_clients_state: orchestrator pobrany")
 
         info(
             f"🔍 _wait_for_clients_state: ROZPOCZĘCIE - czekam na stan '{target_state}' dla {len(clients)} klientów: {clients}",

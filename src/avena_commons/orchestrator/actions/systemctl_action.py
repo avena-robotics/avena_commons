@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, List, Tuple
 
-from avena_commons.util.logger import debug, error, info, warning
+from avena_commons.util.logger import debug, info, warning
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 
