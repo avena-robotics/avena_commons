@@ -10,6 +10,7 @@ from .log_action import LogAction
 from .send_command_action import SendCommandAction
 from .systemctl_action import SystemctlAction
 from .wait_for_state_action import WaitForStateAction
+from .send_email_action import SendEmailAction
 
 
 class ActionExecutor:
@@ -37,6 +38,7 @@ class ActionExecutor:
         self._actions["send_command"] = SendCommandAction()
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
+        self._actions["send_email"] = SendEmailAction()
 
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """

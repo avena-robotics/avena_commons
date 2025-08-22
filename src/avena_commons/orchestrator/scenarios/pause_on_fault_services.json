@@ -19,6 +19,13 @@
       "description": "Alert o wykryciu błędu krytycznego"
     },
     {
+      "type": "send_email",
+      "description": "Powiadomienie o wykryciu błędu",
+      "to": ["ops@example.com"],
+      "subject": "[ALERT] Wykryto FAULT w {{ trigger.source }}",
+      "body": "Wykryto stan FAULT/ON_FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
+    },
+    {
       "type": "log_event",
       "level": "warning",
       "message": "⚠️ PROCEDURA BEZPIECZEŃSTWA: Wstrzymuję wszystkie usługi aby zapobiec dalszym uszkodzeniom",
@@ -48,6 +55,13 @@
       "level": "warning",
       "message": "🛑 SYSTEM ZABEZPIECZONY: Wszystkie usługi wstrzymane z powodu wykrycia błędu",
       "description": "Potwierdzenie zabezpieczenia systemu"
+    },
+    {
+      "type": "send_email",
+      "description": "Raport po wstrzymaniu usług",
+      "to": ["ops@example.com"],
+      "subject": "[INFO] System wstrzymany - komponenty w błędzie: {{ clients_in_fault }}",
+      "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
     },
     {
       "type": "log_event",

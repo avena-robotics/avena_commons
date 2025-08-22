@@ -54,6 +54,16 @@ class Orchestrator(EventListener):
             "conditions_directory": None,  # Użytkownik może nadpisać w JSON ← NOWE
             # Limity wykonywania scenariuszy
             "max_concurrent_scenarios": 1,  # Maksymalna liczba jednoczesnych scenariuszy (domyślnie 1)
+            # Konfiguracja SMTP dla akcji send_email (globalna)
+            "smtp": {
+                "host": "",
+                "port": 587,
+                "username": "",
+                "password": "",
+                "starttls": True,
+                "tls": False,
+                "from": ""
+            },
         }
 
         self._scenarios = OrderedDict()
