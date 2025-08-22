@@ -40,7 +40,7 @@ class WaitForStateAction(BaseAction):
 
         Args:
             action_config: Konfiguracja z kluczami:
-                - target_state: oczekiwany stan (np. "INITIALIZED")
+                - target_state/target_states: oczekiwany stan (string) lub lista stanów (np. ["INITIALIZED", "PAUSED"])
                 - timeout: timeout jako string (np. "30s") lub liczba sekund
                 - client/group/groups/target: selektory serwisów
                 - on_failure: lista akcji do wykonania w przypadku timeout (opcjonalnie)
@@ -55,16 +55,33 @@ class WaitForStateAction(BaseAction):
                 message_logger=context.message_logger,
             )
 
-            # Pobierz oczekiwany stan
-            target_state = action_config.get("target_state", "")
+            # Pobierz oczekiwany(e) stan(y)
+            raw_target_state = action_config.get("target_state")
+            raw_target_states = action_config.get("target_states")
+
+            target_states: List[str] = []
+            if raw_target_states is not None:
+                if isinstance(raw_target_states, list):
+                    target_states = [str(s) for s in raw_target_states if s]
+                else:
+                    target_states = (
+                        [str(raw_target_states)] if raw_target_states else []
+                    )
+            elif raw_target_state is not None:
+                if isinstance(raw_target_state, list):
+                    target_states = [str(s) for s in raw_target_state if s]
+                else:
+                    target_states = [str(raw_target_state)] if raw_target_state else []
+
             debug(
-                f"🎯 target_state: '{target_state}'",
+                f"🎯 target_states: {target_states}",
                 message_logger=context.message_logger,
             )
 
-            if not target_state:
+            if not target_states:
                 raise ActionExecutionError(
-                    "wait_for_state", "Brak oczekiwanego stanu (klucz: target_state)"
+                    "wait_for_state",
+                    "Brak oczekiwanego stanu (klucze: target_state lub target_states)",
                 )
 
             # Pobierz timeout i skonwertuj na sekundy
@@ -95,7 +112,7 @@ class WaitForStateAction(BaseAction):
                 )
 
             info(
-                f"Oczekiwanie na stan '{target_state}' dla serwisów: {target_clients} (timeout: {timeout_seconds}s)",
+                f"Oczekiwanie na stan(y) {target_states} dla serwisów: {target_clients} (timeout: {timeout_seconds}s)",
                 message_logger=context.message_logger,
             )
 
@@ -106,12 +123,14 @@ class WaitForStateAction(BaseAction):
             )
             try:
                 await asyncio.wait_for(
-                    self._wait_for_clients_state(target_clients, target_state, context),
+                    self._wait_for_clients_state(
+                        target_clients, target_states, context
+                    ),
                     timeout=timeout_seconds,
                 )
 
                 info(
-                    f"Wszystkie serwisy osiągnęły stan '{target_state}'",
+                    f"Wszystkie serwisy osiągnęły jeden z oczekiwanych stanów {target_states}",
                     message_logger=context.message_logger,
                 )
 
@@ -122,7 +141,7 @@ class WaitForStateAction(BaseAction):
                 )
                 # Timeout - wykonaj akcje on_failure jeśli są zdefiniowane
                 await self._handle_timeout(
-                    action_config, target_clients, target_state, context
+                    action_config, target_clients, target_states, context
                 )
 
         except Exception as e:
@@ -223,7 +242,7 @@ class WaitForStateAction(BaseAction):
         return list(config.keys())
 
     async def _wait_for_clients_state(
-        self, clients: List[str], target_state: str, context: ActionContext
+        self, clients: List[str], target_states: List[str], context: ActionContext
     ) -> None:
         """
         Czeka aż wszystkie serwisy osiągną określony stan.
@@ -236,12 +255,12 @@ class WaitForStateAction(BaseAction):
         orchestrator = context.orchestrator
 
         info(
-            f"🔍 _wait_for_clients_state: ROZPOCZĘCIE - czekam na stan '{target_state}' dla {len(clients)} klientów: {clients}",
+            f"🔍 _wait_for_clients_state: ROZPOCZĘCIE - czekam na jeden ze stanów {target_states} dla {len(clients)} klientów: {clients}",
             message_logger=context.message_logger,
         )
 
         debug(
-            f"🔍 wait_for_state: Czekam na stan '{target_state}' dla {len(clients)} klientów: {clients}",
+            f"🔍 wait_for_state: Czekam na stan(y) {target_states} dla {len(clients)} klientów: {clients}",
             message_logger=context.message_logger,
         )
 
@@ -260,7 +279,7 @@ class WaitForStateAction(BaseAction):
 
                 states_info.append(f"{client_name}={current_fsm_state}")
 
-                if current_fsm_state != target_state:
+                if current_fsm_state not in set(target_states):
                     all_ready = False
 
             debug(
@@ -270,7 +289,7 @@ class WaitForStateAction(BaseAction):
 
             if all_ready:
                 info(
-                    f"✅ wait_for_state: Wszystkie klienty osiągnęły stan '{target_state}': {', '.join(states_info)}",
+                    f"✅ wait_for_state: Wszystkie klienty osiągnęły jeden z oczekiwanych stanów {target_states}: {', '.join(states_info)}",
                     message_logger=context.message_logger,
                 )
                 break
@@ -282,7 +301,7 @@ class WaitForStateAction(BaseAction):
         self,
         action_config: Dict[str, Any],
         clients: List[str],
-        target_state: str,
+        target_states: List[str],
         context: ActionContext,
     ) -> None:
         """
@@ -298,7 +317,7 @@ class WaitForStateAction(BaseAction):
             ActionExecutionError: Po wykonaniu akcji on_failure (lub od razu jeśli ich nie ma)
         """
         timeout_message = (
-            f"Timeout oczekiwania na stan '{target_state}' dla serwisów: {clients}"
+            f"Timeout oczekiwania na stan(y) {target_states} dla serwisów: {clients}"
         )
         error(timeout_message, message_logger=context.message_logger)
 

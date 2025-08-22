@@ -6,8 +6,19 @@
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "client_state": {
-        "any_service_in_state": ["ON_FAULT", "FAULT"]
+      "and": {
+        "conditions": [
+          {
+            "client_state": {
+              "any_service_in_state": ["FAULT"]
+            }
+          },
+          {
+            "client_state": {
+              "no_service_in_state": ["PAUSE"]
+            }
+          }
+        ]
       }
     }
   },
@@ -22,7 +33,7 @@
       "type": "send_email",
       "description": "Powiadomienie o wykryciu błędu",
       "to": ["ops@test"],
-      "subject": "[ALERT] Wykryto FAULT w {{ trigger.source }}",
+      "subject": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}",
       "body": "Wykryto stan FAULT/ON_FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
     },
     {
@@ -46,7 +57,7 @@
     {
       "type": "wait_for_state",
       "target": "@all",
-      "target_state": "PAUSED",
+      "target_state": ["PAUSE", "FAULT"],
       "timeout": "30s",
       "description": "Oczekiwanie na wstrzymanie wszystkich komponentów"
     },

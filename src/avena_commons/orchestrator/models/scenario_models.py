@@ -50,7 +50,15 @@ class ActionModel(BaseModel):
     command: Optional[str] = Field(None, description="Komenda FSM do wysłania")
 
     # Parametry akcji wait_for_state
-    target_state: Optional[str] = Field(None, description="Docelowy stan komponentu")
+    # target_state może być stringiem lub listą stringów; alternatywnie można użyć target_states
+    target_state: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Docelowy stan komponentu (string) lub lista akceptowanych stanów",
+    )
+    target_states: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Lista akceptowanych stanów (alias dla target_state)",
+    )
     timeout: Optional[str] = Field(
         None, description="Timeout operacji (np. '30s', '2m')"
     )
@@ -134,7 +142,7 @@ class ScenarioModel(BaseModel):
 
     # Parametry wykonania scenariusza
     priority: Optional[int] = Field(
-        0, description="Priorytet scenariusza (wyższy = ważniejszy)"
+        0, description="Priorytet scenariusza (mniejszy = ważniejszy)"
     )
     cooldown: Optional[int] = Field(
         60, description="Okres cooldown w sekundach między wykonaniami"
