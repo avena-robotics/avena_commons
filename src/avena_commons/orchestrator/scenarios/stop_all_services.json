@@ -1,0 +1,53 @@
+{
+  "name": "Zatrzymanie wszystkich usług systemu (@all)",
+  "description": "Autonomiczny scenariusz zatrzymania - uruchamiany gdy którakolwiek usługa jest uruchomiona",
+  "priority": 99,
+  "cooldown": 60,
+  "trigger": {
+    "type": "automatic",
+    "conditions": {
+      "client_state": {
+        "all_services_in_state": "RUN"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "AUTONOMICZNY STOP: Wykryto uruchomione usługi - rozpoczynam automatyczne zatrzymanie",
+      "description": "Informacja o autonomicznym wyzwoleniu scenariusza"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Warunki spełnione: znaleziono komponenty w stanie RUN",
+      "description": "Potwierdzenie spełnienia warunków autonomicznych"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Autonomiczne zatrzymanie wszystkich komponentów (@all)...",
+      "description": "Rozpoczęcie autonomicznego zatrzymania"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_STOPPED",
+      "description": "Zatrzymanie wszystkich komponentów systemu"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "STOPPED",
+      "timeout": "30s",
+      "description": "Oczekiwanie na zatrzymanie wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Autonomiczne zatrzymanie wszystkich komponentów (@all) - przejście do stanu STOPPED...",
+      "description": "Zakończone autonomiczne zatrzymanie"
+    }
+  ]
+}
