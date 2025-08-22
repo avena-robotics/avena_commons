@@ -12,6 +12,9 @@ from typing import Any, Dict, List
 from avena_commons.orchestrator.actions import ActionContext, ActionExecutor
 from avena_commons.util.logger import MessageLogger
 
+# Aby włączyć prosty serwer testowy
+# python -m smtpd -c DebuggingServer -n localhost:1025
+
 
 class _DummySMTP:
     sent_messages: List[Dict[str, Any]] = []
@@ -84,18 +87,23 @@ async def _run_send_email_action(monkeypatch):  # type: ignore[override]
                 }
             }
             self._state = {
-                "io": {"fsm_state": "RUN"},
+                "io": {"fsm_state": "FAULT"},
                 "supervisor_1": {"fsm_state": "FAULT"},
+                "supervisor_2": {"fsm_state": "FAULT"},
+                "munchies_algo": {"fsm_state": "FAULT"},
             }
 
     orch = MockOrchestrator()
     context = ActionContext(
-        orchestrator=orch, message_logger=logger, scenario_name="test_email"
+        orchestrator=orch,
+        message_logger=logger,
+        scenario_name="test_email",
+        # trigger_data={"source": "test_source"},
     )
 
     action_cfg = {
         "type": "send_email",
-        "to": ["ops@test"],
+        "to": ["ops@test", "ops@test2", "ops@test3"],
         "subject": "[TEST] Fault in {{ trigger.source }}",
         "body": "List: {{ clients_in_fault }}",
     }

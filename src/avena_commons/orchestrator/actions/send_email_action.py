@@ -26,7 +26,7 @@ import smtplib
 from email.message import EmailMessage
 from typing import Any, Dict, List
 
-from avena_commons.util.logger import error, info
+from avena_commons.util.logger import error, info, warning
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 
@@ -105,6 +105,20 @@ class SendEmailAction(BaseAction):
                     "{{ clients_in_fault }}", clients_in_fault_str
                 )
                 body = body.replace("{{ clients_in_fault }}", clients_in_fault_str)
+
+                # Fallback dla {{ trigger.source }} jeśli brak w trigger_data
+                if "{{ trigger.source }}" in subject or "{{ trigger.source }}" in body:
+                    trigger_source = None
+                    if context.trigger_data and context.trigger_data.get("source"):
+                        trigger_source = str(context.trigger_data["source"])
+                    else:
+                        trigger_source = (
+                            ", ".join(sorted(clients_in_fault))
+                            if clients_in_fault
+                            else "autonomous"
+                        )
+                    subject = subject.replace("{{ trigger.source }}", trigger_source)
+                    body = body.replace("{{ trigger.source }}", trigger_source)
             except Exception:
                 # Ciche pominięcie - e-mail i tak zostanie wysłany bez rozszerzeń
                 pass
@@ -120,8 +134,14 @@ class SendEmailAction(BaseAction):
             if use_tls:
                 # SMTPS (implicit TLS), zwykle port 465
                 with smtplib.SMTP_SSL(host=host, port=port) as smtp:
-                    if username and password:
+                    smtp.ehlo()
+                    if username and password and smtp.has_extn("auth"):
                         smtp.login(username, password)
+                    elif username and password:
+                        warning(
+                            "send_email: Serwer nie wspiera AUTH - pomijam logowanie",
+                            message_logger=context.message_logger,
+                        )
                     smtp.send_message(message)
             else:
                 with smtplib.SMTP(host=host, port=port) as smtp:
@@ -129,8 +149,13 @@ class SendEmailAction(BaseAction):
                     if use_starttls:
                         smtp.starttls()
                         smtp.ehlo()
-                    if username and password:
+                    if username and password and smtp.has_extn("auth"):
                         smtp.login(username, password)
+                    elif username and password:
+                        warning(
+                            "send_email: Serwer nie wspiera AUTH - pomijam logowanie",
+                            message_logger=context.message_logger,
+                        )
                     smtp.send_message(message)
 
             info(

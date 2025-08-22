@@ -21,7 +21,7 @@
     {
       "type": "send_email",
       "description": "Powiadomienie o wykryciu błędu",
-      "to": ["ops@example.com"],
+      "to": ["ops@test"],
       "subject": "[ALERT] Wykryto FAULT w {{ trigger.source }}",
       "body": "Wykryto stan FAULT/ON_FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
     },
@@ -59,7 +59,7 @@
     {
       "type": "send_email",
       "description": "Raport po wstrzymaniu usług",
-      "to": ["ops@example.com"],
+      "to": ["ops@test"],
       "subject": "[INFO] System wstrzymany - komponenty w błędzie: {{ clients_in_fault }}",
       "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
     },

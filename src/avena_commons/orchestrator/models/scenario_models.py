@@ -2,7 +2,7 @@
 Modele Pydantic dla scenariuszy orkiestratora.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
@@ -66,6 +66,17 @@ class ActionModel(BaseModel):
     data: Optional[Dict[str, Any]] = Field(None, description="Dodatkowe dane dla akcji")
     parameters: Optional[Dict[str, Any]] = Field(None, description="Parametry akcji")
 
+    # Parametry akcji send_email
+    to: Optional[Union[str, List[str]]] = Field(
+        None, description="Adres(y) odbiorców e-mail (string lub lista)"
+    )
+    subject: Optional[str] = Field(None, description="Temat wiadomości e-mail")
+    body: Optional[str] = Field(None, description="Treść wiadomości e-mail")
+    smtp: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Konfiguracja SMTP per-akcja (opcjonalne, nadpisuje globalną)",
+    )
+
     @validator("type")
     def validate_action_type(cls, v):
         """Waliduje czy typ akcji jest znany."""
@@ -101,6 +112,10 @@ class ActionModel(BaseModel):
                     'Timeout musi kończyć się na "s", "m" lub "h" (np. "30s", "2m", "1h")'
                 )
         return v
+
+    class Config:
+        # Zachowuj dodatkowe klucze w akcjach (np. nowe pola specyficzne dla akcji)
+        extra = "allow"
 
 
 # Forward reference dla ActionModel.on_failure
