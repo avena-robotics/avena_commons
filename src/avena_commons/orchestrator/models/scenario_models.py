@@ -2,7 +2,7 @@
 Modele Pydantic dla scenariuszy orkiestratora.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
@@ -50,7 +50,15 @@ class ActionModel(BaseModel):
     command: Optional[str] = Field(None, description="Komenda FSM do wysłania")
 
     # Parametry akcji wait_for_state
-    target_state: Optional[str] = Field(None, description="Docelowy stan komponentu")
+    # target_state może być stringiem lub listą stringów; alternatywnie można użyć target_states
+    target_state: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Docelowy stan komponentu (string) lub lista akceptowanych stanów",
+    )
+    target_states: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Lista akceptowanych stanów (alias dla target_state)",
+    )
     timeout: Optional[str] = Field(
         None, description="Timeout operacji (np. '30s', '2m')"
     )
@@ -65,6 +73,17 @@ class ActionModel(BaseModel):
     # Dodatkowe parametry dla niestandardowych akcji
     data: Optional[Dict[str, Any]] = Field(None, description="Dodatkowe dane dla akcji")
     parameters: Optional[Dict[str, Any]] = Field(None, description="Parametry akcji")
+
+    # Parametry akcji send_email
+    to: Optional[Union[str, List[str]]] = Field(
+        None, description="Adres(y) odbiorców e-mail (string lub lista)"
+    )
+    subject: Optional[str] = Field(None, description="Temat wiadomości e-mail")
+    body: Optional[str] = Field(None, description="Treść wiadomości e-mail")
+    smtp: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Konfiguracja SMTP per-akcja (opcjonalne, nadpisuje globalną)",
+    )
 
     @validator("type")
     def validate_action_type(cls, v):
@@ -102,6 +121,10 @@ class ActionModel(BaseModel):
                 )
         return v
 
+    class Config:
+        # Zachowuj dodatkowe klucze w akcjach (np. nowe pola specyficzne dla akcji)
+        extra = "allow"
+
 
 # Forward reference dla ActionModel.on_failure
 ActionModel.model_rebuild()
@@ -119,7 +142,7 @@ class ScenarioModel(BaseModel):
 
     # Parametry wykonania scenariusza
     priority: Optional[int] = Field(
-        0, description="Priorytet scenariusza (wyższy = ważniejszy)"
+        0, description="Priorytet scenariusza (mniejszy = ważniejszy)"
     )
     cooldown: Optional[int] = Field(
         60, description="Okres cooldown w sekundach między wykonaniami"
