@@ -905,6 +905,16 @@ class EventListener:
                 f"{self.__class__.__name__} został bezpiecznie zamknięty.",
                 message_logger=None,
             )
+
+            # OSTATECZNOŚĆ - wymuszenie zakończenia procesu po krótkim czasie
+            def force_exit():
+                time.sleep(2.0)  # Dajemy 2 sekundy na naturalne zakończenie
+                warning("Forcing process exit after timeout...", message_logger=None)
+                os._exit(0)  # Wymuś zakończenie procesu
+
+            force_thread = threading.Thread(target=force_exit, daemon=True)
+            force_thread.start()
+
             return True
 
         except Exception as e:
@@ -990,6 +1000,14 @@ class EventListener:
                     case "CMD_RUN":
                         if event.result is None:
                             await self._handle_cmd_run(event)
+                        else:
+                            should_remove = await self.__analyze_event_with_fsm(event)
+
+                    case "CMD_RESTART":
+                        if event.result is None:
+                            await self._handle_cmd_restart(event)
+                            # CMD_RESTART obsługuje odpowiedź samodzielnie, nie przekazujemy dalej
+                            should_remove = True
                         else:
                             should_remove = await self.__analyze_event_with_fsm(event)
 
@@ -1778,7 +1796,34 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
 
-            self.server.run()
+            # Uruchamiamy serwer w osobnym thread żeby nie blokować głównego procesu
+
+            server_thread = threading.Thread(target=self.server.run, daemon=False)
+            server_thread.start()
+
+            # Czekamy na zakończenie serwera lub shutdown request
+            try:
+                while server_thread.is_alive() and not self._shutdown_requested:
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                info(
+                    "Otrzymano KeyboardInterrupt, rozpoczynam shutdown...",
+                    message_logger=self._message_logger,
+                )
+                self.shutdown()
+
+            # Czekamy na zakończenie server thread
+            if server_thread.is_alive():
+                info(
+                    "Czekam na zakończenie serwera...",
+                    message_logger=self._message_logger,
+                )
+                server_thread.join(timeout=5.0)
+                if server_thread.is_alive():
+                    warning(
+                        "Serwer nie zakończył się w czasie, wymuszam zakończenie",
+                        message_logger=self._message_logger,
+                    )
 
         except Exception as e:
             error(
@@ -2033,6 +2078,40 @@ class EventListener:
             case _:
                 warning(
                     f"Received CMD_RUN in unexpected state: {self.__fsm_state.name}",
+                    message_logger=self._message_logger,
+                )
+
+    async def _handle_cmd_restart(self, event: Event):
+        """Obsługa CMD_RESTART - zatrzymanie programu przez shutdown, automatyczny restart z systemctl"""
+        match self.__fsm_state:
+            case EventListenerState.STOPPED:
+                # Najpierw wysyłamy odpowiedź że restart jest akceptowany
+                event.result = Result(
+                    result="success",
+                    data={"message": "Restart accepted, shutting down system"},
+                )
+                await self._reply(event)
+
+                # Dajemy czas na wysłanie odpowiedzi
+                await asyncio.sleep(0.1)
+
+                # Dopiero teraz wykonujemy shutdown
+                info(
+                    "CMD_RESTART: Initiating system shutdown after successful response",
+                    message_logger=self._message_logger,
+                )
+                self.shutdown()
+
+            case _:
+                # Wysyłamy odpowiedź o błędzie - restart niemożliwy
+                event.result = Result(
+                    result="error",
+                    error_message=f"Cannot restart from state {self.__fsm_state.name}. System must be in STOPPED state first.",
+                )
+                await self._reply(event)
+
+                warning(
+                    f"Received CMD_RESTART in unexpected state: {self.__fsm_state.name}, first STOP the program.",
                     message_logger=self._message_logger,
                 )
 
