@@ -142,26 +142,10 @@ class DatabaseCondition(BaseCondition):
                 message_logger=self._message_logger,
             )
 
-            # Automatycznie dodaj filtry APS_ID i APS_NAME z konfiguracji komponentu
-            enhanced_where_conditions = self.where_conditions.copy()
-
-            # Pobierz APS_ID i APS_NAME z konfiguracji komponentu
-            aps_id = db_component.config.get("APS_ID")
-            aps_name = db_component.config.get("APS_NAME")
-
-            if aps_id:
-                enhanced_where_conditions["id"] = aps_id
-                debug(
-                    f"🔧 Automatycznie dodano filtr id={aps_id} z konfiguracji komponentu",
-                    message_logger=self._message_logger,
-                )
-
-            if aps_name:
-                enhanced_where_conditions["name"] = aps_name
-                debug(
-                    f"🔧 Automatycznie dodano filtr name={aps_name} z konfiguracji komponentu",
-                    message_logger=self._message_logger,
-                )
+            # Pozwól klasom pochodnym rozszerzyć WHERE (domyślnie bez zmian)
+            enhanced_where_conditions = self._augment_where(
+                self.where_conditions, db_component
+            )
 
             actual_value = await db_component.check_table_value(
                 table=self.table,
@@ -180,7 +164,7 @@ class DatabaseCondition(BaseCondition):
             )
 
             debug(
-                f"✅ Wynik warunku bazodanowego: {result}",
+                f"Wynik warunku bazodanowego: {result}",
                 message_logger=self._message_logger,
             )
 
@@ -192,6 +176,12 @@ class DatabaseCondition(BaseCondition):
                 message_logger=self._message_logger,
             )
             return False
+
+    def _augment_where(self, where: Dict[str, Any], db_component) -> Dict[str, Any]:
+        """
+        Hook do modyfikacji WHERE przez klasy pochodne. Domyślnie zwraca kopię bez zmian.
+        """
+        return dict(where)
 
     def _compare_values(self, actual: Any, expected: Any, operator: str) -> bool:
         """

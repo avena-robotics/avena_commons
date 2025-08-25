@@ -82,7 +82,7 @@
       "description": "Potwierdzenie autonomicznego przywrócenia gotowości systemu"
     },
     {
-      "type": "database_update",
+      "type": "aps_database_update",
       "component": "main_database",
       "table": "aps_description",
       "column": "current_state",

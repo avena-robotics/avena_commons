@@ -13,7 +13,7 @@ import asyncpg
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .enums import CurrentState, GoalState
+# Lokalny import enumów nie jest już wymagany przy generycznej normalizacji wartości
 
 
 class DatabaseComponent:
@@ -49,49 +49,31 @@ class DatabaseComponent:
         self._is_connected = False
         self._is_initialized = False
         self._conn_lock: asyncio.Lock = asyncio.Lock()
+        self._column_type_cache: Dict[str, Dict[str, Any]] = {}
 
     def _to_db_value_for_column(self, column: str, value: Any) -> Any:
         """
-        Konwertuje wartość dla wybranych kolumn do typu Enum (CurrentState).
+        Generyczna normalizacja wartości parametru do wysyłki przez asyncpg.
 
-        Dotyczy wyłącznie kolumn: 'goal_state' i 'current_state'.
-        Dla innych kolumn zwraca oryginalną wartość bez zmian.
+        - Jeśli to Enum (ma atrybut .value) → zwróć .value (string/int)
+        - W przeciwnym razie zwróć oryginał
         """
         try:
-            if column == "current_state":
-                if value is None:
-                    return None
-                if isinstance(value, CurrentState):
-                    return value
-                if isinstance(value, str):
-                    normalized = value.strip().lower()
-                    return CurrentState(normalized)
-                # Jeśli podano inny Enum, spróbuj z jego value
-                if hasattr(value, "value"):
-                    return CurrentState(str(value.value).strip().lower())
-            elif column == "goal_state":
-                if value is None:
-                    return None
-                if isinstance(value, GoalState):
-                    return value
-                if isinstance(value, str):
-                    normalized = value.strip().lower()
-                    return GoalState(normalized)
-                # Jeśli podano inny Enum, spróbuj z jego value
-                if hasattr(value, "value"):
-                    return GoalState(str(value.value).strip().lower())
+            if value is None:
+                return None
+            if hasattr(value, "value"):
+                return value.value
+            return value
         except Exception as e:
             raise ValueError(
-                f"Nie można skonwertować wartości '{value}' kolumny '{column}' do CurrentState: {e}"
+                f"Nie można znormalizować wartości '{value}' kolumny '{column}': {e}"
             )
-        return value
 
     def _convert_where_conditions(
         self, where_conditions: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Zwraca kopię where_conditions z konwersją wartości tylko dla kolumn
-        'goal_state' i 'current_state' do CurrentState Enum.
+        Zwraca kopię where_conditions z generyczną normalizacją wartości (Enum → .value).
         """
         converted: Dict[str, Any] = {}
         for col, val in where_conditions.items():
@@ -443,6 +425,118 @@ class DatabaseComponent:
         except Exception as e:
             error(
                 f"❌ Błąd UPDATE w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    async def _get_column_type_info(self, table: str, column: str) -> Dict[str, Any]:
+        """
+        Zwraca informacje o typie kolumny (pełna nazwa typu i czy to enum).
+
+        Args:
+            table: nazwa tabeli (może być kwalifikowana schematem)
+            column: nazwa kolumny
+
+        Returns:
+            Słownik {"schema": str, "type": str, "fq_type": str, "is_enum": bool}
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        cache_key = f"{table}.{column}"
+        cached = self._column_type_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sql = (
+            "SELECT n.nspname AS schema, t.typname AS type, t.typtype AS typtype "
+            "FROM pg_catalog.pg_attribute a "
+            "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
+            "JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace "
+            "WHERE c.oid = $1::regclass AND a.attname = $2"
+        )
+
+        async with self._conn_lock:
+            row = await self._connection.fetchrow(sql, table, column)
+
+        if not row:
+            raise ValueError(f"Nie znaleziono kolumny {column} w tabeli {table}")
+
+        schema = row["schema"]
+        typname = row["type"]
+        typtype = row["typtype"]
+        info_dict = {
+            "schema": schema,
+            "type": typname,
+            "fq_type": f"{schema}.{typname}",
+            "is_enum": typtype == "e",
+        }
+        self._column_type_cache[cache_key] = info_dict
+        return info_dict
+
+    async def update_column_from_column(
+        self,
+        table: str,
+        target_column: str,
+        source_column: str,
+        where_conditions: Dict[str, Any],
+    ) -> int:
+        """
+        Kopiuje wartości z jednej kolumny do drugiej z opcjonalnym rzutowaniem między enumami.
+
+        Jeśli kolumny są różnych typów enum, zastosuje rzutowanie: source::text::target_type.
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Ustal typy kolumn
+        target_info = await self._get_column_type_info(table, target_column)
+        source_info = await self._get_column_type_info(table, source_column)
+
+        # Zbuduj wyrażenie SET z rzutowaniem jeśli potrzebne
+        if (
+            target_info["is_enum"]
+            and source_info["is_enum"]
+            and (target_info["fq_type"] != source_info["fq_type"])
+        ):
+            set_expr = f"{source_column}::text::{target_info['fq_type']}"
+        else:
+            set_expr = f"{source_column}"
+
+        # WHERE z konwersją wartości (obsługa enumów w where)
+        param_index = 1
+        values = []
+        where_parts = []
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
+            if hasattr(val, "value"):
+                val = val.value
+            where_parts.append(f"{col} = ${param_index}")
+            values.append(val)
+            param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = f"UPDATE {table} SET {target_column} = {set_expr} WHERE {where_clause}"
+
+        try:
+            debug(
+                f"✏️ UPDATE (copy) w bazie '{self.name}': {query[:120]}{'...' if len(query) > 120 else ''}",
+                message_logger=self._message_logger,
+            )
+            async with self._conn_lock:
+                status = await self._connection.execute(query, *values)
+            try:
+                affected = int(status.split()[-1])
+            except Exception:
+                affected = 0
+            return affected
+        except Exception as e:
+            error(
+                f"❌ Błąd UPDATE (copy) w bazie '{self.name}': {e}",
                 message_logger=self._message_logger,
             )
             raise

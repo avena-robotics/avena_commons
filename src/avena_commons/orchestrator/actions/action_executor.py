@@ -4,13 +4,14 @@ ActionExecutor - klasa zarządzająca wykonywaniem akcji scenariuszy.
 
 from typing import Any, Dict
 
-
 from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .database_update_action import DatabaseUpdateAction
+from .database_update_action_aps import ApsDatabaseUpdateAction
 from .log_action import LogAction
 from .send_command_action import SendCommandAction
+from .send_email_action import SendEmailAction
 from .systemctl_action import SystemctlAction
 from .wait_for_state_action import WaitForStateAction
-from .send_email_action import SendEmailAction
 
 
 class ActionExecutor:
@@ -39,6 +40,8 @@ class ActionExecutor:
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
         self._actions["send_email"] = SendEmailAction()
+        self._actions["database_update"] = DatabaseUpdateAction()
+        self._actions["aps_database_update"] = ApsDatabaseUpdateAction()
 
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """

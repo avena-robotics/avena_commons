@@ -1,25 +1,11 @@
 """
-Akcja aktualizacji rekordu w bazie danych na podstawie warunku.
+Generyczna akcja aktualizacji w bazie danych.
 
-Cel: Skopiować wartość z kolumny źródłowej (np. goal_state) do kolumny
-docelowej (np. current_state) dla wierszy wskazanych przez warunek WHERE.
+Obsługuje dwa warianty:
+1) SET stałej wartości w kolumnie: podaj {"column", "value"}
+2) Kopia kolumna→kolumna (z rzutowaniem enum gdy trzeba): podaj {"to_column", "from_column"}
 
-Domyślne kolumny: source=goal_state, target=current_state.
-
-Przykład użycia w scenariuszu (na końcu, po sukcesie):
-{
-  "type": "database_update",
-  "component": "main_database",
-  "table": "aps_description",
-  "from_column": "goal_state",
-  "to_column": "current_state",
-  "where": {
-    "current_state": "inactive"
-  }
-}
-
-Uwaga: Akcja automatycznie doda filtry identyfikujące APS (id, name)
-na podstawie APS_ID/APS_NAME z konfiguracji komponentu (jeśli dostępne).
+WHERE przekazywany wprost z konfiguracji (bez automatycznych filtrów).
 """
 
 from typing import Any, Dict
@@ -46,9 +32,12 @@ class DatabaseUpdateAction(BaseAction):
             table = action_config.get("table")
             where = action_config.get("where") or {}
 
-            # Domyślne kolumny: goal_state -> current_state
-            column = action_config.get("column", "")
-            value = action_config.get("value", None)
+            # Tryb 1: SET stałej wartości (column + value)
+            column = action_config.get("column")
+            value = action_config.get("value")
+            # Tryb 2: Kopia z kolumny (to_column + from_column)
+            to_column = action_config.get("to_column")
+            from_column = action_config.get("from_column")
 
             if not component_name:
                 raise ActionExecutionError(
@@ -74,35 +63,36 @@ class DatabaseUpdateAction(BaseAction):
 
             db_component = components[component_name]
 
-            # Rozszerz WHERE o identyfikatory APS, jeśli dostępne w konfiguracji komponentu
             enhanced_where = dict(where)
-            aps_id = db_component.config.get("APS_ID")
-            aps_name = db_component.config.get("APS_NAME")
-            if aps_id is not None:
-                enhanced_where["id"] = aps_id
+
+            # Wykonaj odpowiedni wariant
+            if column is not None and value is not None:
                 debug(
-                    f"database_update: dodano filtr id={aps_id}",
+                    f"database_update: SET {table}.{column} = {value} WHERE {enhanced_where}",
                     message_logger=context.message_logger,
                 )
-            if aps_name is not None:
-                enhanced_where["name"] = aps_name
+                affected = await db_component.update_table_value(
+                    table=table,
+                    column=column,
+                    value=value,
+                    where_conditions=enhanced_where,
+                )
+            elif to_column and from_column:
                 debug(
-                    f"database_update: dodano filtr name={aps_name}",
+                    f"database_update: COPY {table}.{to_column} <- {from_column} WHERE {enhanced_where}",
                     message_logger=context.message_logger,
                 )
-
-            debug(
-                f"database_update: {table}.{column} = {value} WHERE {enhanced_where}",
-                message_logger=context.message_logger,
-            )
-
-            # Wykonaj aktualizację
-            affected = await db_component.update_table_value(
-                table=table,
-                column=column,
-                value=value,
-                where_conditions=enhanced_where,
-            )
+                affected = await db_component.update_column_from_column(
+                    table=table,
+                    target_column=to_column,
+                    source_column=from_column,
+                    where_conditions=enhanced_where,
+                )
+            else:
+                raise ActionExecutionError(
+                    self.action_type,
+                    "Niepoprawna konfiguracja: podaj (column,value) lub (to_column,from_column)",
+                )
 
             if affected == 0:
                 warning(
