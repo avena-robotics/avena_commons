@@ -5,7 +5,7 @@ fastapi
 dotenv
 pysoem
 requests
-numpy
+numpy>=1.21.0,<2.0.0
 scipy
 opencv-python
 psutil
@@ -13,6 +13,7 @@ pymodbus==3.9.2
 httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
+./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl
 # DEV
 ruff
 black
