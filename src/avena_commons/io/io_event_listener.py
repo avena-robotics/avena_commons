@@ -33,12 +33,12 @@ class IO_server(EventListener):
         self._error_message = None
 
         try:
-            self._load_device_configuration(configuration_file, general_config_file)
+            # Zachowaj parametry do użycia podczas INITIALIZING
+            self._name = name
+            self._port = port
+            self._configuration_file = configuration_file
+            self._general_config_file = general_config_file
             self.check_local_data_frequency: int = 50
-            # Initialize state dict to store state data for actual device configuration.
-            self._state = self._build_state_dict(
-                name, port, configuration_file, general_config_file
-            )
             super().__init__(
                 name=name,
                 port=port,
@@ -59,9 +59,23 @@ class IO_server(EventListener):
                 "FSM: Initializing IO server",
                 message_logger=self._message_logger,
             )
-        # Brak dodatkowej rekonfiguracji _state tutaj, aby nie nadpisywać stanu
-        # wczytanego przez bazową klasę podczas INITIALIZING.
-        pass
+        try:
+            # Wczytaj konfigurację urządzeń
+            self._load_device_configuration(
+                self._configuration_file, self._general_config_file
+            )
+            # Zbuduj słownik stanu dla aktualnej konfiguracji
+            self._state = self._build_state_dict(
+                self._name,
+                self._port,
+                self._configuration_file,
+                self._general_config_file,
+            )
+        except Exception as e:
+            error(
+                f"Initialisation error during on_initializing: {e}",
+                message_logger=self._message_logger,
+            )
 
         if self._debug:
             debug(
