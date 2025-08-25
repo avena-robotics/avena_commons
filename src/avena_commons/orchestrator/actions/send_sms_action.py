@@ -140,42 +140,92 @@ class SendSmsAction(BaseAction):
             endpoint = "sendsms.aspx"
             full_url = url_base.rstrip("/") + "/" + endpoint
 
+            # Konfiguracja długości segmentu (domyślnie 160 znaków)
+            try:
+                segment_length = int(sms_cfg.get("max_length", 160))
+            except Exception:
+                segment_length = 160
+
+            def _split_text(message: str, max_len: int) -> List[str]:
+                if not message:
+                    return [""]
+                if len(message) <= max_len:
+                    return [message]
+                segments: List[str] = []
+                start = 0
+                while start < len(message):
+                    end = start + max_len
+                    segments.append(message[start:end])
+                    start = end
+                return segments
+
+            segments = _split_text(text, segment_length)
+            ignore_errors = bool(action_config.get("ignore_errors", False))
+
+            def _normalize_dest(number: str) -> str:
+                n = (number or "").strip()
+                if n.startswith("+48"):
+                    n = n[1:]  # usuń '+' → '48...'
+                n = n.replace(" ", "").replace("-", "")
+                if not n.startswith("48") and len(n) == 9 and n.isdigit():
+                    n = f"48{n}"
+                return n
+
             all_ok = True
-            for dest in recipients:
-                params = {
-                    "login": login,
-                    "password": password,
-                    "serviceId": service_id,
-                    "orig": source,
-                    "dest": dest,
-                    "text": text,
-                }
+            for raw_dest in recipients:
+                dest = _normalize_dest(raw_dest)
+                for idx, segment in enumerate(segments, start=1):
+                    params = {
+                        "login": login,
+                        "password": password,
+                        "serviceId": service_id,
+                        "orig": source,
+                        "dest": dest,
+                        "text": segment,
+                    }
 
-                response = requests.get(
-                    full_url, params=params, cert=cert_path, timeout=30
-                )
-
-                # Prosty model oceny sukcesu (zgodny ze schematem z aps_kiosk)
-                ok = False
-                if response.status_code == 200:
-                    body = (response.text or "").strip()
-                    parts = [p.strip() for p in body.split(";") if p.strip()]
-                    if parts and (parts[0].isdigit() or "OK" in body.upper()):
-                        ok = True
-
-                if ok:
-                    info(
-                        f"📱 send_sms: Wysłano SMS do {dest}",
-                        message_logger=context.message_logger,
-                    )
-                else:
-                    all_ok = False
-                    error(
-                        f"send_sms: niepowodzenie wysyłki do {dest}: {response.status_code} - {response.text}",
-                        message_logger=context.message_logger,
+                    response = requests.get(
+                        full_url, params=params, cert=cert_path, timeout=30
                     )
 
-            if not all_ok:
+                    # Ocena sukcesu (dostosowana do MultiInfo Plus):
+                    #  - "0\n1835172048\n" (pierwszy token to kod 0, następny to smsId)
+                    #  - "1835172048" (sam smsId)
+                    #  - treść zawiera "OK"
+                    ok = False
+                    sms_id_info = None
+                    if response.status_code == 200:
+                        body = (response.text or "").strip()
+                        tokens = [t for t in body.replace(";", " ").split() if t]
+                        if tokens:
+                            first = tokens[0]
+                            if first.lstrip("-").isdigit():
+                                try:
+                                    code_or_id = int(first)
+                                    if code_or_id >= 0:
+                                        ok = True
+                                        if len(tokens) > 1 and tokens[1].isdigit():
+                                            sms_id_info = tokens[1]
+                                        elif code_or_id > 0:
+                                            sms_id_info = str(code_or_id)
+                                except ValueError:
+                                    ok = False
+                            elif "OK" in body.upper():
+                                ok = True
+
+                    if ok:
+                        info(
+                            f"📱 send_sms: Wysłano SMS do {dest} (segment {idx}/{len(segments)}){(' (id: ' + sms_id_info + ')') if sms_id_info else ''}. Treść segmentu: {segment}",
+                            message_logger=context.message_logger,
+                        )
+                    else:
+                        all_ok = False
+                        error(
+                            f"send_sms: niepowodzenie wysyłki do {dest} (segment {idx}/{len(segments)}): {response.status_code} - {response.text}.",
+                            message_logger=context.message_logger,
+                        )
+
+            if not all_ok and not ignore_errors:
                 raise ActionExecutionError(
                     self.action_type, "Co najmniej jedna wysyłka SMS nie powiodła się"
                 )

@@ -62,7 +62,7 @@ class Orchestrator(EventListener):
                 "port": 587,
                 "username": "",
                 "password": "",
-                "starttls": True,
+                "starttls": False,
                 "tls": False,
                 "from": "",
             },
