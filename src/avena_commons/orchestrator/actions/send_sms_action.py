@@ -37,7 +37,34 @@ class SendSmsAction(BaseAction):
     async def execute(
         self, action_config: Dict[str, Any], context: ActionContext
     ) -> None:
+        # Globalny limiter prób: pomiń akcję po przekroczeniu kolejnych błędów
+        orch = context.orchestrator
+        pre_sms_cfg = action_config.get("sms", {}) or {}
+        if not pre_sms_cfg:
+            pre_sms_cfg = (orch._configuration or {}).get("sms", {}) or {}
+
+        enabled_pre = bool(pre_sms_cfg.get("enabled", False))
+        if not enabled_pre:
+            warning(
+                "send_sms: SMS globalnie wyłączony (sms.enabled = False) - pomijam",
+                message_logger=context.message_logger,
+            )
+            return
+
         try:
+            try:
+                max_attempts = int(pre_sms_cfg.get("max_error_attempts", 0) or 0)
+            except Exception:
+                max_attempts = 0
+            if orch.should_skip_action_due_to_errors(self.action_type, max_attempts):
+                warning(
+                    f"send_sms: pomijam wysyłkę (przekroczony limit kolejnych błędów: {orch.get_action_error_count(self.action_type)}/{max_attempts})",
+                    message_logger=context.message_logger,
+                )
+                return
+
+            success = False
+            had_action_error = False
             # 1) Konfiguracja: per-akcja (opcjonalnie) -> globalna orchestrator._configuration['sms']
             sms_cfg = action_config.get("sms", {}) or {}
             if not sms_cfg:
@@ -229,10 +256,13 @@ class SendSmsAction(BaseAction):
                 raise ActionExecutionError(
                     self.action_type, "Co najmniej jedna wysyłka SMS nie powiodła się"
                 )
+            success = True
 
         except ActionExecutionError:
+            had_action_error = True
             raise
         except requests.exceptions.Timeout:
+            had_action_error = True
             error(
                 "send_sms: timeout żądania do bramki SMS",
                 message_logger=context.message_logger,
@@ -241,14 +271,25 @@ class SendSmsAction(BaseAction):
                 self.action_type, "Timeout żądania do bramki SMS"
             )
         except requests.exceptions.RequestException as e:
+            had_action_error = True
             error(
                 f"send_sms: błąd żądania HTTP: {e}",
                 message_logger=context.message_logger,
             )
             raise ActionExecutionError(self.action_type, f"Błąd żądania HTTP: {e}", e)
         except Exception as e:
+            had_action_error = True
             error(
                 f"send_sms: nieoczekiwany błąd: {e}",
                 message_logger=context.message_logger,
             )
             raise ActionExecutionError(self.action_type, f"Nieoczekiwany błąd: {e}", e)
+        finally:
+            try:
+                if success:
+                    orch.reset_action_error_count(self.action_type)
+                elif had_action_error:
+                    orch.increment_action_error_count(self.action_type)
+            except Exception:
+                # Licznik błędów nie może przerwać dalszego działania
+                pass

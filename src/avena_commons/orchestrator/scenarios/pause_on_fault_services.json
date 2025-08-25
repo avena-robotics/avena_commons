@@ -33,7 +33,7 @@
       "type": "send_sms",
       "description": "Powiadomienie SMS o wykryciu błędu",
       "to": ["48517383507"],
-      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Źródło: {{ trigger.source }}."
+      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}."
     },
     {
       "type": "send_email",

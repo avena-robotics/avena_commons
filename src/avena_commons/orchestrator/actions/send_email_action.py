@@ -32,10 +32,29 @@ from .base_action import ActionContext, ActionExecutionError, BaseAction
 
 
 class SendEmailAction(BaseAction):
+    action_type = "send_email"
+
     async def execute(
         self, action_config: Dict[str, Any], context: ActionContext
     ) -> None:
+        orch = context.orchestrator
+        pre_smtp_cfg = action_config.get("smtp", {}) or {}
+        if not pre_smtp_cfg:
+            pre_smtp_cfg = (orch._configuration or {}).get("smtp", {}) or {}
         try:
+            try:
+                max_attempts = int(pre_smtp_cfg.get("max_error_attempts", 0) or 0)
+            except Exception:
+                max_attempts = 0
+            if orch.should_skip_action_due_to_errors(self.action_type, max_attempts):
+                warning(
+                    f"send_email: pomijam wysyłkę (przekroczony limit kolejnych błędów: {orch.get_action_error_count(self.action_type)}/{max_attempts})",
+                    message_logger=context.message_logger,
+                )
+                return
+
+            success = False
+            had_action_error = False
             # Priorytet: per-akcja (legacy) -> globalny orchestrator._configuration['smtp']
             smtp_cfg = action_config.get("smtp", {}) or {}
             if not smtp_cfg:
@@ -162,12 +181,23 @@ class SendEmailAction(BaseAction):
                 f"📧 send_email: Wysłano e-mail do {to_addresses} z tematem '{subject}'",
                 message_logger=context.message_logger,
             )
+            success = True
 
         except ActionExecutionError:
+            had_action_error = True
             raise
         except Exception as e:
+            had_action_error = True
             error(
                 f"send_email: błąd wysyłki e-mail: {e}",
                 message_logger=context.message_logger,
             )
             raise ActionExecutionError("send_email", f"Błąd wysyłki e-mail: {e}", e)
+        finally:
+            try:
+                if success:
+                    orch.reset_action_error_count(self.action_type)
+                elif had_action_error:
+                    orch.increment_action_error_count(self.action_type)
+            except Exception:
+                pass
