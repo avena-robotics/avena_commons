@@ -64,7 +64,17 @@ class Orchestrator(EventListener):
                 "password": "",
                 "starttls": True,
                 "tls": False,
-                "from": ""
+                "from": "",
+            },
+            # Konfiguracja SMS dla akcji send_sms (globalna)
+            "sms": {
+                "enabled": False,
+                "url": "",
+                "login": "",
+                "password": "",
+                "cert_path": "",
+                "serviceId": 0,
+                "source": "",
             },
         }
 
@@ -1320,7 +1330,7 @@ class Orchestrator(EventListener):
                 conditions, self._message_logger
             )
 
-            # Przygotuj kontekst tylko z clients – przefiltruj do znanych klientów
+            # Przygotuj kontekst tylko z clients - przefiltruj do znanych klientów
             configured_clients = self._configuration.get("clients", {})
             filtered_clients_state = {
                 client_name: self._state.get(client_name, {})

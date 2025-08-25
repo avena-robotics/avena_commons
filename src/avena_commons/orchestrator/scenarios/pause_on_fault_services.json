@@ -30,6 +30,12 @@
       "description": "Alert o wykryciu błędu krytycznego"
     },
     {
+      "type": "send_sms",
+      "description": "Powiadomienie SMS o wykryciu błędu",
+      "to": ["+48517383507"],
+      "text": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}. Wykryto stan FAULT/ON_FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
+    },
+    {
       "type": "send_email",
       "description": "Powiadomienie o wykryciu błędu",
       "to": ["ops@test"],
@@ -66,6 +72,12 @@
       "level": "warning",
       "message": "🛑 SYSTEM ZABEZPIECZONY: Wszystkie usługi wstrzymane z powodu wykrycia błędu",
       "description": "Potwierdzenie zabezpieczenia systemu"
+    },
+    {
+      "type": "send_sms",
+      "description": "Raport po wstrzymaniu usług (SMS)",
+      "to": ["+48517383507"],
+      "text": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
     },
     {
       "type": "send_email",
