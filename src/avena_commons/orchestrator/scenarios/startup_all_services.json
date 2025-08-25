@@ -85,11 +85,8 @@
       "type": "database_update",
       "component": "main_database",
       "table": "aps_description",
-      "from_column": "goal_state",
-      "to_column": "current_state",
-      "where": {
-        "current_state": "inactive"
-      },
+      "column": "current_state",
+      "value": "active",
       "description": "Synchronizacja current_state z goal_state po udanym scenariuszu"
     },
     {

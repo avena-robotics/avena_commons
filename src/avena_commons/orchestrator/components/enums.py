@@ -1,7 +1,11 @@
 from enum import Enum
 
 
-# current_state_enum
 class CurrentState(Enum):
+    INACTIVE = "inactive"
+    ACTIVE = "active"
+
+
+class GoalState(Enum):
     INACTIVE = "inactive"
     ACTIVE = "active"

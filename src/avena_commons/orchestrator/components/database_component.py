@@ -5,6 +5,7 @@ Obsługuje połączenia z bazami danych PostgreSQL i udostępnia interfejs
 do wykonywania zapytań SQL dla warunków.
 """
 
+import asyncio
 import os
 from typing import Any, Dict, Optional
 
@@ -12,7 +13,7 @@ import asyncpg
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .enums import CurrentState
+from .enums import CurrentState, GoalState
 
 
 class DatabaseComponent:
@@ -47,6 +48,7 @@ class DatabaseComponent:
         self._connection_params: Dict[str, Any] = {}
         self._is_connected = False
         self._is_initialized = False
+        self._conn_lock: asyncio.Lock = asyncio.Lock()
 
     def _to_db_value_for_column(self, column: str, value: Any) -> Any:
         """
@@ -56,7 +58,7 @@ class DatabaseComponent:
         Dla innych kolumn zwraca oryginalną wartość bez zmian.
         """
         try:
-            if column in {"goal_state", "current_state"}:
+            if column == "current_state":
                 if value is None:
                     return None
                 if isinstance(value, CurrentState):
@@ -67,6 +69,17 @@ class DatabaseComponent:
                 # Jeśli podano inny Enum, spróbuj z jego value
                 if hasattr(value, "value"):
                     return CurrentState(str(value.value).strip().lower())
+            elif column == "goal_state":
+                if value is None:
+                    return None
+                if isinstance(value, GoalState):
+                    return value
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    return GoalState(normalized)
+                # Jeśli podano inny Enum, spróbuj z jego value
+                if hasattr(value, "value"):
+                    return GoalState(str(value.value).strip().lower())
         except Exception as e:
             raise ValueError(
                 f"Nie można skonwertować wartości '{value}' kolumny '{column}' do CurrentState: {e}"
@@ -212,10 +225,11 @@ class DatabaseComponent:
             )
 
             # Nawiąż połączenie
-            self._connection = await asyncpg.connect(**self._connection_params)
+            async with self._conn_lock:
+                self._connection = await asyncpg.connect(**self._connection_params)
 
-            # Sprawdź połączenie prostym zapytaniem
-            result = await self._connection.fetchval("SELECT 1")
+                # Sprawdź połączenie prostym zapytaniem
+                result = await self._connection.fetchval("SELECT 1")
             if result == 1:
                 self._is_connected = True
                 info(
@@ -243,12 +257,13 @@ class DatabaseComponent:
             True jeśli rozłączenie przebiegło pomyślnie
         """
         try:
-            if self._connection and not self._connection.is_closed():
-                info(
-                    f"🔌 Rozłączanie z bazą danych: {self.name}",
-                    message_logger=self._message_logger,
-                )
-                await self._connection.close()
+            async with self._conn_lock:
+                if self._connection and not self._connection.is_closed():
+                    info(
+                        f"🔌 Rozłączanie z bazą danych: {self.name}",
+                        message_logger=self._message_logger,
+                    )
+                    await self._connection.close()
 
             self._connection = None
             self._is_connected = False
@@ -283,8 +298,9 @@ class DatabaseComponent:
                 return False
 
             # Sprawdź połączenie prostym zapytaniem
-            result = await self._connection.fetchval("SELECT 1")
-            return result == 1
+            async with self._conn_lock:
+                result = await self._connection.fetchval("SELECT 1")
+                return result == 1
 
         except Exception as e:
             warning(
@@ -332,8 +348,7 @@ class DatabaseComponent:
         values = []
         param_index = 1
 
-        converted_where = self._convert_where_conditions(where_conditions)
-        for col, val in converted_where.items():
+        for col, val in where_conditions.items():
             where_parts.append(f"{col} = ${param_index}")
             values.append(val)
             param_index += 1
@@ -347,7 +362,8 @@ class DatabaseComponent:
                 message_logger=self._message_logger,
             )
 
-            return await self._connection.fetchval(query, *values)
+            async with self._conn_lock:
+                return await self._connection.fetchval(query, *values)
 
         except Exception as e:
             error(
@@ -389,13 +405,21 @@ class DatabaseComponent:
         param_index = 1
         values = []
 
+        # Konwertuj wartość SET na string (jeśli to Enum)
+        set_value = self._to_db_value_for_column(column, value)
+        if hasattr(set_value, "value"):
+            set_value = set_value.value  # Pobierz .value z enuma dla asyncpg
+
         set_clause = f"{column} = ${param_index}"
-        values.append(self._to_db_value_for_column(column, value))
+        values.append(set_value)
         param_index += 1
 
         where_parts = []
         converted_where = self._convert_where_conditions(where_conditions)
         for col, val in converted_where.items():
+            if hasattr(val, "value"):
+                val = val.value  # Pobierz .value z enuma dla asyncpg
+
             where_parts.append(f"{col} = ${param_index}")
             values.append(val)
             param_index += 1
@@ -408,7 +432,8 @@ class DatabaseComponent:
                 f"✏️ UPDATE w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
                 message_logger=self._message_logger,
             )
-            status = await self._connection.execute(query, *values)
+            async with self._conn_lock:
+                status = await self._connection.execute(query, *values)
             # status ma postać np. 'UPDATE 3'
             try:
                 affected = int(status.split()[-1])
@@ -418,70 +443,6 @@ class DatabaseComponent:
         except Exception as e:
             error(
                 f"❌ Błąd UPDATE w bazie '{self.name}': {e}",
-                message_logger=self._message_logger,
-            )
-            raise
-
-    async def update_column_from_column(
-        self,
-        table: str,
-        target_column: str,
-        source_column: str,
-        where_conditions: Dict[str, Any],
-    ) -> int:
-        """
-        Kopiuje wartość z jednej kolumny do drugiej dla wierszy spełniających warunki.
-
-        Przykład: UPDATE table SET current_state = goal_state WHERE ...
-
-        Args:
-            table: Nazwa tabeli
-            target_column: Kolumna docelowa (np. current_state)
-            source_column: Kolumna źródłowa (np. goal_state)
-            where_conditions: Warunki WHERE {kolumna: wartość}
-
-        Returns:
-            Liczba zaktualizowanych wierszy
-
-        Raises:
-            RuntimeError: Jeśli komponent nie jest połączony
-            ValueError: Jeśli where_conditions jest puste
-        """
-        if not self._is_connected or not self._connection:
-            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
-
-        if not where_conditions:
-            raise ValueError("where_conditions nie może być pusty")
-
-        # Buduj WHERE
-        where_parts = []
-        values = []
-        param_index = 1
-        converted_where = self._convert_where_conditions(where_conditions)
-        for col, val in converted_where.items():
-            where_parts.append(f"{col} = ${param_index}")
-            values.append(val)
-            param_index += 1
-
-        where_clause = " AND ".join(where_parts)
-        query = (
-            f"UPDATE {table} SET {target_column} = {source_column} WHERE {where_clause}"
-        )
-
-        try:
-            debug(
-                f"✏️ UPDATE (copy) w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
-                message_logger=self._message_logger,
-            )
-            status = await self._connection.execute(query, *values)
-            try:
-                affected = int(status.split()[-1])
-            except Exception:
-                affected = 0
-            return affected
-        except Exception as e:
-            error(
-                f"❌ Błąd UPDATE (copy) w bazie '{self.name}': {e}",
                 message_logger=self._message_logger,
             )
             raise

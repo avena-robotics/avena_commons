@@ -47,8 +47,8 @@ class DatabaseUpdateAction(BaseAction):
             where = action_config.get("where") or {}
 
             # Domyślne kolumny: goal_state -> current_state
-            source_column = action_config.get("from_column", "goal_state")
-            target_column = action_config.get("to_column", "current_state")
+            column = action_config.get("column", "")
+            value = action_config.get("value", None)
 
             if not component_name:
                 raise ActionExecutionError(
@@ -58,7 +58,7 @@ class DatabaseUpdateAction(BaseAction):
                 raise ActionExecutionError(
                     self.action_type, "Brak 'table' w konfiguracji"
                 )
-            if not isinstance(where, dict) or not where:
+            if not isinstance(where, dict):
                 raise ActionExecutionError(
                     self.action_type, "Pole 'where' musi być niepustym słownikiem"
                 )
@@ -92,15 +92,15 @@ class DatabaseUpdateAction(BaseAction):
                 )
 
             debug(
-                f"database_update: {table}.{target_column} <- {source_column} WHERE {enhanced_where}",
+                f"database_update: {table}.{column} = {value} WHERE {enhanced_where}",
                 message_logger=context.message_logger,
             )
 
             # Wykonaj aktualizację
-            affected = await db_component.update_column_from_column(
+            affected = await db_component.update_table_value(
                 table=table,
-                target_column=target_column,
-                source_column=source_column,
+                column=column,
+                value=value,
                 where_conditions=enhanced_where,
             )
 
@@ -111,22 +111,24 @@ class DatabaseUpdateAction(BaseAction):
                 )
             else:
                 info(
-                    f"database_update: Zaktualizowano rekordy: {affected}",
+                    f"database_update: Zaktualizowano {affected} rekordów",
                     message_logger=context.message_logger,
                 )
 
             return {
                 "updated_rows": affected,
                 "table": table,
-                "from_column": source_column,
-                "to_column": target_column,
+                "column": column,
+                "value": value,
             }
 
         except ActionExecutionError:
             raise
         except Exception as e:
             error(
-                f"database_update: błąd wykonania akcji: {e}",
+                f"database_update: Błąd wykonania akcji: {e}",
                 message_logger=context.message_logger,
             )
-            raise ActionExecutionError(self.action_type, f"Błąd: {str(e)}", e)
+            raise ActionExecutionError(
+                self.action_type, f"Błąd wykonania akcji: {str(e)}", e
+            )
