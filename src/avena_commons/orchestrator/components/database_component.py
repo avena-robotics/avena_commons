@@ -8,12 +8,9 @@ do wykonywania zapytań SQL dla warunków.
 import os
 from typing import Any, Dict, Optional
 
-from avena_commons.util.logger import debug, error, info, warning
+import asyncpg
 
-try:
-    import asyncpg
-except ImportError:
-    asyncpg = None
+from avena_commons.util.logger import debug, error, info, warning
 
 
 class DatabaseComponent:

@@ -6,7 +6,6 @@
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "type": "database",
       "component": "main_database",
       "table": "aps_description",
       "column": "goal_state",
