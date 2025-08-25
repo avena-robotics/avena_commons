@@ -12,6 +12,8 @@ import asyncpg
 
 from avena_commons.util.logger import debug, error, info, warning
 
+from .enums import CurrentState
+
 
 class DatabaseComponent:
     """
@@ -45,6 +47,43 @@ class DatabaseComponent:
         self._connection_params: Dict[str, Any] = {}
         self._is_connected = False
         self._is_initialized = False
+
+    def _to_db_value_for_column(self, column: str, value: Any) -> Any:
+        """
+        Konwertuje wartość dla wybranych kolumn do typu Enum (CurrentState).
+
+        Dotyczy wyłącznie kolumn: 'goal_state' i 'current_state'.
+        Dla innych kolumn zwraca oryginalną wartość bez zmian.
+        """
+        try:
+            if column in {"goal_state", "current_state"}:
+                if value is None:
+                    return None
+                if isinstance(value, CurrentState):
+                    return value
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    return CurrentState(normalized)
+                # Jeśli podano inny Enum, spróbuj z jego value
+                if hasattr(value, "value"):
+                    return CurrentState(str(value.value).strip().lower())
+        except Exception as e:
+            raise ValueError(
+                f"Nie można skonwertować wartości '{value}' kolumny '{column}' do CurrentState: {e}"
+            )
+        return value
+
+    def _convert_where_conditions(
+        self, where_conditions: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Zwraca kopię where_conditions z konwersją wartości tylko dla kolumn
+        'goal_state' i 'current_state' do CurrentState Enum.
+        """
+        converted: Dict[str, Any] = {}
+        for col, val in where_conditions.items():
+            converted[col] = self._to_db_value_for_column(col, val)
+        return converted
 
     def validate_config(self) -> bool:
         """
@@ -293,7 +332,8 @@ class DatabaseComponent:
         values = []
         param_index = 1
 
-        for col, val in where_conditions.items():
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
             where_parts.append(f"{col} = ${param_index}")
             values.append(val)
             param_index += 1
@@ -350,11 +390,12 @@ class DatabaseComponent:
         values = []
 
         set_clause = f"{column} = ${param_index}"
-        values.append(value)
+        values.append(self._to_db_value_for_column(column, value))
         param_index += 1
 
         where_parts = []
-        for col, val in where_conditions.items():
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
             where_parts.append(f"{col} = ${param_index}")
             values.append(val)
             param_index += 1
@@ -416,7 +457,8 @@ class DatabaseComponent:
         where_parts = []
         values = []
         param_index = 1
-        for col, val in where_conditions.items():
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
             where_parts.append(f"{col} = ${param_index}")
             values.append(val)
             param_index += 1
