@@ -2,8 +2,6 @@ from typing import Any, Dict, List
 
 from ..base.base_condition import BaseCondition
 from ..conditions.client_state_condition import ClientStateCondition
-from ..conditions.database_condition import DatabaseCondition
-from ..conditions.database_condition_aps import ApsDatabaseCondition
 from ..conditions.logic_and_condition import LogicAndCondition
 from ..conditions.logic_nand_condition import LogicNandCondition
 from ..conditions.logic_nor_condition import LogicNorCondition
@@ -26,12 +24,6 @@ class ConditionFactory:
         "nor": LogicNorCondition,
         "client_state": ClientStateCondition,
         "time": TimeCondition,
-        # WAŻNE: 'database' pozostaje kompatybilne z dotychczasowym zachowaniem (APS filtry)
-        "database": ApsDatabaseCondition,
-        # Generyczny wariant bez auto filtrów APS
-        "database_generic": DatabaseCondition,
-        # Alias pozostawiony dla czytelności
-        "aps_database": ApsDatabaseCondition,
     }
 
     @classmethod

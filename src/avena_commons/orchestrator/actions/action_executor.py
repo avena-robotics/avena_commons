@@ -40,8 +40,6 @@ class ActionExecutor:
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
         self._actions["send_email"] = SendEmailAction()
-        self._actions["database_update"] = DatabaseUpdateAction()
-        self._actions["aps_database_update"] = ApsDatabaseUpdateAction()
 
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
