@@ -1,0 +1,74 @@
+{
+  "name": "Zatrzymanie wszystkich usług systemu (database-driven)",
+  "description": "Autonomiczny scenariusz zatrzymania - uruchamiany gdy goal_state=inactive a current_state=active w bazie aps_description",
+  "priority": 99,
+  "cooldown": 60,
+  "trigger": {
+    "type": "automatic",
+    "conditions": {
+      "database": {
+        "component": "main_database",
+        "table": "aps_description",
+        "column": "goal_state",
+        "where": {
+          "current_state": "active"
+        },
+        "expected_value": "inactive",
+        "operator": "equals"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "AUTONOMICZNY STOP: Wykryto w bazie aps_description goal_state=inactive z current_state=active - rozpoczynam zatrzymanie",
+      "description": "Informacja o autonomicznym wyzwoleniu scenariusza na podstawie bazy danych"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Warunki spełnione: znaleziono rekordy w aps_description gdzie goal_state=inactive ale current_state=active",
+      "description": "Potwierdzenie spełnienia warunków bazodanowych"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Autonomiczne zatrzymanie wszystkich komponentów (@all)...",
+      "description": "Rozpoczęcie autonomicznego zatrzymania"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_STOPPED",
+      "description": "Zatrzymanie wszystkich komponentów systemu"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "STOPPED",
+      "timeout": "30s",
+      "description": "Oczekiwanie na zatrzymanie wszystkich komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Autonomiczne zatrzymanie wszystkich komponentów (@all) - przejście do stanu STOPPED...",
+      "description": "Zakończone autonomiczne zatrzymanie"
+    },
+    {
+      "type": "aps_database_update",
+      "component": "main_database",
+      "table": "aps_description",
+      "column": "current_state",
+      "value": "inactive",
+      "description": "Synchronizacja current_state z goal_state po udanym scenariuszu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Aktualizacja bazy danych: current_state z goal_state po udanym scenariuszu",
+      "description": "Aktualizacja current_state z goal_state po udanym scenariuszu"
+    }
+  ]
+}
