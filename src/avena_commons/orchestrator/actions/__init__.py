@@ -7,7 +7,7 @@ takich jak log_event, send_command, wait_for_state, etc.
 
 from .action_executor import ActionExecutor
 from .base_action import ActionContext, ActionExecutionError, BaseAction
-from .database_update_action import DatabaseUpdateAction
+from .database_update_action_base import DatabaseUpdateAction
 from .log_action import LogAction
 from .send_command_action import SendCommandAction
 from .send_email_action import SendEmailAction

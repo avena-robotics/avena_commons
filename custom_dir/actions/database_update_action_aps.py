@@ -4,10 +4,8 @@ Wariant akcji database_update z automatycznym dodaniem filtrów APS do WHERE.
 
 from typing import Any, Dict
 
+from avena_commons.orchestrator.actions import DatabaseUpdateAction
 from avena_commons.util.logger import debug
-
-from .base_action import ActionContext, ActionExecutionError
-from .database_update_action_base import DatabaseUpdateAction
 
 
 class ApsDatabaseUpdateAction(DatabaseUpdateAction):

@@ -4,9 +4,8 @@ Wariant warunku bazodanowego rozszerzający WHERE o filtry APS (id, name).
 
 from typing import Any, Dict
 
+from avena_commons.orchestrator.conditions import DatabaseCondition
 from avena_commons.util.logger import debug
-
-from .database_condition_base import DatabaseCondition
 
 
 class ApsDatabaseCondition(DatabaseCondition):

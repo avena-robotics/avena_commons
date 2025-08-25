@@ -634,7 +634,6 @@ class Orchestrator(EventListener):
             f"Znaleziono {len(py_files)} plików warunków {source_type}: {[f.name for f in py_files]}",
             message_logger=self._message_logger,
         )
-
         # Wczytaj każdy plik Python jako moduł
         for py_file in py_files:
             try:
@@ -644,7 +643,13 @@ class Orchestrator(EventListener):
                         f"avena_commons.orchestrator.conditions.{py_file.stem}"
                     )
                 else:
-                    module_name = f"avena_commons.orchestrator.{source_type}_conditions.{py_file.stem}"
+                    custom_dir = (
+                        str(conditions_dir)
+                        .replace("\\", "/")
+                        .strip("/")
+                        .replace("/", ".")
+                    )
+                    module_name = f"{custom_dir}.{py_file.stem}"
 
                 module = importlib.import_module(module_name)
 
