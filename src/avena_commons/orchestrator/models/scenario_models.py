@@ -76,13 +76,20 @@ class ActionModel(BaseModel):
 
     # Parametry akcji send_email
     to: Optional[Union[str, List[str]]] = Field(
-        None, description="Adres(y) odbiorców e-mail (string lub lista)"
+        None,
+        description="Adres(y) odbiorców e-mail (string lub lista) oraz numer sms (string lub lista)",
     )
     subject: Optional[str] = Field(None, description="Temat wiadomości e-mail")
     body: Optional[str] = Field(None, description="Treść wiadomości e-mail")
     smtp: Optional[Dict[str, Any]] = Field(
         None,
         description="Konfiguracja SMTP per-akcja (opcjonalne, nadpisuje globalną)",
+    )
+
+    # Parametry akcji send_sms
+    text: Optional[str] = Field(None, description="Treść wiadomości SMS")
+    sms: Optional[Dict[str, Any]] = Field(
+        None, description="Konfiguracja SMS per-akcja (opcjonalne, nadpisuje globalną)"
     )
 
     @validator("type")
@@ -92,6 +99,8 @@ class ActionModel(BaseModel):
             "log_event",
             "send_command",
             "wait_for_state",
+            "send_email",
+            "send_sms",
             "test",
             "custom_process",  # Dodaj inne znane typy
         }

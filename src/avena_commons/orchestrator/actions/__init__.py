@@ -9,8 +9,9 @@ from .action_executor import ActionExecutor
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .log_action import LogAction
 from .send_command_action import SendCommandAction
-from .wait_for_state_action import WaitForStateAction
 from .send_email_action import SendEmailAction
+from .send_sms_action import SendSmsAction
+from .wait_for_state_action import WaitForStateAction
 
 __all__ = [
     "ActionExecutor",
@@ -22,4 +23,5 @@ __all__ = [
     "WaitForStateAction",
     "SystemctlAction",
     "SendEmailAction",
+    "SendSmsAction",
 ]
