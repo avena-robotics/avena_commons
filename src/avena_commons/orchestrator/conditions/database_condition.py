@@ -47,15 +47,21 @@ class DatabaseCondition(BaseCondition):
         "is_not_null",
     ]
 
-    def __init__(self, config: Dict[str, Any], message_logger=None):
+    def __init__(
+        self, config: Dict[str, Any], message_logger=None, condition_factory=None
+    ):
         """
         Inicjalizuje warunek bazodanowy.
 
         Args:
             config: Konfiguracja warunku
             message_logger: Logger wiadomości
+            condition_factory: Fabryka warunków
         """
-        super().__init__(config, message_logger)
+        self._message_logger = message_logger
+        self._condition_factory = condition_factory
+
+        super().__init__(config, message_logger, condition_factory)
 
         # Walidacja konfiguracji
         self._validate_config()

@@ -6,14 +6,16 @@
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "component": "main_database",
-      "table": "aps_description",
-      "column": "goal_state",
-      "where": {
-        "current_state": "active"
-      },
-      "expected_value": "inactive",
-      "operator": "equals"
+      "database": {
+        "component": "main_database",
+        "table": "aps_description",
+        "column": "goal_state",
+        "where": {
+          "current_state": "active"
+        },
+        "expected_value": "inactive",
+        "operator": "equals"
+      }
     }
   },
   "actions": [
@@ -53,6 +55,23 @@
       "level": "info",
       "message": "Autonomiczne zatrzymanie wszystkich komponentów (@all) - przejście do stanu STOPPED...",
       "description": "Zakończone autonomiczne zatrzymanie"
+    },
+    {
+      "type": "database_update",
+      "component": "main_database",
+      "table": "aps_description",
+      "from_column": "goal_state",
+      "to_column": "current_state",
+      "where": {
+        "current_state": "inactive"
+      },
+      "description": "Synchronizacja current_state z goal_state po udanym scenariuszu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Aktualizacja bazy danych: current_state z goal_state po udanym scenariuszu",
+      "description": "Aktualizacja current_state z goal_state po udanym scenariuszu"
     }
   ]
 }

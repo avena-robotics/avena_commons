@@ -88,10 +88,6 @@ class DatabaseComponent:
                     if key == "name":
                         key = "database"  # asyncpg używa "database" zamiast "name"
                     self._connection_params[key] = value
-                else:
-                    # APS_ID, APS_NAME - zapisz jako application_name dla PostgreSQL
-                    if param == "APS_NAME":
-                        self._connection_params["application_name"] = value
 
         if missing_params:
             raise ValueError(
@@ -320,6 +316,134 @@ class DatabaseComponent:
             )
             raise
 
+    async def update_table_value(
+        self,
+        table: str,
+        column: str,
+        value: Any,
+        where_conditions: Dict[str, Any],
+    ) -> int:
+        """
+        Aktualizuje wskazaną kolumnę stałą wartością dla wierszy spełniających warunki.
+
+        Args:
+            table: Nazwa tabeli
+            column: Nazwa kolumny do aktualizacji
+            value: Wartość do ustawienia
+            where_conditions: Warunki WHERE {kolumna: wartość}
+
+        Returns:
+            Liczba zaktualizowanych wierszy
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+            ValueError: Jeśli where_conditions jest puste
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Buduj SET i WHERE
+        param_index = 1
+        values = []
+
+        set_clause = f"{column} = ${param_index}"
+        values.append(value)
+        param_index += 1
+
+        where_parts = []
+        for col, val in where_conditions.items():
+            where_parts.append(f"{col} = ${param_index}")
+            values.append(val)
+            param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
+
+        try:
+            debug(
+                f"✏️ UPDATE w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
+                message_logger=self._message_logger,
+            )
+            status = await self._connection.execute(query, *values)
+            # status ma postać np. 'UPDATE 3'
+            try:
+                affected = int(status.split()[-1])
+            except Exception:
+                affected = 0
+            return affected
+        except Exception as e:
+            error(
+                f"❌ Błąd UPDATE w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    async def update_column_from_column(
+        self,
+        table: str,
+        target_column: str,
+        source_column: str,
+        where_conditions: Dict[str, Any],
+    ) -> int:
+        """
+        Kopiuje wartość z jednej kolumny do drugiej dla wierszy spełniających warunki.
+
+        Przykład: UPDATE table SET current_state = goal_state WHERE ...
+
+        Args:
+            table: Nazwa tabeli
+            target_column: Kolumna docelowa (np. current_state)
+            source_column: Kolumna źródłowa (np. goal_state)
+            where_conditions: Warunki WHERE {kolumna: wartość}
+
+        Returns:
+            Liczba zaktualizowanych wierszy
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+            ValueError: Jeśli where_conditions jest puste
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Buduj WHERE
+        where_parts = []
+        values = []
+        param_index = 1
+        for col, val in where_conditions.items():
+            where_parts.append(f"{col} = ${param_index}")
+            values.append(val)
+            param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = (
+            f"UPDATE {table} SET {target_column} = {source_column} WHERE {where_clause}"
+        )
+
+        try:
+            debug(
+                f"✏️ UPDATE (copy) w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
+                message_logger=self._message_logger,
+            )
+            status = await self._connection.execute(query, *values)
+            try:
+                affected = int(status.split()[-1])
+            except Exception:
+                affected = 0
+            return affected
+        except Exception as e:
+            error(
+                f"❌ Błąd UPDATE (copy) w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
     def get_status(self) -> Dict[str, Any]:
         """
         Zwraca status komponentu bazodanowego.
@@ -335,7 +459,5 @@ class DatabaseComponent:
             "database_host": self._connection_params.get("host", "unknown"),
             "database_name": self._connection_params.get("database", "unknown"),
             "database_port": self._connection_params.get("port", "unknown"),
-            "application_name": self._connection_params.get(
-                "application_name", "unknown"
-            ),
+            "name": self._connection_params.get("name", "unknown"),
         }
