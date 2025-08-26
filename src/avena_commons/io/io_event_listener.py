@@ -525,10 +525,188 @@ class IO_server(EventListener):
                         message_logger=self._message_logger,
                     )
 
-            # TODO: Implementacja kaskadowego zamykania urządzeń
+            # Implementacja kaskadowego zamykania urządzeń
             # 1. Zatrzymaj wszystkie virtual devices
             # 2. Zatrzymaj wszystkie physical devices
             # 3. Zatrzymaj wszystkie buses
+
+            def _try_shutdown(obj, obj_name: str, obj_kind: str):
+                """Spróbuj grzecznie zamknąć obiekt wywołując jedną ze standardowych metod.
+
+                Priorytet: shutdown → stop → close → disconnect. Każde wywołanie jest opcjonalne.
+                Błędy są logowane i ignorowane, aby nie blokować dalszego zamykania.
+                """
+                for method_name in ("shutdown", "stop", "close", "disconnect"):
+                    try:
+                        if hasattr(obj, method_name):
+                            method = getattr(obj, method_name)
+                            if callable(method):
+                                method()
+                                if self._debug:
+                                    debug(
+                                        f"{obj_kind} {obj_name}: executed {method_name}()",
+                                        message_logger=self._message_logger,
+                                    )
+                                # Nie przerywamy po pierwszym sukcesie - niektóre klasy mają semantykę
+                                # idempotentną i wykonanie kilku metod jest bezpieczne.
+                    except Exception as e:
+                        error(
+                            f"Error while shutting down {obj_kind} {obj_name} using {method_name}(): {e}",
+                            message_logger=self._message_logger,
+                        )
+
+            # 1) Virtual Devices → usuń referencje do urządzeń fizycznych, wywołaj metody zamykania i usuń z kontenera
+            if hasattr(self, "virtual_devices") and isinstance(
+                self.virtual_devices, dict
+            ):
+                for vname in list(self.virtual_devices.keys()):
+                    vdev = self.virtual_devices.pop(vname, None)
+                    if vdev is None:
+                        continue
+                    try:
+                        _try_shutdown(vdev, vname, "virtual_device")
+                        # Odłącz referencje do podłączonych urządzeń, by ułatwić GC i zwolnienie magistral
+                        try:
+                            if hasattr(vdev, "devices"):
+                                vdev.devices = {}
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        error(
+                            f"Error during virtual device shutdown {vname}: {e}",
+                            message_logger=self._message_logger,
+                        )
+
+            # 2) Physical Devices → zatrzymaj wątki/połączenia i usuń z kontenera
+            if hasattr(self, "physical_devices") and isinstance(
+                self.physical_devices, dict
+            ):
+                for dname in list(self.physical_devices.keys()):
+                    dev = self.physical_devices.pop(dname, None)
+                    if dev is None:
+                        continue
+                    try:
+                        _try_shutdown(dev, dname, "physical_device")
+                        # Spróbuj zatrzymać wątki urządzenia (jeśli występują) i poczekać na ich zakończenie
+                        try:
+                            # Ustawie sygnały stop
+                            if hasattr(dev, "_di_stop_event"):
+                                getattr(dev, "_di_stop_event").set()
+                            if hasattr(dev, "_do_stop_event"):
+                                getattr(dev, "_do_stop_event").set()
+                            if hasattr(dev, "_stop_event"):
+                                getattr(dev, "_stop_event").set()
+
+                            # Dołącz do znanych wątków jeśli żyją
+                            for thread_attr in (
+                                "_di_thread",
+                                "_do_thread",
+                                "_jog_thread",
+                                "_status_thread",
+                            ):
+                                try:
+                                    if hasattr(dev, thread_attr):
+                                        t = getattr(dev, thread_attr)
+                                        if t is not None and getattr(t, "is_alive")():
+                                            getattr(t, "join")(timeout=1.0)
+                                            setattr(dev, thread_attr, None)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        # Jeżeli urządzenie jest Connector'em - spróbuj wysłać STOP do procesu i go zakończyć
+                        try:
+                            if hasattr(dev, "_send_thru_pipe") and hasattr(
+                                dev, "_pipe_out"
+                            ):
+                                dev._send_thru_pipe(dev._pipe_out, ["STOP"])  # type: ignore[attr-defined]
+                                if (
+                                    hasattr(dev, "_process")
+                                    and getattr(dev, "_process") is not None
+                                ):
+                                    proc = getattr(dev, "_process")
+                                    try:
+                                        if getattr(proc, "is_alive")():
+                                            getattr(proc, "terminate")()
+                                            getattr(proc, "join")()
+                                    except Exception:
+                                        pass
+                                if self._debug:
+                                    debug(
+                                        f"physical_device {dname}: sent STOP to connector process",
+                                        message_logger=self._message_logger,
+                                    )
+                        except Exception as e:
+                            error(
+                                f"Error while sending STOP to physical_device {dname}: {e}",
+                                message_logger=self._message_logger,
+                            )
+                        # Odłącz referencję do magistrali, aby umożliwić jej zwolnienie
+                        try:
+                            if hasattr(dev, "bus"):
+                                dev.bus = None
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        error(
+                            f"Error during physical device shutdown {dname}: {e}",
+                            message_logger=self._message_logger,
+                        )
+
+            # 3) Buses → zatrzymaj procesy/połączenia i usuń z kontenera
+            if hasattr(self, "buses") and isinstance(self.buses, dict):
+                for bname in list(self.buses.keys()):
+                    bus = self.buses.pop(bname, None)
+                    if bus is None:
+                        continue
+                    try:
+                        _try_shutdown(bus, bname, "bus")
+                        # Jeżeli magistrala jest Connector'em - wyślij STOP do procesu i poczekaj na zakończenie
+                        try:
+                            if hasattr(bus, "_send_thru_pipe") and hasattr(
+                                bus, "_pipe_out"
+                            ):
+                                bus._send_thru_pipe(bus._pipe_out, ["STOP"])  # type: ignore[attr-defined]
+                                if (
+                                    hasattr(bus, "_process")
+                                    and getattr(bus, "_process") is not None
+                                ):
+                                    proc = getattr(bus, "_process")
+                                    try:
+                                        if getattr(proc, "is_alive")():
+                                            getattr(proc, "terminate")()
+                                            getattr(proc, "join")()
+                                    except Exception:
+                                        pass
+                                if self._debug:
+                                    debug(
+                                        f"bus {bname}: sent STOP to connector process",
+                                        message_logger=self._message_logger,
+                                    )
+                        except Exception as e:
+                            error(
+                                f"Error while sending STOP to bus {bname}: {e}",
+                                message_logger=self._message_logger,
+                            )
+                    except Exception as e:
+                        error(
+                            f"Error during bus shutdown {bname}: {e}",
+                            message_logger=self._message_logger,
+                        )
+
+            # Upewnij się, że kontenery są puste - ponowna inicjalizacja stworzy świeże obiekty/procesy
+            try:
+                self.virtual_devices = {}
+            except Exception:
+                pass
+            try:
+                self.physical_devices = {}
+            except Exception:
+                pass
+            try:
+                self.buses = {}
+            except Exception:
+                pass
 
         except Exception as e:
             error(
