@@ -38,7 +38,7 @@
     {
       "type": "send_email",
       "description": "Powiadomienie o wykryciu błędu",
-      "to": ["ops@test"],
+      "to": ["norbert.niemc@pomagier.info", "mikolaj.galant@pomagier.info", "damian.gawin@pomagier.info"],
       "subject": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}",
       "body": "Wykryto stan FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
     },
@@ -82,7 +82,7 @@
     {
       "type": "send_email",
       "description": "Raport po wstrzymaniu usług",
-      "to": ["ops@test"],
+      "to": ["norbert.niemc@pomagier.info", "mikolaj.galant@pomagier.info", "damian.gawin@pomagier.info"],
       "subject": "[INFO] System wstrzymany - komponenty w błędzie: {{ clients_in_fault }}",
       "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
     },
