@@ -1202,78 +1202,77 @@ class EventListener:
                 self.__check_local_data_frequency_changed = False
 
             loop.loop_begin()
-
-            # Event processing per state zgodnie z FSM analizą
-            match self.__fsm_state:
-                case EventListenerState.UNKNOWN:
-                    pass
-                case EventListenerState.STOPPED:
-                    await self.on_stopped()
-                case EventListenerState.INITIALIZING:
-                    # Wczytanie zapisanych kolejek
-                    if self.__load_state:
-                        self.__load_state()
-                    await self.on_initializing()
-                    self._change_fsm_state(EventListenerState.INITIALIZED)
-                case EventListenerState.INITIALIZED:
-                    await self.on_initialized()
-                case EventListenerState.STARTING:
-                    await self.on_starting()
-                    self._change_fsm_state(EventListenerState.RUN)
-                case EventListenerState.RUN:
-                    await self.on_run()
-                    try:
+            try:
+                # Event processing per state zgodnie z FSM analizą
+                match self.__fsm_state:
+                    case EventListenerState.UNKNOWN:
+                        pass
+                    case EventListenerState.STOPPED:
+                        await self.on_stopped()
+                    case EventListenerState.INITIALIZING:
+                        # Wczytanie zapisanych kolejek
+                        if self.__load_state:
+                            self.__load_state()
+                        await self.on_initializing()
+                        self._change_fsm_state(EventListenerState.INITIALIZED)
+                    case EventListenerState.INITIALIZED:
+                        await self.on_initialized()
+                    case EventListenerState.STARTING:
+                        await self.on_starting()
+                        self._change_fsm_state(EventListenerState.RUN)
+                    case EventListenerState.RUN:
+                        await self.on_run()
                         await self._check_local_data()
-                    except Exception as e:
-                        error(f"Error in check_local_data: {e}")
-                        self._change_fsm_state(EventListenerState.ON_ERROR)
 
-                    if (
-                        loop.loop_counter % self.__check_local_data_frequency == 0
-                    ):  # co 1 sekunde
-                        self.__received_events_per_second = (
-                            self.__received_events - self.__prev_received_events
+                        if (
+                            loop.loop_counter % self.__check_local_data_frequency == 0
+                        ):  # co 1 sekunde
+                            self.__received_events_per_second = (
+                                self.__received_events - self.__prev_received_events
+                            )
+                            self.__sended_events_per_second = (
+                                self.__sended_events - self.__prev_sended_events
+                            )
+
+                            # Aktualizacja poprzednich wartości i czasu
+                            self.__prev_received_events = self.__received_events
+                            self.__prev_sended_events = self.__sended_events
+
+                    case EventListenerState.PAUSING:
+                        await self.on_pausing()
+                        self._change_fsm_state(EventListenerState.PAUSE)
+                    case EventListenerState.RESUMING:
+                        await self.on_resuming()
+                        self._change_fsm_state(EventListenerState.RUN)
+                    case EventListenerState.PAUSE:
+                        await self.on_pause()
+                    case EventListenerState.SOFT_STOPPING:
+                        await self.on_soft_stopping()
+                        self._change_fsm_state(EventListenerState.INITIALIZED)
+                    case EventListenerState.HARD_STOPPING:
+                        await self.on_hard_stopping()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case EventListenerState.STOPPING:
+                        self.__save_state()
+                        await self.on_stopping()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case EventListenerState.FAULT:
+                        await self.on_fault()
+                    case EventListenerState.ON_ERROR:
+                        await self.on_error()
+                        self._change_fsm_state(EventListenerState.FAULT)
+                    case EventListenerState.ACK:
+                        self.__save_state()
+                        await self.on_ack()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case _:
+                        error(
+                            f"Unknown state: {self.__fsm_state}",
+                            message_logger=self._message_logger,
                         )
-                        self.__sended_events_per_second = (
-                            self.__sended_events - self.__prev_sended_events
-                        )
-
-                        # Aktualizacja poprzednich wartości i czasu
-                        self.__prev_received_events = self.__received_events
-                        self.__prev_sended_events = self.__sended_events
-
-                case EventListenerState.PAUSING:
-                    await self.on_pausing()
-                    self._change_fsm_state(EventListenerState.PAUSE)
-                case EventListenerState.RESUMING:
-                    await self.on_resuming()
-                    self._change_fsm_state(EventListenerState.RUN)
-                case EventListenerState.PAUSE:
-                    await self.on_pause()
-                case EventListenerState.SOFT_STOPPING:
-                    await self.on_soft_stopping()
-                    self._change_fsm_state(EventListenerState.INITIALIZED)
-                case EventListenerState.HARD_STOPPING:
-                    await self.on_hard_stopping()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case EventListenerState.STOPPING:
-                    self.__save_state()
-                    await self.on_stopping()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case EventListenerState.FAULT:
-                    await self.on_fault()
-                case EventListenerState.ON_ERROR:
-                    await self.on_error()
-                    self._change_fsm_state(EventListenerState.FAULT)
-                case EventListenerState.ACK:
-                    self.__save_state()
-                    await self.on_ack()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case _:
-                    error(
-                        f"Unknown state: {self.__fsm_state}",
-                        message_logger=self._message_logger,
-                    )
+            except Exception as e:
+                error(f"Error in check_local_data: {e}")
+                self._change_fsm_state(EventListenerState.ON_ERROR)
 
             loop.loop_end()
 
