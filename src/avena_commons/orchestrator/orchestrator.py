@@ -1608,6 +1608,7 @@ class Orchestrator(EventListener):
                 event_type="CMD_GET_STATE",
                 data={},
                 to_be_processed=False,
+                is_system_event=True,
             )
             self._add_to_processing(event)
 

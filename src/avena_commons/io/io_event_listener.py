@@ -1,6 +1,5 @@
 import importlib
 import json
-import os
 import traceback
 from typing import Any, Dict, Optional
 
@@ -130,7 +129,6 @@ class IO_server(EventListener):
         # Resetuj lokalny stan błędu IO
         self._error = False
         self._error_message = None
-        pass
 
     async def on_error(self):
         """Metoda wywoływana podczas przejścia w stan ON_ERROR.
@@ -150,7 +148,6 @@ class IO_server(EventListener):
         if self._debug:
             debug("FSM: Enabling IO operations", message_logger=self._message_logger)
         # IO_server nie posiada trybu ENABLE jak robot - brak dodatkowych akcji
-        pass
 
     async def on_pausing(self):
         """
@@ -160,7 +157,6 @@ class IO_server(EventListener):
         if self._debug:
             debug("FSM: Pausing IO operations", message_logger=self._message_logger)
         # Brak specyficznej logiki - urządzenia wirtualne obsługują pauzę w swoich tick()
-        pass
 
     async def on_resuming(self):
         """
@@ -170,7 +166,6 @@ class IO_server(EventListener):
         if self._debug:
             debug("FSM: Resuming IO operations", message_logger=self._message_logger)
         # Brak specyficznych akcji
-        pass
 
     async def on_soft_stopping(self):
         """
@@ -183,7 +178,6 @@ class IO_server(EventListener):
                 message_logger=self._message_logger,
             )
         # NIE wymuszamy zatrzymania - pozwalamy dokończyć przetwarzanie zdarzeń
-        pass
 
     async def on_hard_stopping(self):
         """
@@ -289,7 +283,6 @@ class IO_server(EventListener):
         device_prefix = parts[0].lower()
         action = "execute_event"  # Default method to call on the device
 
-        # FIXME: Znaleźć lepszy sposób na odczytywanie nazwy urządzenia i akcji
         # Create device name by combining prefix with device_id
         device_name = f"{device_prefix}{device_id}"
 
@@ -343,7 +336,6 @@ class IO_server(EventListener):
           from affecting others
         - Error handling at multiple levels (device level and method level)
         """
-        # debug(f"Checking local data begin ---", message_logger=self._message_logger)
         with MeasureTime(
             label="io - checking local data",
             max_execution_time=20.0,
@@ -371,6 +363,7 @@ class IO_server(EventListener):
                                         f"Error calling tick() on virtual device {device_name}: {str(e)}, {traceback.format_exc()}",
                                         message_logger=self._message_logger,
                                     )
+                                    raise e
 
                             # Proactive error detection: if any virtual device reports ERROR, trigger IO FSM ON_ERROR
                             try:
@@ -447,11 +440,14 @@ class IO_server(EventListener):
                                             f"Error processing events for {device_name}: {str(e)}",
                                             message_logger=self._message_logger,
                                         )
+                                        raise e
             except Exception as e:
                 error(
                     f"Error in _check_local_data: {str(e)}",
                     message_logger=self._message_logger,
                 )
+                self._change_fsm_state(EventListenerState.ON_ERROR)
+                return
 
             # Proactive BUS health check: if any bus is unhealthy, trigger IO FSM ON_ERROR
             try:
@@ -459,42 +455,36 @@ class IO_server(EventListener):
                     for bus_name, bus in self.buses.items():
                         if bus is None:
                             continue
-                        try:
-                            if hasattr(bus, "check_device_connection") and callable(
-                                bus.check_device_connection
-                            ):
-                                bus.check_device_connection()
-                            elif hasattr(bus, "is_connected"):
-                                # Accept both property and method styles
-                                is_connected = (
-                                    bus.is_connected
-                                    if not callable(bus.is_connected)
-                                    else bus.is_connected()
-                                )
-                                if is_connected is False:
-                                    raise RuntimeError(
-                                        f"Bus {bus_name} reported disconnected state"
-                                    )
-                        except Exception as bus_exc:
-                            error(
-                                f"Bus health check failed for {bus_name}: {bus_exc}",
-                                message_logger=self._message_logger,
+                        if hasattr(bus, "check_device_connection") and callable(
+                            bus.check_device_connection
+                        ):
+                            bus.check_device_connection()
+                        elif hasattr(bus, "is_connected"):
+                            # Accept both property and method styles
+                            is_connected = (
+                                bus.is_connected
+                                if not callable(bus.is_connected)
+                                else bus.is_connected()
                             )
-                            # Zapisz źródło błędu
-                            self._error = True
-                            self._error_message = bus_name
-                            if self.fsm_state not in {
-                                EventListenerState.ON_ERROR,
-                                EventListenerState.FAULT,
-                            }:
-                                self._change_fsm_state(EventListenerState.ON_ERROR)
-                                return
-            except Exception as e:
+                            if is_connected is False:
+                                raise RuntimeError(
+                                    f"Bus {bus_name} reported disconnected state"
+                                )
+
+            except Exception as bus_exc:
                 error(
-                    f"Error during buses health check: {e}",
+                    f"Bus health check failed for {[bus_name if bus_name else 'unknown']}: {bus_exc}",
                     message_logger=self._message_logger,
                 )
-        # debug(f"Checking local data end ---", message_logger=self._message_logger)
+                # Zapisz źródło błędu
+                self._error = True
+                self._error_message = [bus_name if bus_name else "unknown"]
+                if self.fsm_state not in {
+                    EventListenerState.ON_ERROR,
+                    EventListenerState.FAULT,
+                }:
+                    self._change_fsm_state(EventListenerState.ON_ERROR)
+                    return
 
     def _execute_before_shutdown(
         self,

@@ -461,7 +461,10 @@ class EventListener:
 
     def _event_find_and_remove_debug(self, event: Event):
         processing_time = time.time() - event.timestamp.timestamp()
-        if processing_time < event.maximum_processing_time:
+        if (
+            processing_time < event.maximum_processing_time
+            and not event.is_system_event
+        ):
             debug(
                 f"Event find and remove from processing: source={event.source} destination={event.destination} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} processing_time={processing_time:.2f}s.",
                 message_logger=self._message_logger,
@@ -473,14 +476,16 @@ class EventListener:
             )
 
     def _event_add_to_processing_debug(self, event: Event):
-        debug(
-            f"Event add to processing: id={event.id} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
-            message_logger=self._message_logger,
-        )
+        if not event.is_system_event:
+            debug(
+                f"Event add to processing: id={event.id} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
+                message_logger=self._message_logger,
+            )
 
     @contextmanager
     def _event_send_debug(self, event: Event):
         if event.is_system_event:  # nie debugujemy systemowych
+            yield
             return
         start = time.perf_counter()
         try:
@@ -1175,10 +1180,11 @@ class EventListener:
                     )
                 else:
                     self.__incoming_events.append(event)
-                    debug(
-                        f"Added event to incomming events queue: {event}",
-                        message_logger=self._message_logger,
-                    )
+                    if not event.is_system_event:
+                        debug(
+                            f"Added event to incomming events queue: {event}",
+                            message_logger=self._message_logger,
+                        )
             self.__received_events += 1
         except Exception as e:
             error(f"__event_handler: {e}", message_logger=self._message_logger)
@@ -1352,10 +1358,10 @@ class EventListener:
                     self.__events_to_send.clear()
 
                 if local_queue:
-                    debug(
-                        f"Sending events: {len(local_queue)}",
-                        message_logger=self._message_logger,
-                    )
+                    # debug(
+                    #     f"Sending events: {len(local_queue)}",
+                    #     message_logger=self._message_logger,
+                    # )
 
                     if self.__use_cumulative_send:
                         # Group events by destination
@@ -1872,11 +1878,11 @@ class EventListener:
         try:
             # Obsługa zarówno datetime jak i string timestamp
             timestamp_key = event.timestamp.isoformat()
-
-            debug(
-                f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
-                message_logger=self._message_logger,
-            )
+            if not event.is_system_event:
+                debug(
+                    f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
+                    message_logger=self._message_logger,
+                )
 
             with self.__atomic_operation_for_processing_events():
                 event = self._processing_events_dict[timestamp_key]
