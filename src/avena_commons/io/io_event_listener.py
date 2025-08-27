@@ -1490,9 +1490,6 @@ class IO_server(EventListener):
 
             # Apply state values from io_state.json after device initialization
             if self._load_state:
-                debug(
-                    f"self._state: {self._state}", message_logger=self._message_logger
-                )
                 self._apply_io_state_values(device_instance, device_name, folder_name)
             else:
                 if self._debug:
