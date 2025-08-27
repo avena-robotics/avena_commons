@@ -1122,22 +1122,14 @@ class IO_server(EventListener):
         self, device_instance, device_name: str, folder_name: str
     ):
         """
-        Stosuje wartości stanu z io_state.json do urządzenia po jego inicjalizacji.
-
-        UWAGA: Ta funkcja jest wywoływana tylko wtedy, gdy parametr load_state
-        konstruktora IO_server jest ustawiony na False. Pozwala to na kontrolę
-        czy stan ma być ładowany z pliku, czy urządzenia mają być inicjalizowane
-        z wartościami domyślnymi.
-
-        Ładuje rzeczywiste wartości stanu jak di_value, do_current_state, etc. - nie parametry konfiguracyjne.
+        Zastosuj wartości stanu do urządzenia po jego inicjalizacji, korzystając
+        w pierwszej kolejności z już wczytanego stanu w pamięci (`self._state`).
 
         Args:
             device_instance: instancja urządzenia
             device_name: nazwa urządzenia
             folder_name: typ urządzenia ("device", "virtual_device", "bus")
         """
-        io_state_file = "temp/io_state.json"
-
         if self._debug:
             debug(
                 f"Applying IO state values for {device_name} ({folder_name}) - load_state is True",
@@ -1145,41 +1137,36 @@ class IO_server(EventListener):
             )
 
         try:
-            if not os.path.exists(io_state_file):
-                if self._debug:
-                    debug(
-                        f"File {io_state_file} does not exist, skipping state loading",
-                        message_logger=self._message_logger,
-                    )
-                return
+            # Preferuj stan w pamięci ustawiony przez EventListener.__load_state
+            memory_state = {}
+            try:
+                if isinstance(self._state, dict):
+                    memory_state = self._state
+            except Exception:
+                memory_state = {}
 
-            with open(io_state_file, "r", encoding="utf-8") as f:
-                io_state = json.load(f)
-
-            # Znajdź dane stanu urządzenia
+            # Znajdź dane stanu urządzenia w pamięci
             device_state_data = None
 
             if folder_name == "virtual_device":
-                # Urządzenia wirtualne są w state.virtual_devices
-                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
+                virtual_devices = memory_state.get("virtual_devices", {})
                 if device_name in virtual_devices:
                     device_state_data = virtual_devices[device_name]
 
             elif folder_name == "device":
-                # Urządzenia fizyczne mogą być w różnych virtual_devices jako connected_devices
-                virtual_devices = io_state.get("state", {}).get("virtual_devices", {})
-                for vdev_name, vdev_data in virtual_devices.items():
+                virtual_devices = memory_state.get("virtual_devices", {})
+                for _vdev_name, vdev_data in virtual_devices.items():
                     connected_devices = vdev_data.get("connected_devices", {})
                     if device_name in connected_devices:
                         device_state_data = connected_devices[device_name]
                         break
 
             elif folder_name == "bus":
-                # Magistrale są w state.buses
-                buses = io_state.get("state", {}).get("buses", {})
+                buses = memory_state.get("buses", {})
                 if device_name in buses:
                     device_state_data = buses[device_name]
 
+            # Jeśli nie znaleziono stanu w pamięci, nie wykonuj nic (plik mógł zostać usunięty)
             if not device_state_data:
                 return
 
@@ -1248,11 +1235,121 @@ class IO_server(EventListener):
                             message_logger=self._message_logger,
                         )
 
-            if values_applied and self._debug:
-                debug(
-                    f"Applied state values to {device_name}: {values_applied}",
-                    message_logger=self._message_logger,
-                )
+            if folder_name == "virtual_device":
+                # Przywracanie wewnętrznego FSM urządzenia wirtualnego (jeśli dostępny w pamięci)
+                try:
+                    from enum import Enum as _EnumType
+
+                    fsm_serialized = device_state_data.get("__fsm")
+                    fsm_obj = None
+                    fsm_attr_name = None
+
+                    # Znajdź obiekt/atrybut FSM na urządzeniu (name-mangling __fsm lub alternatywy)
+                    try:
+                        private_fsm_attrs = [
+                            attr
+                            for attr in vars(device_instance).keys()
+                            if attr.endswith("__fsm")
+                        ]
+                        if private_fsm_attrs:
+                            fsm_attr_name = private_fsm_attrs[0]
+                            fsm_obj = getattr(device_instance, fsm_attr_name, None)
+                    except Exception:
+                        pass
+                    if fsm_obj is None:
+                        for candidate in ("_fsm", "fsm"):
+                            if hasattr(device_instance, candidate):
+                                fsm_attr_name = candidate
+                                fsm_obj = getattr(device_instance, candidate)
+                                break
+
+                    if fsm_serialized is not None and fsm_obj is not None:
+                        try:
+                            # Ustal docelową wartość stanu zgodną z typem aktualnego FSM
+                            target_state_value = fsm_serialized
+
+                            # Przypadek 1: __fsm jest bezpośrednio Enumem → ustawiamy atrybut na instancji
+                            if (
+                                isinstance(fsm_obj, _EnumType)
+                                and fsm_attr_name is not None
+                            ):
+                                state_type = type(fsm_obj)
+                                try:
+                                    if isinstance(fsm_serialized, str) and hasattr(
+                                        state_type, fsm_serialized
+                                    ):
+                                        target_enum = getattr(
+                                            state_type, fsm_serialized
+                                        )
+                                    else:
+                                        target_enum = state_type(fsm_serialized)
+                                except Exception:
+                                    # Ostateczny fallback: pozostaw oryginalną wartość
+                                    target_enum = fsm_obj
+                                setattr(device_instance, fsm_attr_name, target_enum)
+                                values_applied.append("__fsm")
+                                if self._debug:
+                                    debug(
+                                        f"Applied virtual device FSM (enum) for {device_name}: {fsm_serialized}",
+                                        message_logger=self._message_logger,
+                                    )
+                            else:
+                                # Przypadek 2: __fsm jest obiektem z polem state/current_state lub metodą set_state
+                                for state_field in ("state", "current_state"):
+                                    if hasattr(fsm_obj, state_field):
+                                        current_state_obj = getattr(
+                                            fsm_obj, state_field
+                                        )
+                                        try:
+                                            if isinstance(current_state_obj, _EnumType):
+                                                state_type = type(current_state_obj)
+                                                if isinstance(
+                                                    fsm_serialized, str
+                                                ) and hasattr(
+                                                    state_type, fsm_serialized
+                                                ):
+                                                    target_state_value = getattr(
+                                                        state_type, fsm_serialized
+                                                    )
+                                                else:
+                                                    try:
+                                                        target_state_value = state_type(
+                                                            fsm_serialized
+                                                        )
+                                                    except Exception:
+                                                        target_state_value = (
+                                                            fsm_serialized
+                                                        )
+                                        except Exception:
+                                            pass
+
+                                if hasattr(fsm_obj, "set_state") and callable(
+                                    getattr(fsm_obj, "set_state")
+                                ):
+                                    getattr(fsm_obj, "set_state")(target_state_value)
+                                elif hasattr(fsm_obj, "state"):
+                                    setattr(fsm_obj, "state", target_state_value)
+                                elif hasattr(fsm_obj, "current_state"):
+                                    setattr(
+                                        fsm_obj, "current_state", target_state_value
+                                    )
+
+                                values_applied.append("__fsm")
+                                if self._debug:
+                                    debug(
+                                        f"Applied virtual device FSM for {device_name}: {fsm_serialized}",
+                                        message_logger=self._message_logger,
+                                    )
+                        except Exception as fsm_set_err:
+                            warning(
+                                f"Could not apply FSM state for {device_name}: {fsm_set_err}",
+                                message_logger=self._message_logger,
+                            )
+                except Exception as e:
+                    warning(
+                        f"Error applying virtual device FSM state for {device_name}: {e}",
+                        message_logger=self._message_logger,
+                    )
 
         except Exception as e:
             warning(
@@ -1403,6 +1500,9 @@ class IO_server(EventListener):
 
             # Apply state values from io_state.json after device initialization
             if self._load_state:
+                debug(
+                    f"self._state: {self._state}", message_logger=self._message_logger
+                )
                 self._apply_io_state_values(device_instance, device_name, folder_name)
             else:
                 if self._debug:
@@ -1496,6 +1596,56 @@ class IO_server(EventListener):
                     try:
                         # Spróbuj wywołać to_dict() - jeśli zwraca None, użyj fallback
                         device_dict = device.to_dict()
+                        # Upewnij się, że pole "__fsm" jest aktualne: jeśli brak lub podejrzanie puste,
+                        # spróbuj odczytać je bezpośrednio z obiektu urządzenia (fallback niezależny od to_dict)
+                        try:
+                            if "__fsm" not in device_dict or device_dict["__fsm"] in (
+                                None,
+                                "",
+                                "UNKNOWN",
+                            ):
+                                fsm_attr_name = None
+                                private_fsm_attrs = [
+                                    attr
+                                    for attr in vars(device).keys()
+                                    if attr.endswith("__fsm")
+                                ]
+                                if private_fsm_attrs:
+                                    fsm_attr_name = private_fsm_attrs[0]
+                                else:
+                                    for candidate in ("_fsm", "fsm"):
+                                        if hasattr(device, candidate):
+                                            fsm_attr_name = candidate
+                                            break
+                                if fsm_attr_name is not None:
+                                    fsm_obj = getattr(device, fsm_attr_name, None)
+                                    if fsm_obj is not None:
+                                        from enum import Enum as _EnumType
+
+                                        if isinstance(fsm_obj, _EnumType):
+                                            device_dict["__fsm"] = getattr(
+                                                fsm_obj, "name", str(fsm_obj)
+                                            )
+                                        else:
+                                            fsm_state = None
+                                            if hasattr(fsm_obj, "state"):
+                                                fsm_state = getattr(fsm_obj, "state")
+                                            elif hasattr(fsm_obj, "current_state"):
+                                                fsm_state = getattr(
+                                                    fsm_obj, "current_state"
+                                                )
+                                            if fsm_state is not None:
+                                                device_dict["__fsm"] = (
+                                                    getattr(fsm_state, "name")
+                                                    if hasattr(fsm_state, "name")
+                                                    else (
+                                                        getattr(fsm_state, "value")
+                                                        if hasattr(fsm_state, "value")
+                                                        else str(fsm_state)
+                                                    )
+                                                )
+                        except Exception:
+                            pass
                         if device_dict is not None:
                             state["virtual_devices"][device_name] = device_dict
                         else:

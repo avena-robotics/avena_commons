@@ -270,6 +270,59 @@ class VirtualDevice(ABC):
                 else str(current_state)
             )
 
+            # Próba odczytu wewnętrznego FSM urządzenia (np. atrybut __fsm/_fsm/fsm)
+            try:
+                fsm_attr_name = None
+                # Szukaj atrybutów z końcówką __fsm (po name-mangling) w instancji
+                private_fsm_attrs = [
+                    attr for attr in vars(self).keys() if attr.endswith("__fsm")
+                ]
+                if private_fsm_attrs:
+                    fsm_attr_name = private_fsm_attrs[0]
+                else:
+                    # Popularne nazwy alternatywne
+                    for candidate in ("_fsm", "fsm"):
+                        if hasattr(self, candidate):
+                            fsm_attr_name = candidate
+                            break
+
+                if fsm_attr_name is not None:
+                    fsm_obj = getattr(self, fsm_attr_name, None)
+                    if fsm_obj is not None:
+                        # Jeśli atrybut FSM jest Enumem bezpośrednio
+                        if isinstance(fsm_obj, Enum):
+                            result["__fsm"] = getattr(fsm_obj, "name", str(fsm_obj))
+                        else:
+                            # Wyciągnij stan FSM, preferując pola/state o standardowych nazwach
+                            fsm_state_obj = None
+                            if hasattr(fsm_obj, "state"):
+                                fsm_state_obj = getattr(fsm_obj, "state")
+                            elif hasattr(fsm_obj, "current_state"):
+                                fsm_state_obj = getattr(fsm_obj, "current_state")
+
+                            # Zapisz pod kluczem "__fsm" nazwę stanu (np. RUNNING),
+                            # a jeśli brak nazwy — jego wartość/string
+                            if fsm_state_obj is not None:
+                                fsm_state_name = (
+                                    getattr(fsm_state_obj, "name")
+                                    if hasattr(fsm_state_obj, "name")
+                                    else None
+                                )
+                                if fsm_state_name is not None:
+                                    result["__fsm"] = fsm_state_name
+                                else:
+                                    result["__fsm"] = (
+                                        getattr(fsm_state_obj, "value")
+                                        if hasattr(fsm_state_obj, "value")
+                                        else str(fsm_state_obj)
+                                    )
+            except Exception as fsm_err:
+                # Nie przerywamy serializacji w razie problemów z FSM; wpiszemy tylko podstawowe pola
+                error(
+                    f"{self.device_name} - Error reading internal FSM for serialization: {fsm_err}",
+                    message_logger=self._message_logger,
+                )
+
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie
             result["state"] = "ERROR"
