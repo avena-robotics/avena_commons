@@ -121,6 +121,7 @@ class Event(BaseModel):
     result: Optional[Result] = None
     to_be_processed: bool = False
     is_processing: bool = False
+    is_system_event: bool = False
     maximum_processing_time: Optional[float] = None  # w sekundach
 
     def __init__(
@@ -137,6 +138,7 @@ class Event(BaseModel):
         id: Optional[int] = None,
         to_be_processed: bool = False,
         is_processing: bool = False,
+        is_system_event: bool = False,
         payload: int = 1,
         result: Optional[Result] = None,
         maximum_processing_time: Optional[float] = 20,
@@ -174,6 +176,7 @@ class Event(BaseModel):
             result=result,
             to_be_processed=to_be_processed,
             is_processing=is_processing,
+            is_system_event=is_system_event,
             maximum_processing_time=maximum_processing_time,
             timestamp=timestamp
             if timestamp is not None
@@ -202,6 +205,7 @@ class Event(BaseModel):
             "payload": self.payload,
             "to_be_processed": self.to_be_processed,
             "is_processing": self.is_processing,
+            "is_system_event": self.is_system_event,
             "maximum_processing_time": self.maximum_processing_time,
             "timestamp": str(self.timestamp),
             "result": self.result.model_dump(exclude_none=True)

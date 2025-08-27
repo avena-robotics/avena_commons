@@ -480,6 +480,8 @@ class EventListener:
 
     @contextmanager
     def _event_send_debug(self, event: Event):
+        if event.is_system_event:  # nie debugujemy systemowych
+            return
         start = time.perf_counter()
         try:
             yield
@@ -497,6 +499,8 @@ class EventListener:
             )
 
     def _event_receive_debug(self, event: Event):
+        if event.is_system_event:  # nie debugujemy systemowych
+            return
         if event.event_type == "cumulative":
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}] (cumulative) payload={event.payload}:\n"
             for e in event.data["events"]:
@@ -985,10 +989,11 @@ class EventListener:
         new_queue = []  # Tworzymy nową kolejkę dla eventów do zachowania
         for event in events_to_process:
             try:
-                debug(
-                    f"Analyzing incoming event: {event}",
-                    message_logger=self._message_logger,
-                )
+                if not event.is_system_event:
+                    debug(
+                        f"Analyzing incoming event: {event}",
+                        message_logger=self._message_logger,
+                    )
                 should_remove = True
                 match event.event_type:
                     case "CMD_INITIALIZED":
@@ -1673,6 +1678,7 @@ class EventListener:
         data: dict = {},
         to_be_processed: bool = True,
         maximum_processing_time: float = 20,
+        is_system_event: bool = False,
     ) -> Event:
         """
         Creates a new event and adds it to the sending queue.
@@ -1702,6 +1708,7 @@ class EventListener:
             id=id,
             to_be_processed=to_be_processed,
             is_processing=False,
+            is_system_event=is_system_event,
             maximum_processing_time=maximum_processing_time,
         )
 
@@ -1747,14 +1754,16 @@ class EventListener:
         new_event.destination_port = event.source_port
         new_event.id = event.id
         new_event.result = event.result
+        new_event.is_system_event = event.is_system_event
 
         try:
             with self.__atomic_operation_for_events_to_send():
                 self.__events_to_send.append({"event": new_event, "retry_count": 0})
-                debug(
-                    f"Added event to send queue: {new_event}",
-                    message_logger=self._message_logger,
-                )
+                if not new_event.is_system_event:
+                    debug(
+                        f"Added event to send queue: {new_event}",
+                        message_logger=self._message_logger,
+                    )
         except TimeoutError as e:
             error(f"_reply: {e}", message_logger=self._message_logger)
             raise
@@ -2183,10 +2192,10 @@ class EventListener:
                 )
 
     async def _handle_get_state_command(self, event: Event):
-        debug(
-            f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
-            message_logger=self._message_logger,
-        )
+        # debug(
+        #     f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
+        #     message_logger=self._message_logger,
+        # )
 
         event.data = {}
         event.data["fsm_state"] = self.__fsm_state.name
