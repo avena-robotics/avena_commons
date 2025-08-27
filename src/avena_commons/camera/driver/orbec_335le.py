@@ -12,6 +12,7 @@ from pyorbbecsdk import (
     AlignFilter,
     Config,
     Context,
+    Device,
     OBAlignMode,
     OBFormat,
     OBPermissionType,
@@ -35,17 +36,16 @@ from avena_commons.camera.driver.general import (
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
 
-
-class CameraState(Enum):
-    IDLE = 0  # idle
-    INITIALIZING = 1  # init camera
-    INITIALIZED = 2  # init camera
-    STARTING = 3  # start camera pipeline
-    STARTED = 4  # start camera pipeline
-    STOPPING = 6  # stop camera pipeline
-    STOPPED = 7  # stop camera pipeline
-    SHUTDOWN = 8  # stop camera pipeline
-    ERROR = 255  # error
+# class CameraState(Enum):
+#     IDLE = 0  # idle
+#     INITIALIZING = 1  # init camera
+#     INITIALIZED = 2  # init camera
+#     STARTING = 3  # start camera pipeline
+#     STARTED = 4  # start camera pipeline
+#     STOPPING = 6  # stop camera pipeline
+#     STOPPED = 7  # stop camera pipeline
+#     SHUTDOWN = 8  # stop camera pipeline
+#     ERROR = 255  # error
 
 
 class OrbecGemini335LeWorker(GeneralCameraWorker):
@@ -60,6 +60,32 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         self.align_filter = None
         self.spatial_filter = None
         self.temporal_filter = None
+
+    def set_int_property(self, device: Device, property_id: OBPropertyID, value: int):
+        try:
+            device.set_int_property(property_id, value)
+            debug(
+                f"Ustawiono właściwość {property_id} na {value}", self._message_logger
+            )
+        except Exception as e:
+            error(
+                f"Błąd podczas ustawiania właściwości {property_id}: {e}",
+                self._message_logger,
+            )
+            raise e
+
+    def set_bool_property(self, device: Device, property_id: OBPropertyID, value: bool):
+        try:
+            device.set_bool_property(property_id, value)
+            debug(
+                f"Ustawiono właściwość {property_id} na {value}", self._message_logger
+            )
+        except Exception as e:
+            error(
+                f"Błąd podczas ustawiania właściwości {property_id}: {e}",
+                self._message_logger,
+            )
+            raise e
 
     async def init(self, camera_settings: dict):
         """Initialize camera connection and resources"""
@@ -84,14 +110,6 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             ctx = Context()
             try:
                 dev = ctx.create_net_device(self.__camera_ip, 8090)
-                debug(
-                    f"CAMERA_INIT: Otwarta kamera na ip {self.__camera_ip}",
-                    self._message_logger,
-                )
-                debug(
-                    f"CAMERA_INIT: camera info: {dev.get_device_info()}",
-                    self._message_logger,
-                )
             except Exception as e:
                 error(
                     f"CAMERA_INIT: Błąd podczas otwierania kamery na ip {self.__camera_ip}: {e}",
@@ -150,7 +168,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                     offset_pid, OBPermissionType.PERMISSION_READ_WRITE
                 ):
                     debug(
-                        f"CAMERA_INIT: Przesunięcie wyszukiwania dysparycji nie jest obsługiwane w kamerze",
+                        f"Przesunięcie wyszukiwania dysparycji nie jest obsługiwane w kamerze",
                         self._message_logger,
                     )
                 else:
@@ -158,12 +176,12 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                     if disparity_offset and disparity_offset > 0:
                         dev.set_int_property(offset_pid, disparity_offset)
                         debug(
-                            f"CAMERA_INIT: Ustawiono przesunięcie wyszukiwania dysparycji na {disparity_offset}",
+                            f"Kamera {self.device_name} - Ustawiono przesunięcie wyszukiwania dysparycji na {disparity_offset}",
                             self._message_logger,
                         )
             except AttributeError as e:
                 error(
-                    f"CAMERA_INIT: Używana wersja pyorbbecsdk nie obsługuje zmiany trybu dysparycji. Wymagana jest wersja >= 2.2.x. Ta funkcja zostanie pominięta. Błąd: {e}",
+                    f"Używana wersja pyorbbecsdk nie obsługuje zmiany trybu dysparycji. Wymagana jest wersja >= 2.2.x. Ta funkcja zostanie pominięta. Błąd: {e}",
                     self._message_logger,
                 )
 
@@ -171,74 +189,54 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             self.camera_config = Config()
 
             # MARK: SETTINGS
-            color_exposure = color_settings.get("exposure", 500)
-            dev.set_int_property(
-                OBPropertyID.OB_PROP_COLOR_EXPOSURE_INT, color_exposure
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_COLOR_EXPOSURE_INT,
+                color_settings.get("exposure", 500),
             )
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_COLOR_EXPOSURE_INT na {color_exposure}",
-                self._message_logger,
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_COLOR_GAIN_INT,
+                color_settings.get("gain", 10),
             )
-
-            color_gain = color_settings.get("gain", 10)
-            dev.set_int_property(OBPropertyID.OB_PROP_COLOR_GAIN_INT, color_gain)
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_COLOR_GAIN_INT na {color_gain}",
-                self._message_logger,
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_COLOR_WHITE_BALANCE_INT,
+                color_settings.get("white_balance", 4000),
             )
-
-            color_white_balance = color_settings.get("white_balance", 4000)
-            dev.set_int_property(
-                OBPropertyID.OB_PROP_COLOR_WHITE_BALANCE_INT, color_white_balance
-            )
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_COLOR_WHITE_BALANCE_INT na {color_white_balance}",
-                self._message_logger,
-            )
-
             # Depth stream settings
-            depth_exposure = depth_settings.get("exposure", 500)
-            dev.set_int_property(
-                OBPropertyID.OB_PROP_DEPTH_EXPOSURE_INT, depth_exposure
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_DEPTH_EXPOSURE_INT,
+                depth_settings.get("exposure", 500),
             )
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_DEPTH_EXPOSURE_INT na {depth_exposure}",
-                self._message_logger,
-            )
-
-            depth_gain = depth_settings.get("gain", 10)
-            dev.set_int_property(OBPropertyID.OB_PROP_DEPTH_GAIN_INT, depth_gain)
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_DEPTH_GAIN_INT na {depth_gain}",
-                self._message_logger,
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_DEPTH_GAIN_INT,
+                depth_settings.get("gain", 10),
             )
 
-            laser_power = depth_settings.get("laser_power", 5)
-            dev.set_int_property(
-                OBPropertyID.OB_PROP_LASER_POWER_LEVEL_CONTROL_INT, laser_power
-            )
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_LASER_POWER_LEVEL_CONTROL_INT na {laser_power}",
-                self._message_logger,
+            self.set_int_property(
+                dev,
+                OBPropertyID.OB_PROP_LASER_POWER_LEVEL_CONTROL_INT,
+                depth_settings.get("laser_power", 5),
             )
 
             # Disparity
-            disparity_to_depth = camera_settings.get("disparity_to_depth", True)
-            dev.set_bool_property(
-                OBPropertyID.OB_PROP_DISPARITY_TO_DEPTH_BOOL, disparity_to_depth
-            )
-            debug(
-                f"CAMERA_INIT: Ustawiono OB_PROP_DISPARITY_TO_DEPTH_BOOL na {disparity_to_depth}",
-                self._message_logger,
+            self.set_bool_property(
+                dev,
+                OBPropertyID.OB_PROP_DISPARITY_TO_DEPTH_BOOL,
+                camera_settings.get("disparity_to_depth", True),
             )
 
             # MARK: PROFILES & ALIGNMENT
-            use_hardware_align = camera_settings.get("align", True)
+            # use_hardware_align = camera_settings.get("align", True)
 
             # Najpierw pobierz dostępne profile bez ustawiania trybu wyrównania
             color_profile_list = self.camera_pipeline.get_stream_profile_list(
                 OBSensorType.COLOR_SENSOR
             )
+            print(f"CAMERA_INIT: Dostępne profile koloru: {color_profile_list}")
 
             match color_settings.get("format", "BGR"):
                 case "BGR":
@@ -249,271 +247,106 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                     color_format = OBFormat.MJPG
                 case _:
                     error(
-                        f"CAMERA_INIT: Nieznany format koloru: {color_settings.get('format', 'BGR')} - używam BGR",
+                        f"Nieznany format koloru: {color_settings.get('format', 'BGR')} - używam BGR",
                         self._message_logger,
                     )
                     color_format = OBFormat.BGR  # Ustaw domyślny format
 
-            width = color_settings.get("width", 640)
-            height = color_settings.get("height", 400)
+            width = color_settings.get("width", 1280)
+            height = color_settings.get("height", 800)
             fps = color_settings.get("fps", 30)
 
-            debug(
-                f"CAMERA_INIT: Wyszukuję profil koloru dla {width}x{height}@{fps} {color_format}",
-                self._message_logger,
-            )
             color_profile = color_profile_list.get_video_stream_profile(
                 width, height, color_format, fps
             )
 
             if not color_profile:
                 error(
-                    f"CAMERA_INIT: Nie znaleziono pasującego profilu koloru dla {width}x{height}@{fps} {color_format}",
+                    f"Nie znaleziono pasującego profilu koloru dla {width}x{height}@{fps} {color_format}",
                     self._message_logger,
                 )
-                # Spróbuj z domyślnymi parametrami jako fallback
-                debug(
-                    "CAMERA_INIT: Próbuję z domyślnymi parametrami profilu",
-                    self._message_logger,
-                )
-                color_profile = color_profile_list.get_video_stream_profile(
-                    640, 400, OBFormat.MJPG, 30
-                )
-                if not color_profile:
-                    error(
-                        "CAMERA_INIT: Nie można znaleźć żadnego profilu koloru",
-                        self._message_logger,
-                    )
-                    self._change_fsm_state(EventListenerState.ON_ERROR)
-                    raise ValueError("Brak dostępnych profili koloru")
+                self._change_fsm_state(EventListenerState.ON_ERROR)
+                raise ValueError("Błąd konfiguracji profilu koloru")
 
-            # Sprawdź czy sprzętowe wyrównanie jest obsługiwane dla tego profilu
-            hardware_align_configured = False
-            if use_hardware_align and color_profile:
-                try:
-                    debug(
-                        f"CAMERA_INIT: Sprawdzam dostępność sprzętowego wyrównania dla profilu {width}x{height}@{fps} {color_format}",
-                        self._message_logger,
-                    )
+            debug(
+                f"Ustawiono profil koloru dla {width}x{height}@{fps} {color_format}",
+                self._message_logger,
+            )
 
-                    # DODAJ DIAGNOSTYKĘ WSZYSTKICH DOSTĘPNYCH KOMBINACJI
-                    info(
-                        f"CAMERA_INIT: === ANALIZA OBSŁUGI SPRZĘTOWEGO WYRÓWNANIA D2C ===",
-                        self._message_logger,
-                    )
-
-                    # Pobierz wszystkie dostępne profile koloru
-                    supported_hw_combinations = []
-
-                    debug(
-                        f"CAMERA_INIT: Sprawdzanie wszystkich dostępnych profili koloru...",
-                        self._message_logger,
-                    )
-
-                    # Podsumowanie
-                    if supported_hw_combinations:
-                        info(
-                            f"CAMERA_INIT: === PODSUMOWANIE OBSŁUGIWANYCH KOMBINACJI ({len(supported_hw_combinations)}) ===",
-                            self._message_logger,
-                        )
-
-                        # Grupuj po rozdzielczości dla lepszej czytelności
-                        resolution_groups = {}
-                        for combo in supported_hw_combinations:
-                            prof = combo["color_profile"]
-                            res_key = f"{prof.get_width()}x{prof.get_height()}"
-                            if res_key not in resolution_groups:
-                                resolution_groups[res_key] = []
-                            resolution_groups[res_key].append(combo)
-
-                        for resolution, combos in resolution_groups.items():
-                            info(
-                                f"CAMERA_INIT: Rozdzielczość {resolution}:",
-                                self._message_logger,
-                            )
-                            for combo in combos:
-                                prof = combo["color_profile"]
-                                info(
-                                    f"CAMERA_INIT:   - {prof.get_fps()}fps {prof.get_format()} ({len(combo['depth_profiles'])} depth profiles)",
-                                    self._message_logger,
-                                )
-
-                        # Znajdź najwyższą obsługiwaną rozdzielczość
-                        max_pixels = 0
-                        best_combo = None
-                        for combo in supported_hw_combinations:
-                            prof = combo["color_profile"]
-                            pixels = prof.get_width() * prof.get_height()
-                            if pixels > max_pixels:
-                                max_pixels = pixels
-                                best_combo = combo
-
-                        if best_combo:
-                            best_prof = best_combo["color_profile"]
-                            info(
-                                f"CAMERA_INIT: 🏆 NAJWYŻSZA OBSŁUGIWANA ROZDZIELCZOŚĆ: {best_prof.get_width()}x{best_prof.get_height()}@{best_prof.get_fps()} {best_prof.get_format()}",
-                                self._message_logger,
-                            )
-
-                            # Pokaż przykładową konfigurację JSON
-                            info(
-                                f"CAMERA_INIT: === PRZYKŁADOWA KONFIGURACJA JSON ===",
-                                self._message_logger,
-                            )
-                            example_depth = best_combo["depth_profiles"][0]
-                            format_name = str(best_prof.get_format()).replace(
-                                "OBFormat.", ""
-                            )
-                            depth_format_name = str(example_depth.get_format()).replace(
-                                "OBFormat.", ""
-                            )
-
-                            info(f"CAMERA_INIT: {best_combo}", self._message_logger)
-                    else:
-                        error(
-                            f"CAMERA_INIT: ❌ BRAK OBSŁUGIWANYCH KOMBINACJI dla sprzętowego D2C",
-                            self._message_logger,
-                        )
-                        info(
-                            f"CAMERA_INIT: Ta kamera może nie obsługiwać sprzętowego wyrównania lub wymaga aktualizacji firmware",
-                            self._message_logger,
-                        )
-
-                    info(
-                        f"CAMERA_INIT: === KONIEC ANALIZY D2C ===",
-                        self._message_logger,
-                    )
-
-                    # Teraz sprawdź oryginalnie żądany profil
+            match camera_settings.get("align", None):
+                case "d2c":
+                    # bedziemy wyrownywac strumienie
+                    # 1. Sprawdź czy sprzętowe wyrównanie jest obsługiwane dla tego profilu
                     hw_d2c_profile_list = (
                         self.camera_pipeline.get_d2c_depth_profile_list(
                             color_profile, OBAlignMode.HW_MODE
                         )
                     )
                     if not hw_d2c_profile_list or len(hw_d2c_profile_list) == 0:
-                        info(
-                            f"CAMERA_INIT: Żądany profil {width}x{height}@{fps} {color_format} NIE OBSŁUGUJE sprzętowego wyrównania. Przełączam na programowe.",
+                        error(
+                            f"CAMERA_INIT: Żądany profil {width}x{height}@{fps} {color_format} 'NIE OBSŁUGUJE' sprzętowego wyrównania. Przełączam na programowe.",
                             self._message_logger,
                         )
-                        use_hardware_align = False
+                        # self.camera_config.set_align_mode(OBAlignMode.SW_MODE)
+                        sw_d2c_profile_list = (
+                            self.camera_pipeline.get_d2c_depth_profile_list(
+                                color_profile, OBAlignMode.SW_MODE
+                            )
+                        )
+                        depth_profile = sw_d2c_profile_list[0]
+                        self.align_filter = AlignFilter(align_to_stream=OBStreamType.COLOR_STREAM)
                     else:
-                        # Sprzętowe wyrównanie jest obsługiwane dla żądanego profilu
-                        self.camera_config.set_align_mode(OBAlignMode.HW_MODE)
+                        # 2. Jeśli jest, to użyj go
+                        # self.camera_config.set_align_mode(OBAlignMode.HW_MODE)
                         depth_profile = hw_d2c_profile_list[0]
-
-                        self.camera_config.enable_stream(depth_profile)
-                        self.camera_config.enable_stream(color_profile)
-
-                        debug(
-                            f"CAMERA_INIT: Włączono strumień głębi (HW Align): {depth_profile}",
-                            self._message_logger,
-                        )
-                        debug(
-                            f"CAMERA_INIT: Włączono strumień koloru (HW Align): {color_profile}",
-                            self._message_logger,
-                        )
-                        info(
-                            f"CAMERA_INIT: ✅ Sprzętowe wyrównanie zostało pomyślnie skonfigurowane dla żądanego profilu",
-                            self._message_logger,
-                        )
-                        hardware_align_configured = True
-
-                except Exception as hw_align_error:
-                    error(
-                        f"CAMERA_INIT: Błąd podczas analizy sprzętowego wyrównania: {hw_align_error}. Przełączam na programowe wyrównanie.",
-                        self._message_logger,
-                    )
-                    use_hardware_align = False
-
-            # Konfiguracja programowego wyrównania lub niezależnych strumieni
-            if not hardware_align_configured:
-                info(
-                    f"CAMERA_INIT: Konfiguracja programowego wyrównania lub niezależnych strumieni",
-                    self._message_logger,
-                )
-
-                # Utwórz programowy filtr wyrównujący jeśli wymagany
-                if camera_settings.get("align", True):
-                    self.align_filter = AlignFilter(OBStreamType.COLOR_STREAM)
                     debug(
-                        f"CAMERA_INIT: Utworzono programowy filtr wyrównujący do strumienia koloru",
+                        f"Włączono sprzętowe wyrównanie dla strumienia głębi: {depth_profile}",
                         self._message_logger,
                     )
 
-                # Konfiguruj strumień koloru niezależnie
-                if not color_profile:  # Jeśli wcześniej nie znaleziono profilu
-                    color_profile_list = self.camera_pipeline.get_stream_profile_list(
-                        OBSensorType.COLOR_SENSOR
-                    )
-                    color_format = getattr(
-                        OBFormat, color_settings.get("format", "MJPG")
-                    )
-                    color_profile = color_profile_list.get_video_stream_profile(
-                        color_settings.get("width", 640),
-                        color_settings.get("height", 400),
-                        color_format,
-                        color_settings.get("fps", 30),
-                    )
+                    # 3. Jeśli nie, to użyj programowego wyrównania
 
-                if color_profile:
-                    self.camera_config.enable_stream(color_profile)
-                    debug(
-                        f"CAMERA_INIT: Włączono strumień koloru (SW): {color_profile}",
-                        self._message_logger,
-                    )
-                else:
-                    error(
-                        f"CAMERA_INIT: Nie znaleziono pasującego profilu koloru dla programowego wyrównania.",
-                        self._message_logger,
-                    )
+                    pass
+                case "c2d":
+                    # nie bedziemy wyrownywac strumieni
+                    pass
+                case _:
+                    # nie bedziemy wyrownywac strumieni
+                    pass
 
-                # Konfiguruj strumień głębi niezależnie
-                depth_profile_list = self.camera_pipeline.get_stream_profile_list(
-                    OBSensorType.DEPTH_SENSOR
-                )
-                depth_format = getattr(OBFormat, depth_settings.get("format", "Y16"))
-                depth_profile = depth_profile_list.get_video_stream_profile(
-                    depth_settings.get("width", 640),
-                    depth_settings.get("height", 400),
-                    depth_format,
-                    depth_settings.get("fps", 30),
-                )
-                if depth_profile:
-                    self.camera_config.enable_stream(depth_profile)
-                    debug(
-                        f"CAMERA_INIT: Włączono strumień głębi (SW): {depth_profile}",
-                        self._message_logger,
-                    )
-                else:
-                    error(
-                        f"CAMERA_INIT: Nie znaleziono pasującego profilu głębi dla programowego wyrównania.",
-                        self._message_logger,
-                    )
+
+            self.camera_config.enable_stream(depth_profile)
+            debug(
+                f"CAMERA_INIT: Włączono strumień głębi: {depth_profile.get_width()}x{depth_profile.get_height()}@{depth_profile.get_fps()} {depth_profile.get_format()}",
+                self._message_logger,
+            )
+            self.camera_config.enable_stream(color_profile)
+            debug(
+                f"CAMERA_INIT: Włączono strumień koloru: {color_profile.get_width()}x{color_profile.get_height()}@{color_profile.get_fps()} {color_profile.get_format()}",
+                self._message_logger,
+            )
 
             # MARK: FILTERS
             filter_settings = camera_settings.get("filters", {})
-            if filter_settings.get("spatial", {}).get("enable", False):
+            if filter_settings.get("spatial", False):
                 self.spatial_filter = SpatialAdvancedFilter()
                 debug(f"CAMERA_INIT: Włączono filtr przestrzenny", self._message_logger)
-            if filter_settings.get("temporal", {}).get("enable", False):
+            if filter_settings.get("temporal", False):
                 self.temporal_filter = TemporalFilter()
                 debug(f"CAMERA_INIT: Włączono filtr czasowy", self._message_logger)
 
             info(
-                f"CAMERA_INIT: Konfiguracja kamery została zakończona",
+                f"Konfiguracja kamery została zakończona",
                 self._message_logger,
             )
-            # self.state = CameraState.INITIALIZED
             return True
         except Exception as e:
             error(f"{self.device_name} - Init failed: {e}", self._message_logger)
-            # self.state = CameraState.ERROR
             return False
 
     async def start(self):
         """Start camera frame grabbing"""
         try:
-            # self.state = CameraState.STARTING
             debug(f"{self.device_name} - Starting camera", self._message_logger)
             # Tu będzie inicjalizacja kamery Orbbec
             if self.camera_pipeline is None:
@@ -531,24 +364,18 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 raise ValueError("Config nie został zainicjalizowany")
 
             self.camera_pipeline.start(self.camera_config)
-            # self.state = CameraState.STARTED
             return True
         except Exception as e:
-            # self.state = CameraState.ERROR
             error(f"{self.device_name} - Starting failed: {e}", self._message_logger)
             return False
 
     async def stop(self):
         """Stop camera frame grabbing"""
         try:
-            # self.state = CameraState.STOPPING
             debug(f"{self.device_name} - Stopping camera", self._message_logger)
-            # Tu będzie logika stopowania grabowania
             self.camera_pipeline.stop()
-            # self.state = CameraState.STOPPED
             return True
         except Exception as e:
-            # self.state = CameraState.ERROR
             error(f"{self.device_name} - Stopping failed: {e}", self._message_logger)
             return False
 
@@ -556,36 +383,30 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         """Initialize camera connection and resources"""
         try:
             # Pobierz oryginalne ramki (zawsze FrameSet)
-            original_frames = self.camera_pipeline.wait_for_frames(3)
-            if original_frames is None:
+            frames = self.camera_pipeline.wait_for_frames(3)
+            if frames is None:
                 return None
 
-            debug(f"Pobrano ramki: {type(original_frames)}", self._message_logger)
+            debug(f"Pobrano ramki: {type(frames)}", self._message_logger)
 
             # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
-            frame_color = original_frames.get_color_frame()
-            original_frame_depth = (
-                original_frames.get_depth_frame()
-            )  # ← ZACHOWAJ ORYGINALNĄ
+            frame_color = frames.get_color_frame()
+            frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
 
             if frame_color is None:
                 debug("Brak ramki kolorowej", self._message_logger)
                 return None
 
-            if original_frame_depth is None:
+            if frame_depth is None:
                 debug("Brak ramki głębi", self._message_logger)
                 return None
 
             # Zastosuj filtry na kopii
-            frame_depth = original_frame_depth
             if self.align_filter:
-                frame_depth = self.align_filter.process(original_frames)
-            #     if aligned_depth is not None:
-            #         frame_depth = aligned_depth
-            #         debug(
-            #             "Filtr wyrównania zastosowany na ramkę głębi",
-            #             self._message_logger,
-            #         )
+                aligned_frames = self.align_filter.process(frames)
+                aligned_frames = aligned_frames.as_frame_set()
+                frame_depth = aligned_frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+                debug("Filtr wyrównania zastosowany", self._message_logger)
 
             if self.spatial_filter and frame_depth:
                 frame_depth = self.spatial_filter.process(frame_depth)
@@ -637,55 +458,22 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 if frame_color.get_format() == OBFormat.RGB:
                     color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
 
-            # Process depth frame - SPRAWDŹ ROZMIARY PRZED RESHAPE
-            # debug(
-            #     f"Przetwarzanie ramki głębi (format: {frame_depth.get_format()})",
-            #     self._message_logger,
-            # )
-
             depth_data = frame_depth.get_data()
-
-            # Sprawdź zgodność rozmiarów
-            expected_height = original_frame_depth.get_height()
-            expected_width = original_frame_depth.get_width()
-            expected_pixels = expected_height * expected_width
-            expected_bytes = expected_pixels * 2  # uint16 = 2 bajty na piksel
-
-            actual_bytes = len(depth_data)
-            actual_pixels = actual_bytes // 2
-
-            debug(
-                f"Rozmiary ramki głębi - oczekiwane: {expected_width}x{expected_height} ({expected_pixels} pikseli, {expected_bytes} bajtów), "
-                f"rzeczywiste: {actual_pixels} pikseli ({actual_bytes} bajtów)",
-                self._message_logger,
-            )
-
-            # Sprawdź czy rozmiary się pokrywają
-            if actual_bytes != expected_bytes:
-                error(
-                    f"ODRZUCAM RAMKĘ - niezgodność rozmiarów danych głębi! "
-                    f"Oczekiwano {expected_bytes} bajtów dla {expected_width}x{expected_height}, "
-                    f"otrzymano {actual_bytes} bajtów ({actual_pixels} pikseli). "
-                    f"Format ramki: {frame_depth.get_format()}",
-                    self._message_logger,
-                )
-                return None
 
             try:
                 depth_image = np.frombuffer(depth_data, dtype=np.uint16).reshape((
-                    expected_height,
-                    expected_width,
+                    frame_depth.get_height(),
+                    frame_depth.get_width(),
                 ))
 
                 debug(
-                    f"Pomyślnie utworzono ramkę głębi {expected_width}x{expected_height}",
+                    f"Pomyślnie utworzono ramkę głębi {frame_depth.get_width()}x{frame_depth.get_height()}",
                     self._message_logger,
                 )
 
             except ValueError as reshape_error:
                 error(
-                    f"ODRZUCAM RAMKĘ - błąd reshape ramki głębi: {reshape_error}. "
-                    f"Dane: {actual_bytes} bajtów, próba reshape na ({expected_height}, {expected_width})",
+                    f"ODRZUCAM RAMKĘ - błąd reshape ramki głębi: {reshape_error}. ",
                     self._message_logger,
                 )
                 return None

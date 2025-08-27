@@ -9,6 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 from dotenv import load_dotenv
 
 from avena_commons.camera.camera import Camera
+from avena_commons.event_listener import EventListenerState
 from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, error
 
 
@@ -36,7 +37,7 @@ class CameraServer(Camera):
         self._default_configuration = {  # domyslna konfiguracja
             "camera_ip": camera_ip,
             "camera_settings": {
-                "align": True,
+                "align": "d2c",  # None, d2c, potem: c2d
                 "disparity_to_depth": True,
                 "color": {
                     "width": 1280,
@@ -48,8 +49,8 @@ class CameraServer(Camera):
                     "white_balance": 4000,
                 },
                 "depth": {
-                    "width": 1280,
-                    "height": 800,
+                    "width": 640,
+                    "height": 400,
                     "fps": 30,
                     "format": "Y16",
                     "exposure": 500,
@@ -58,8 +59,8 @@ class CameraServer(Camera):
                 },
                 "disparity": {"range_mode": "Default", "search_offset": 0},
                 "filters": {
-                    "spatial": {"enable": False},
-                    "temporal": {"enable": False},
+                    "spatial": False,
+                    "temporal": False,
                 },
             },
             "rois": [
@@ -81,6 +82,18 @@ class CameraServer(Camera):
         self.start()
 
     # MARK: SEND EVENTS
+    async def on_stopped(self):
+        self.fsm_state = EventListenerState.INITIALIZING
+
+    async def on_initialized(self):
+        self.fsm_state = EventListenerState.STARTING
+
+    #     pass
+    # def on_init(self):
+    #     pass
+    # def on_start(self):
+    #     pass
+    # def on_run(self):
 
     def _clear_before_shutdown(self):
         __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
@@ -90,15 +103,6 @@ class CameraServer(Camera):
 
 if __name__ == "__main__":
     try:
-        # parser = argparse.ArgumentParser(description="camera server")
-        # parser.add_argument(
-        #     "-n",
-        #     "--number",
-        #     type=int,
-        #     default=1,
-        #     help="camera number (default: 1)",
-        # )
-        # args = parser.parse_args()
 
         message_logger = MessageLogger(
             filename=f"temp/test_camera.log",

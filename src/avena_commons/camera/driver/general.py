@@ -7,8 +7,7 @@ from typing import Optional
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
-
-from .util.detector import ObjectDetector
+from avena_commons.vision.detector import ObjectDetector
 
 
 class CameraState(Enum):
@@ -25,11 +24,8 @@ class CameraState(Enum):
 
 class GeneralCameraWorker(Worker):
     def __init__(self, message_logger: Optional[MessageLogger] = None):
-        # self.__camera_ip = camera_ip
-        # NIE przechowuj MessageLogger - zostanie przekazany przez args w _run
         self._message_logger = None
         self.device_name = f"GeneralCamera"
-        # Przekaż None do super() - logger zostanie ustawiony w _run
         super().__init__(message_logger=None)
         self.state = CameraState.IDLE
 
@@ -103,7 +99,6 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run(self, pipe_in):
-        # Utwórz nowy MessageLogger w tym procesie (nie przekazuj przez pipe)
         from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger
 
         # Utwórz lokalny logger dla tego procesu
