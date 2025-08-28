@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from threading import Lock
+from typing import Any, Callable, Dict, Optional
 
 from avena_commons.event_listener import Event, Result
 from avena_commons.util.logger import debug, error
 from avena_commons.util.measure_time import MeasureTime
+
+from .sensor_watchdog import SensorTimerTask, SensorWatchdog
 
 
 class VirtualDeviceState(Enum):
@@ -25,6 +28,67 @@ class VirtualDevice(ABC):
         self._finished_events_lock = Lock()
         self._state = VirtualDeviceState.UNINITIALIZED
         self._message_logger = kwargs["message_logger"]
+
+        # Built-in sensor watchdog: common for all VirtualDevice subclasses
+        # Default timeout action sets device state to ERROR and logs message
+        self._watchdog = SensorWatchdog(
+            on_timeout_default=self._on_sensor_timeout,
+            log_error=lambda msg: error(msg, message_logger=self._message_logger),
+        )
+
+    def _on_sensor_timeout(self, task: SensorTimerTask) -> None:
+        """
+        Domyślna akcja w przypadku przekroczenia czasu zadania watchdoga.
+        Potomne urządzenia mogą nadpisać tę metodę, aby rozbudować zachowanie
+        (np. zatrzymanie napędów) przed przejściem w stan ERROR.
+        """
+        error(
+            f"{self.device_name} - Timeout: {task.description} {task.metadata}",
+            message_logger=self._message_logger,
+        )
+        self.set_state(VirtualDeviceState.ERROR)
+
+    # Public helper API for subclasses
+    def add_sensor_timeout(
+        self,
+        condition: Callable[[], bool],
+        timeout_s: float,
+        description: str,
+        id: Optional[str] = None,
+        on_timeout: Optional[Callable[[SensorTimerTask], None]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        return self._watchdog.until(
+            condition=condition,
+            timeout_s=timeout_s,
+            description=description,
+            id=id,
+            on_timeout=on_timeout or self._on_sensor_timeout,
+            metadata=metadata,
+        )
+
+    def cancel_sensor_timeout(self, id: str) -> bool:
+        return self._watchdog.cancel(id)
+
+    def _tick_watchdogs(self) -> None:
+        self._watchdog.tick()
+
+    # Ensure watchdog.tick() is invoked before subclass tick() body
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "tick" in cls.__dict__:
+            original_tick = cls.__dict__["tick"]
+
+            def wrapped_tick(self, *args, **kws):
+                # Always tick watchdog first
+                try:
+                    self._tick_watchdogs()
+                except Exception:
+                    # Nie blokuj działania urządzenia w razie problemu z watchdogiem
+                    pass
+                return original_tick(self, *args, **kws)
+
+            setattr(cls, "tick", wrapped_tick)
 
     def set_state(self, new_state: VirtualDeviceState):
         """
