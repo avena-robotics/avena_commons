@@ -374,7 +374,7 @@ class IO_server(EventListener):
                                     if current_state == VirtualDeviceState.ERROR:
                                         # Zapisz źródło błędu
                                         self._error = True
-                                        self._error_message = device_name
+                                        self._error_message = device._error_message
                                         if self.fsm_state not in {
                                             EventListenerState.ON_ERROR,
                                             EventListenerState.FAULT,

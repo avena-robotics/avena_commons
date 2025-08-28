@@ -27,13 +27,24 @@ class VirtualDevice(ABC):
         self._processing_events_lock = Lock()
         self._finished_events_lock = Lock()
         self._state = VirtualDeviceState.UNINITIALIZED
+        self._error_message = None
         self._message_logger = kwargs["message_logger"]
 
         # Built-in sensor watchdog: common for all VirtualDevice subclasses
         # Default timeout action sets device state to ERROR and logs message
         self._watchdog = SensorWatchdog(
-            on_timeout_default=self._on_sensor_timeout,
+            on_timeout_default=self._on_sensor_timeout_wrapper,
             log_error=lambda msg: error(msg, message_logger=self._message_logger),
+        )
+
+    def _on_sensor_timeout_wrapper(self, task: SensorTimerTask) -> None:
+        """Wrapper dla domyślnej akcji w przypadku przekroczenia czasu zadania watchdoga.
+        Wywołuje _on_sensor_timeout(nadpisywalne), ustawia stan urządzenia na ERROR i zapisuje błąd.
+        """
+        self._on_sensor_timeout(task)
+        self.set_state(VirtualDeviceState.ERROR)
+        self._error_message = (
+            f"{self.device_name} - Timeout: {task.description}, {task.metadata}"
         )
 
     def _on_sensor_timeout(self, task: SensorTimerTask) -> None:
@@ -42,11 +53,7 @@ class VirtualDevice(ABC):
         Potomne urządzenia mogą nadpisać tę metodę, aby rozbudować zachowanie
         (np. zatrzymanie napędów) przed przejściem w stan ERROR.
         """
-        error(
-            f"{self.device_name} - Timeout: {task.description} {task.metadata}",
-            message_logger=self._message_logger,
-        )
-        self.set_state(VirtualDeviceState.ERROR)
+        pass
 
     # Public helper API for subclasses
     def add_sensor_timeout(
@@ -63,7 +70,7 @@ class VirtualDevice(ABC):
             timeout_s=timeout_s,
             description=description,
             id=id,
-            on_timeout=on_timeout or self._on_sensor_timeout,
+            on_timeout=on_timeout or self._on_sensor_timeout_wrapper,
             metadata=metadata,
         )
 
