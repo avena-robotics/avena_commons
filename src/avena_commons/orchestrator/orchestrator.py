@@ -562,6 +562,23 @@ class Orchestrator(EventListener):
                             message_logger=self._message_logger,
                         )
 
+                    # Ustaw wewnętrzną flagę dla scenariuszy manualnych (domyślnie False)
+                    try:
+                        trigger_cfg = scenario_dict.get("trigger", {}) or {}
+                        trigger_type = str(trigger_cfg.get("type", "")).lower()
+                        if trigger_type == "manual":
+                            internal = scenario_dict.setdefault("_internal", {})
+                            # Zachowaj istniejącą wartość jeśli już była ustawiona (np. przy reload)
+                            internal["manual_run_requested"] = bool(
+                                internal.get("manual_run_requested", False)
+                            )
+                    except Exception:
+                        # Nie blokuj ładowania scenariuszy w razie problemów z flagą wewnętrzną
+                        error(
+                            f"Błąd podczas ustawiania flagi manual_run_requested dla scenariusza {scenario_name}: {e}",
+                            message_logger=self._message_logger,
+                        )
+
                     self._scenarios[scenario_name] = scenario_dict
 
                     info(
@@ -957,6 +974,44 @@ class Orchestrator(EventListener):
             "scenarios_list": list(self._scenarios.keys()),
         }
 
+    def set_manual_scenario_run_requested(
+        self, scenario_name: str, value: bool = True
+    ) -> bool:
+        """
+        Ustawia wewnętrzną flagę uruchomienia dla scenariusza manualnego.
+
+        Args:
+            scenario_name: Nazwa scenariusza manualnego
+            value: Czy oznaczyć scenariusz do uruchomienia (True/False)
+
+        Returns:
+            True jeśli ustawiono flagę, False w przeciwnym razie
+        """
+        if scenario_name not in self._scenarios:
+            warning(
+                f"Nie znaleziono scenariusza: {scenario_name}",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        scenario = self._scenarios[scenario_name]
+        trigger_cfg = scenario.get("trigger", {}) or {}
+        trigger_type = str(trigger_cfg.get("type", "")).lower()
+        if trigger_type != "manual":
+            warning(
+                f"Scenariusz '{scenario_name}' nie jest manualny - pomijam ustawienie flagi",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        internal = scenario.setdefault("_internal", {})
+        internal["manual_run_requested"] = bool(value)
+        info(
+            f"Ustawiono manual_run_requested={value} dla scenariusza: {scenario_name}",
+            message_logger=self._message_logger,
+        )
+        return True
+
     # async def start_autonomous_mode(self):
     #     """
     #     Uruchamia tryb autonomiczny orkiestratora.
@@ -1086,6 +1141,21 @@ class Orchestrator(EventListener):
                     f"✅ SUKCES scenariusza: {scenario_name}",
                     message_logger=self._message_logger,
                 )
+                # Jeśli to scenariusz manualny oznaczony do uruchomienia, zresetuj flagę
+                try:
+                    scenario = self._scenarios.get(scenario_name, {})
+                    trigger_cfg = scenario.get("trigger", {}) or {}
+                    trigger_type = str(trigger_cfg.get("type", "")).lower()
+                    if trigger_type == "manual":
+                        internal = scenario.setdefault("_internal", {})
+                        if internal.get("manual_run_requested"):
+                            internal["manual_run_requested"] = False
+                            debug(
+                                f"🔁 Reset manual_run_requested dla scenariusza: {scenario_name}",
+                                message_logger=self._message_logger,
+                            )
+                except Exception:
+                    pass
             else:
                 warning(
                     f"⚠️ NIEPOWODZENIE scenariusza: {scenario_name}",
@@ -1494,6 +1564,25 @@ class Orchestrator(EventListener):
         # Iteruj przez scenariusze (już posortowane według priorytetu)
         for scenario_name, scenario in self._scenarios.items():
             try:
+                # KROK 0: Pomijaj scenariusze manualne w trybie autonomicznym,
+                # chyba że mają ustawioną wewnętrzną flagę manual_run_requested=True
+                trigger_cfg = scenario.get("trigger", {}) or {}
+                trigger_type = str(trigger_cfg.get("type", "")).lower()
+                if trigger_type == "manual":
+                    internal = scenario.get("_internal", {}) or {}
+                    manual_requested = bool(internal.get("manual_run_requested", False))
+                    if not manual_requested:
+                        debug(
+                            f"⏭️ Pomijam scenariusz manualny w auto-sprawdzeniu (brak flagi): {scenario_name}",
+                            message_logger=self._message_logger,
+                        )
+                        continue
+                    else:
+                        debug(
+                            f"✅ Scenariusz manualny oznaczony do uruchomienia: {scenario_name}",
+                            message_logger=self._message_logger,
+                        )
+
                 # KROK 1: Cleanup zakończonych tasków
                 if scenario_name in self._running_scenarios:
                     task = self._running_scenarios[scenario_name]

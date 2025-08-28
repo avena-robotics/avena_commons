@@ -460,11 +460,10 @@ class EventListener:
             )
 
     def _event_find_and_remove_debug(self, event: Event):
+        if event.is_system_event:
+            return
         processing_time = time.time() - event.timestamp.timestamp()
-        if (
-            processing_time < event.maximum_processing_time
-            and not event.is_system_event
-        ):
+        if processing_time < event.maximum_processing_time:
             debug(
                 f"Event find and remove from processing: source={event.source} destination={event.destination} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} processing_time={processing_time:.2f}s.",
                 message_logger=self._message_logger,
