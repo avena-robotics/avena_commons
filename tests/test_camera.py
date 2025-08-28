@@ -8,18 +8,11 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 
 from dotenv import load_dotenv
 
-from avena_commons.camera.camera import Camera
-from avena_commons.event_listener import EventListenerState
-from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, error
-
-
-class CameraState(Enum):
-    IDLE = 0  # idle
-    INIT = 1  # init camera
-    START = 2  # start camera pipeline
-    RUN = 3  # run camera pipeline
-    STOP = 4  # stop camera pipeline
-    ERROR = 255  # error
+from avena_commons.camera.camera import Camera, CameraState
+from avena_commons.event_listener import Event, EventListenerState
+from avena_commons.util.catchtime import Catchtime
+from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug, error
+from avena_commons.vision.detector import ObjectDetector
 
 
 class CameraServer(Camera):
@@ -57,20 +50,14 @@ class CameraServer(Camera):
                     "gain": 10,
                     "laser_power": 5,
                 },
-                "disparity": {"range_mode": "Default", "search_offset": 0},
+                # "disparity": {"range_mode": "Default", "search_offset": 0},
                 "filters": {
                     "spatial": False,
                     "temporal": False,
                 },
             },
-            "rois": [
-                {"x": [100, 280], "y": [20, 200]},
-                {"x": [320, 500], "y": [20, 200]},
-                {"x": [100, 280], "y": [220, 400]},
-                {"x": [320, 500], "y": [220, 400]},
-            ],
         }
-
+        self.detector = ObjectDetector()
         self.check_local_data_frequency: int = 60
         super().__init__(
             name=f"camera_server_{camera_ip}",
@@ -88,12 +75,43 @@ class CameraServer(Camera):
     async def on_initialized(self):
         self.fsm_state = EventListenerState.STARTING
 
-    #     pass
-    # def on_init(self):
-    #     pass
-    # def on_start(self):
-    #     pass
-    # def on_run(self):
+    async def _check_local_data(self):
+        """
+        Periodically checks and processes local data
+
+        Raises:
+            Exception: If an error occurs during data processing.
+        """
+        camera_state = self.camera.get_state()
+        debug(
+            f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state} {type(camera_state)}",
+            self._message_logger,
+        )
+        match camera_state:
+            case CameraState.ERROR:
+                self.set_state(EventListenerState.ON_ERROR)
+            case CameraState.STARTED:
+                pass
+            # with Catchtime() as ct:
+            # last_frames = self.camera.get_last_frames()
+            # pass
+            #             if last_frames is not None:
+            #                 self.latest_color_frame = last_frames["color"]
+            #                 self.latest_depth_frame = last_frames["depth"]
+            #             else:
+            #                 error(
+            #                     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Brak ramki Koloru lub Głębi",
+            #                     self._message_logger,
+            #                 )
+            # debug(
+            #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Pobrano ramki Koloru i Głębi w {ct.t * 1_000:.2f}ms",
+            #     self._message_logger,
+            # )
+            case _:
+                debug(
+                    f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state}",
+                    self._message_logger,
+                )
 
     def _clear_before_shutdown(self):
         __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
@@ -103,7 +121,6 @@ class CameraServer(Camera):
 
 if __name__ == "__main__":
     try:
-
         message_logger = MessageLogger(
             filename=f"temp/test_camera.log",
             debug=True,
@@ -114,11 +131,6 @@ if __name__ == "__main__":
         load_dotenv(override=True)
 
         port = 9900
-
-        # if not port:
-        #     raise ValueError(
-        #         f"Brak wymaganej zmiennej środowiskowej CAMERA{args.number}_LISTENER_PORT"
-        #     )
 
         print("port: ", port)
         listener = CameraServer(

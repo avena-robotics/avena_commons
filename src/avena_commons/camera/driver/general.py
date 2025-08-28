@@ -7,8 +7,6 @@ from typing import Optional
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
-from avena_commons.vision.detector import ObjectDetector
-
 
 class CameraState(Enum):
     IDLE = 0  # idle
@@ -29,9 +27,11 @@ class GeneralCameraWorker(Worker):
         super().__init__(message_logger=None)
         self.state = CameraState.IDLE
 
-        self.align_filter = None
-        self.spatial_filter = None
-        self.temporal_filter = None
+        # self.align_filter = None
+        # self.spatial_filter = None
+        # self.temporal_filter = None
+        self.last_frames = None
+
 
     @property
     def state(self) -> CameraState:
@@ -170,17 +170,24 @@ class GeneralCameraWorker(Worker):
 
                         case "GET_STATE":
                             try:
+                                state = self.state
                                 debug(
-                                    f"{self.device_name} - Getting state",
+                                    f"{self.device_name} - Getting state: {state.name}",
                                     message_logger=self._message_logger,
                                 )
-                                state = self.state
                                 pipe_in.send(state)
                             except Exception as e:
                                 error(
                                     f"{self.device_name} - Error getting state: {e}",
                                     message_logger=self._message_logger,
                                 )
+                                pipe_in.send(None)
+                        
+                        case "GET_LAST_FRAMES":
+                            try:
+                                pipe_in.send(self.last_frames)
+                            except Exception as e:
+                                error(f"{self.device_name} - Error getting last frames: {e}", message_logger=self._message_logger)
                                 pipe_in.send(None)
 
                         case _:
@@ -192,10 +199,11 @@ class GeneralCameraWorker(Worker):
                 if self.state == CameraState.STARTED:
                     with Catchtime() as ct:
                         frames = await self.grab_frames_from_camera()
-                    if frames is None:
-                        continue
-                    color_image = frames["color"]
-                    depth_image = frames["depth"]
+                        if frames is None:
+                            continue
+                        self.last_frames = frames
+                    # color_image = frames["color"]
+                    # depth_image = frames["depth"]
                     debug(
                         f"{self.device_name} - Pobrano ramki Koloru i Głębi w {ct.t * 1_000:.2f}ms",
                         self._message_logger,
@@ -260,4 +268,10 @@ class GeneralCameraConnector(Connector):
         """Get camera state"""
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["GET_STATE"])
+            return value
+
+    def get_last_frames(self):
+        """Get camera state"""
+        with self.__lock:
+            value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAMES"])
             return value

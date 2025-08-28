@@ -265,7 +265,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                     f"Nie znaleziono pasującego profilu koloru dla {width}x{height}@{fps} {color_format}",
                     self._message_logger,
                 )
-                self._change_fsm_state(EventListenerState.ON_ERROR)
+                self.state = CameraState.ERROR
                 raise ValueError("Błąd konfiguracji profilu koloru")
 
             debug(

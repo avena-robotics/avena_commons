@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Blockly z zapisem XML</title>
+    <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+    <script src="https://unpkg.com/blockly/blocks.min.js"></script>
+    <script src="https://unpkg.com/blockly/python.min.js"></script>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      #toolbar { padding: 8px; border-bottom: 1px solid #ddd; }
+      #blocklyDiv { height: calc(100% - 48px); width: 100%; }
+      #fileInput { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <button onclick="generateCode()">Generuj Python</button>
+      <button onclick="downloadXML()">Zapisz XML</button>
+      <button onclick="document.getElementById('fileInput').click()">Wczytaj XML</button>
+      <input type="file" id="fileInput" accept=".xml"/>
+    </div>
+
+    <div id="blocklyDiv"></div>
+
+    <xml id="toolbox" style="display:none">
+      <category name="Logic" categorystyle="logic_category">
+        <block type="controls_if"></block>
+        <block type="logic_compare"></block>
+      </category>
+      <category name="Math" categorystyle="math_category">
+        <block type="math_number"></block>
+        <block type="math_arithmetic"></block>
+      </category>
+      <category name="I/O" colour="210">
+        <block type="io_load_image"></block>
+        <block type="io_save_image"></block>
+      </category>
+      <category name="CV" colour="160">
+        <block type="cv_canny"></block>
+      </category>
+      <category name="Vision" colour="200">
+        <block type="vision_take_photo"></block>
+        <block type="vision_camera_params"></block>
+        <block type="vision_bgr_image"></block>
+        <block type="vision_depth_image"></block>
+        <block type="vision_create_color_mask"></block>
+        <block type="vision_fix_depth"></block>
+        <block type="vision_create_depth_mask"></block>
+        <block type="vision_combine_masks"></block>
+        <block type="vision_preprocess_mask"></block>
+        <block type="vision_undistort"></block>
+        <block type="vision_find_contours"></block>
+        <block type="vision_remove_outside_contours"></block>
+        <block type="vision_remove_edge_contours"></block>
+        <block type="vision_find_inner_contours"></block>
+        <block type="vision_create_min_rectangle"></block>
+        <block type="vision_validate_rectangle"></block>
+        <block type="vision_prepare_image_output"></block>
+        <block type="vision_prepare_box_output"></block>
+        <block type="vision_box_detection"></block>
+      </category>
+    </xml>
+
+    <!-- Twoje definicje bloczków -->
+    <script src="my_blocks.js"></script>
+    <script src="my_python.js"></script>
+
+    <script>
+      const workspace = Blockly.inject('blocklyDiv', {
+        toolbox: document.getElementById('toolbox')
+      });
+
+      // --- Generowanie kodu Pythona ---
+      function generateCode() {
+        const code = Blockly.Python.workspaceToCode(workspace);
+        console.log(code);
+        alert(code || "Brak bloczków w workspace.");
+      }
+
+      // --- Zapis workspace do XML ---
+      function saveWorkspaceToXML() {
+        const xmlDom = Blockly.Xml.workspaceToDom(workspace);
+        return Blockly.Xml.domToPrettyText(xmlDom);
+      }
+
+      function downloadXML() {
+        const xmlText = saveWorkspaceToXML();
+        const blob = new Blob([xmlText], {type: 'text/xml'});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "workspace.xml";
+        a.click();
+      }
+
+      // --- Wczytanie workspace z XML ---
+      function loadWorkspaceFromXML(xmlText) {
+        const xmlDom = Blockly.Xml.textToDom(xmlText);
+        workspace.clear();
+        Blockly.Xml.domToWorkspace(xmlDom, workspace);
+      }
+
+      document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          loadWorkspaceFromXML(event.target.result);
+        };
+        reader.readAsText(file);
+      });
+    </script>
+  </body>
+</html>
