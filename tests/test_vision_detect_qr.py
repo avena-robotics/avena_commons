@@ -1,17 +1,7 @@
 import argparse
-import asyncio
-import concurrent.futures
 import json
-import multiprocessing as mp
-
-# import logging
 import os
-import pickle
 import random
-import signal
-import sys
-import threading
-import time
 from pathlib import Path
 
 import cv2
@@ -19,14 +9,7 @@ import numpy as np
 from pupil_apriltags import Detector
 
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import (
-    LoggerPolicyPeriod,
-    MessageLogger,
-    debug,
-    error,
-    info,
-    warning,
-)
+from avena_commons.util.logger import error
 from avena_commons.vision.detector import qr_detector
 
 if __name__ == "__main__":
@@ -152,6 +135,9 @@ if __name__ == "__main__":
 
     try:
         json_files = sorted(Path(path).glob("*.json"))
+        json_files = list(json_files)  # Konwersja Path objects na listę
+        random.shuffle(json_files)  # Tasuje listę w miejscu
+
         # for set in os.listdir(path):
         for json_file in json_files:
             base_name = json_file.stem  # np. "0001" z "0001.json"
@@ -167,7 +153,7 @@ if __name__ == "__main__":
             png_image = cv2.imread(png_file)
 
             with Catchtime() as t1:
-                result = qr_detector(
+                result1 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -176,7 +162,7 @@ if __name__ == "__main__":
                     config=qr_config_a,
                 )
             with Catchtime() as t2:
-                result = qr_detector(
+                result2 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -185,7 +171,7 @@ if __name__ == "__main__":
                     config=qr_config_b,
                 )
             with Catchtime() as t3:
-                result = qr_detector(
+                result3 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -194,7 +180,7 @@ if __name__ == "__main__":
                     config=qr_config_c,
                 )
             with Catchtime() as t4:
-                result = qr_detector(
+                result4 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -203,7 +189,7 @@ if __name__ == "__main__":
                     config=qr_config_d,
                 )
             with Catchtime() as t5:
-                result = qr_detector(
+                result5 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -212,7 +198,7 @@ if __name__ == "__main__":
                     config=qr_config_e,
                 )
             with Catchtime() as t6:
-                result = qr_detector(
+                result6 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -221,7 +207,7 @@ if __name__ == "__main__":
                     config=qr_config_f,
                 )
             with Catchtime() as t7:
-                result = qr_detector(
+                result7 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -230,7 +216,7 @@ if __name__ == "__main__":
                     config=qr_config_g,
                 )
             with Catchtime() as t8:
-                result = qr_detector(
+                result8 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -239,7 +225,7 @@ if __name__ == "__main__":
                     config=qr_config_h,
                 )
             with Catchtime() as t9:
-                result = qr_detector(
+                result9 = qr_detector(
                     qr_image=png_image,
                     qr_number=0,
                     detector=detector,
@@ -256,6 +242,15 @@ if __name__ == "__main__":
             print(t7)
             print(t8)
             print(t9)
+            print(f"result1: {len(result1)}")
+            print(f"result2: {len(result2)}")
+            print(f"result3: {len(result3)}")
+            print(f"result4: {len(result4)}")
+            print(f"result5: {len(result5)}")
+            print(f"result6: {len(result6)}")
+            print(f"result7: {len(result7)}")
+            print(f"result8: {len(result8)}")
+            print(f"result9: {len(result9)}")
             # print(result)
             break
     except KeyboardInterrupt:

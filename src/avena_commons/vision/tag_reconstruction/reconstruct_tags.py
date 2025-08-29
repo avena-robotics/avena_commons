@@ -125,7 +125,7 @@ def reconstruct_tags(
     with Catchtime() as ct5:
         merged_image = tag_reconstruction.merge_rois_into_image(image, rois)
 
-    debug(
-        f"reconstruct_tags: t1: {ct1.t * 1_000:.2f}ms t2: {ct2.t * 1_000:.2f}ms t3: {ct3.t * 1_000:.2f}ms t4: {ct4.t * 1_000:.2f}ms t5: {ct5.t * 1_000:.2f}ms"
-    )
+    # debug(
+    #     f"reconstruct_tags: t1: {ct1.t * 1_000:.2f}ms t2: {ct2.t * 1_000:.2f}ms t3: {ct3.t * 1_000:.2f}ms t4: {ct4.t * 1_000:.2f}ms t5: {ct5.t * 1_000:.2f}ms"
+    # )
     return merged_image

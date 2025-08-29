@@ -25,6 +25,8 @@ Zastosowania:
 import cv2
 import numpy as np
 
+import avena_commons.vision.preprocess as preprocess
+
 
 def preprocess_for_contours(image: np.ndarray) -> np.ndarray:
     """
@@ -65,13 +67,12 @@ def preprocess_for_contours(image: np.ndarray) -> np.ndarray:
     - Parametry CLAHE i binaryzacji są zoptymalizowane dla tagów wizyjnych
     """
     if len(image.shape) > 2:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = preprocess.to_gray(image)
     else:
         gray = image
 
     # Poprawa kontrastu
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
+    enhanced = preprocess.clahe(gray, clip_limit=2.0, grid_size=8)
 
     # Adaptacyjna binaryzacja jest lepsza dla obrazów o nierównym oświetleniu
     binary = cv2.adaptiveThreshold(
