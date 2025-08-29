@@ -16,6 +16,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from pupil_apriltags import Detector
 
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import (
@@ -100,9 +101,9 @@ def run_parallel_detectors_advanced(
         init_worker_pool()
 
     configs_to_test = [
-        ("config_a", config["box_config_a"]),
-        ("config_b", config["box_config_b"]),
-        ("config_c", config["box_config_c"]),
+        ("config_a", config),
+        ("config_b", config),
+        ("config_c", config),
     ]
 
     # Przygotuj argumenty dla każdego procesu
@@ -350,6 +351,161 @@ if __name__ == "__main__":
             },
         },
     }
+    # config = {
+    #     "box_config_a": {
+    #         "center_point": [1050, 550],
+    #         "fix_depth_on": True,
+    #         "fix_depth_config": {
+    #             "closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "zero_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "r_wide": 2.0,
+    #             "r_tall": 0.5,
+    #             "final_closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #         },
+    #         "depth": {
+    #             "min_non_zero_percentage": 0.3,
+    #             "center_size": 100,
+    #             "depth_range": 35,
+    #             "depth_bias": 44,
+    #         },
+    #         "hsv": {
+    #             "hsv_h_min": 70,
+    #             "hsv_h_max": 105,
+    #             "hsv_s_min": 10,
+    #             "hsv_s_max": 255,
+    #             "hsv_v_min": 120,
+    #             "hsv_v_max": 255,
+    #         },
+    #         "preprocess": {
+    #             "blur_size": 15,
+    #             "opened_kernel_type": cv2.MORPH_RECT,
+    #             "opened_size": [2, 9],
+    #             "opened_iterations": 3,
+    #             "closed_size": [1, 9],
+    #             "closed_iterations": 3,
+    #             "closed_kernel_type": cv2.MORPH_ELLIPSE,
+    #         },
+    #         "remove_cnts": {"expected_width": 1150, "expected_height": 850},
+    #         "edge_removal": {"edge_margin": 35},
+    #         "hit_contours": {"angle_step": 10, "step_size": 1},
+    #         "rect_validation": {
+    #             "max_angle": 20,
+    #             "box_ratio_range": [1.293, 1.387],
+    #             "max_distance": 150,
+    #         },
+    #     },
+    #     "box_config_b": {
+    #         "center_point": [1050, 550],
+    #         "fix_depth_on": True,
+    #         "fix_depth_config": {
+    #             "closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "zero_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "r_wide": 2.0,
+    #             "r_tall": 0.5,
+    #             "final_closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #         },
+    #         "depth": {
+    #             "min_non_zero_percentage": 0.3,
+    #             "center_size": 100,
+    #             "depth_range": 35,
+    #             "depth_bias": 44,
+    #         },
+    #         "hsv": {
+    #             "hsv_h_min": 70,
+    #             "hsv_h_max": 105,
+    #             "hsv_s_min": 10,
+    #             "hsv_s_max": 255,
+    #             "hsv_v_min": 100,
+    #             "hsv_v_max": 255,
+    #         },
+    #         "preprocess": {
+    #             "blur_size": 15,
+    #             "opened_kernel_type": cv2.MORPH_RECT,
+    #             "opened_size": [2, 9],
+    #             "opened_iterations": 3,
+    #             "closed_size": [1, 9],
+    #             "closed_iterations": 6,
+    #             "closed_kernel_type": cv2.MORPH_ELLIPSE,
+    #         },
+    #         "remove_cnts": {"expected_width": 1150, "expected_height": 850},
+    #         "edge_removal": {"edge_margin": 50},
+    #         "hit_contours": {"angle_step": 10, "step_size": 1},
+    #         "rect_validation": {
+    #             "max_angle": 20,
+    #             "box_ratio_range": [1.293, 1.387],
+    #             "max_distance": 150,
+    #         },
+    #     },
+    #     "box_config_c": {
+    #         "center_point": [1050, 550],
+    #         "fix_depth_on": True,
+    #         "fix_depth_config": {
+    #             "closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "zero_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #             "r_wide": 2.0,
+    #             "r_tall": 0.5,
+    #             "final_closing_mask": {
+    #                 "kernel_size": 10,
+    #                 "iterations": 2,
+    #             },
+    #         },
+    #         "depth": {
+    #             "min_non_zero_percentage": 0.3,
+    #             "center_size": 100,
+    #             "depth_range": 35,
+    #             "depth_bias": 44,
+    #         },
+    #         "hsv": {
+    #             "hsv_h_min": 70,
+    #             "hsv_h_max": 105,
+    #             "hsv_s_min": 50,
+    #             "hsv_s_max": 255,
+    #             "hsv_v_min": 120,
+    #             "hsv_v_max": 255,
+    #         },
+    #         "preprocess": {
+    #             "blur_size": 15,
+    #             "opened_kernel_type": cv2.MORPH_RECT,
+    #             "opened_size": [2, 9],
+    #             "opened_iterations": 3,
+    #             "closed_size": [1, 9],
+    #             "closed_iterations": 3,
+    #             "closed_kernel_type": cv2.MORPH_ELLIPSE,
+    #         },
+    #         "remove_cnts": {"expected_width": 1150, "expected_height": 850},
+    #         "edge_removal": {"edge_margin": 35},
+    #         "hit_contours": {"angle_step": 10, "step_size": 1},
+    #         "rect_validation": {
+    #             "max_angle": 20,
+    #             "box_ratio_range": [1.295, 1.385],  # 1.29, 1.39
+    #             "max_distance": 150,  # 300
+    #         },
+    #     },
+    # }
     args = parser.parse_args()
 
     temp_path = os.path.abspath("temp")
@@ -377,53 +533,53 @@ if __name__ == "__main__":
             png_image = cv2.imread(png_file)
 
             # Uruchom równoległe detektory
-            with Catchtime() as t1:
-                results = run_parallel_detectors_advanced(
-                    config,
-                    png_image,
-                    pkl_data,
-                    camera_params,
-                    distortion_coefficients,
-                )
-            print(t1)
-            # Teraz możesz użyć wyników - każdy config ma swój result
-            result_a = results.get("config_a")
-            result_b = results.get("config_b")
-            result_c = results.get("config_c")
+            # with Catchtime() as t1:
+            #     results = run_parallel_detectors_advanced(
+            #         config,
+            #         png_image,
+            #         pkl_data,
+            #         camera_params,
+            #         distortion_coefficients,
+            #     )
+            # print(t1)
+            # # Teraz możesz użyć wyników - każdy config ma swój result
+            # result_a = results.get("config_a")
+            # result_b = results.get("config_b")
+            # result_c = results.get("config_c")
 
-            # Możesz dodać asercje lub dalsze testy na podstawie wyników
-            assert result_a is not None, "Config A nie zwrócił wyniku"
-            assert result_b is not None, "Config B nie zwrócił wyniku"
-            assert result_c is not None, "Config C nie zwrócił wyniku"
+            # # Możesz dodać asercje lub dalsze testy na podstawie wyników
+            # assert result_a is not None, "Config A nie zwrócił wyniku"
+            # assert result_b is not None, "Config B nie zwrócił wyniku"
+            # assert result_c is not None, "Config C nie zwrócił wyniku"
             with Catchtime() as t4:
-                result = detector.box_detector_sequential(
+                result = box_detector(
                     color_image=png_image,
                     depth_image=pkl_data,
                     camera_params=camera_params,
-                    dist=distortion_coefficients,
-                    configs=[config["box_config_a"]],
+                    distortion_coefficients=distortion_coefficients,
+                    config=config["box_config_a"],
                 )
-            with Catchtime() as t5:
-                result = detector.box_detector_sequential(
-                    color_image=png_image,
-                    depth_image=pkl_data,
-                    camera_params=camera_params,
-                    dist=distortion_coefficients,
-                    configs=[config["box_config_b"]],
-                )
-            with Catchtime() as t6:
-                result = detector.box_detector_sequential(
-                    color_image=png_image,
-                    depth_image=pkl_data,
-                    camera_params=camera_params,
-                    dist=distortion_coefficients,
-                    configs=[config["box_config_c"]],
-                )
+            # with Catchtime() as t5:
+            #     result = detector.box_detector_sequential(
+            #         color_image=png_image,
+            #         depth_image=pkl_data,
+            #         camera_params=camera_params,
+            #         dist=distortion_coefficients,
+            #         configs=[config["box_config_b"]],
+            #     )
+            # with Catchtime() as t6:
+            #     result = detector.box_detector_sequential(
+            #         color_image=png_image,
+            #         depth_image=pkl_data,
+            #         camera_params=camera_params,
+            #         dist=distortion_coefficients,
+            #         configs=[config["box_config_c"]],
+            #     )
 
-                # Czasy z multiprocessing są już wyświetlane w run_parallel_detectors_advanced
+            # Czasy z multiprocessing są już wyświetlane w run_parallel_detectors_advanced
             print(t4)
-            print(t5)
-            print(t6)
+            #     print(t5)
+            # print(t6)
             break
     except KeyboardInterrupt:
         pass

@@ -8,6 +8,7 @@ requests
 numpy>=1.21.0,<2.0.0
 scipy
 opencv-python
+pupil-apriltags
 psutil
 pymodbus==3.9.2
 httpx

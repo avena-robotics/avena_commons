@@ -1,7 +1,7 @@
 import cv2
 
 
-def undistort(image, camera_matrix, dist):  # MARK: UNDISTORT
+def undistort(image, camera_matrix, camera_distortion):  # MARK: UNDISTORT
     """
     Corrects lens distortion in the image.
 
@@ -12,4 +12,4 @@ def undistort(image, camera_matrix, dist):  # MARK: UNDISTORT
     :return: Undistorted image
     """
 
-    return cv2.undistort(image, camera_matrix, dist)
+    return cv2.undistort(image, camera_matrix, camera_distortion)
