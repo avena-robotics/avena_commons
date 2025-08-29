@@ -1270,12 +1270,19 @@ class Orchestrator(EventListener):
         match event.event_type:
             case "CMD_GET_STATE":
                 if event.result is not None:
-                    # print(event)
                     old_state = self._state.get(event.source, {}).get(
                         "fsm_state", "UNKNOWN"
                     )
                     new_state = event.data["fsm_state"]
                     self._state[event.source]["fsm_state"] = new_state
+
+                    # Zapisz pola błędu raportowane przez klienta
+                    self._state[event.source]["error"] = bool(
+                        event.data.get("error", False)
+                    )
+                    self._state[event.source]["error_message"] = event.data.get(
+                        "error_message"
+                    )
 
                     debug(
                         f"📊 _state update: {event.source} FSM: {old_state} → {new_state}",

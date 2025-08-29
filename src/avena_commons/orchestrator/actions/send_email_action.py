@@ -125,6 +125,39 @@ class SendEmailAction(BaseAction):
                 )
                 body = body.replace("{{ clients_in_fault }}", clients_in_fault_str)
 
+                # Nowe: {{ clients_error_messages }} - zbuduj listę klientów z błędami i ich komunikaty
+                if (
+                    "{{ clients_error_messages }}" in subject
+                    or "{{ clients_error_messages }}" in body
+                ):
+                    clients_with_errors = []
+                    try:
+                        for client_name, st in orch._state.items():
+                            try:
+                                if (
+                                    st.get("error")
+                                    and st.get("error_message") is not None
+                                ):
+                                    msg = st.get("error_message")
+                                    if isinstance(msg, (list, tuple)):
+                                        msg = ", ".join(str(m) for m in msg)
+                                    clients_with_errors.append(f"{client_name}: {msg}")
+                            except Exception:
+                                continue
+                    except Exception:
+                        clients_with_errors = []
+                    clients_error_messages_str = (
+                        "; ".join(sorted(clients_with_errors))
+                        if clients_with_errors
+                        else "(brak)"
+                    )
+                    subject = subject.replace(
+                        "{{ clients_error_messages }}", clients_error_messages_str
+                    )
+                    body = body.replace(
+                        "{{ clients_error_messages }}", clients_error_messages_str
+                    )
+
                 # Fallback dla {{ trigger.source }} jeśli brak w trigger_data
                 if "{{ trigger.source }}" in subject or "{{ trigger.source }}" in body:
                     trigger_source = None
@@ -138,6 +171,40 @@ class SendEmailAction(BaseAction):
                         )
                     subject = subject.replace("{{ trigger.source }}", trigger_source)
                     body = body.replace("{{ trigger.source }}", trigger_source)
+
+                # Nowe: fallback dla {{ trigger.error_message }} jeśli nie podano w trigger_data
+                if (
+                    "{{ trigger.error_message }}" in subject
+                    or "{{ trigger.error_message }}" in body
+                ):
+                    trig_err = None
+                    if (
+                        context.trigger_data
+                        and context.trigger_data.get("error_message") is not None
+                    ):
+                        trig_err = str(context.trigger_data["error_message"])
+                    else:
+                        # Spróbuj zebrać z orchestrator._state
+                        clients_with_errors = []
+                        for client_name, st in orch._state.items():
+                            try:
+                                if (
+                                    st.get("error")
+                                    and st.get("error_message") is not None
+                                ):
+                                    msg = st.get("error_message")
+                                    if isinstance(msg, (list, tuple)):
+                                        msg = ", ".join(str(m) for m in msg)
+                                    clients_with_errors.append(f"{client_name}: {msg}")
+                            except Exception:
+                                continue
+                        trig_err = (
+                            "; ".join(sorted(clients_with_errors))
+                            if clients_with_errors
+                            else "(brak)"
+                        )
+                    subject = subject.replace("{{ trigger.error_message }}", trig_err)
+                    body = body.replace("{{ trigger.error_message }}", trig_err)
             except Exception:
                 # Ciche pominięcie - e-mail i tak zostanie wysłany bez rozszerzeń
                 pass

@@ -39,7 +39,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}."
+      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Błędy {{ clients_error_messages }}"
     },
     {
       "type": "send_email",
@@ -51,7 +51,7 @@
         "lukasz.lecki@pomagier.info"
       ],
       "subject": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}",
-      "body": "Wykryto stan FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}"
+      "body": "Wykryto stan FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "log_event",
@@ -93,7 +93,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
+      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "send_email",
@@ -105,7 +105,7 @@
         "lukasz.lecki@pomagier.info"
       ],
       "subject": "[INFO] System wstrzymany - komponenty w błędzie: {{ clients_in_fault }}",
-      "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}"
+      "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "log_event",

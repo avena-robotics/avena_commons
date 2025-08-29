@@ -71,25 +71,60 @@ class BaseAction(ABC):
         Returns:
             Tekst z podstawionymi zmiennymi
         """
-        if not isinstance(text, str) or not context.trigger_data:
+        if not isinstance(text, str):
             return text
 
         result = text
 
+        # Jeśli brak trigger_data, nadal zwracamy tekst z ewentualnymi fallbackami poniżej
+        trigger = context.trigger_data or {}
+
         # Podstawowe zmienne trigger.*
-        if "{{ trigger.source }}" in result and context.trigger_data.get("source"):
-            result = result.replace(
-                "{{ trigger.source }}", str(context.trigger_data["source"])
-            )
+        if "{{ trigger.source }}" in result and trigger.get("source"):
+            result = result.replace("{{ trigger.source }}", str(trigger["source"]))
 
         if "{{ trigger.payload.error_code }}" in result:
-            payload = context.trigger_data.get("payload", {})
-            if payload.get("error_code"):
+            payload = trigger.get("payload", {})
+            if payload.get("error_code") is not None:
                 result = result.replace(
                     "{{ trigger.payload.error_code }}", str(payload["error_code"])
                 )
 
-        # Można dodać więcej zmiennych w przyszłości
+        # Nowe: {{ trigger.error_message }} oraz {{ error_message }}
+        # 1) trigger.error_message - pochodzi bezpośrednio z trigger_data
+        if "{{ trigger.error_message }}" in result:
+            err_msg = trigger.get("error_message")
+            if err_msg is not None:
+                result = result.replace("{{ trigger.error_message }}", str(err_msg))
+
+        # 2) error_message - uniwersalny placeholder: użyj trigger.error_message,
+        #    a gdy brak - spróbuj zbudować z orchestrator._state (klienci w błędzie)
+        if "{{ error_message }}" in result:
+            replacement = None
+
+            if trigger.get("error_message") is not None:
+                replacement = str(trigger["error_message"])  # typowo string lub lista
+            else:
+                try:
+                    orch = context.orchestrator
+                    clients_with_errors = []
+                    for client_name, st in getattr(orch, "_state", {}).items():
+                        try:
+                            if st.get("error") and st.get("error_message") is not None:
+                                msg = st.get("error_message")
+                                if isinstance(msg, (list, tuple)):
+                                    msg = ", ".join(str(m) for m in msg)
+                                clients_with_errors.append(f"{client_name}: {msg}")
+                        except Exception:
+                            continue
+                    if clients_with_errors:
+                        replacement = "; ".join(sorted(clients_with_errors))
+                except Exception:
+                    pass
+
+            if replacement is None:
+                replacement = "(brak)"
+            result = result.replace("{{ error_message }}", replacement)
 
         return result
 

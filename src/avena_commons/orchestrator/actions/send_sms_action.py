@@ -148,6 +148,33 @@ class SendSmsAction(BaseAction):
                 )
                 text = text.replace("{{ clients_in_fault }}", clients_in_fault_str)
 
+                # Nowe: {{ clients_error_messages }} - zbuduj listę klientów z błędami i ich komunikaty
+                if "{{ clients_error_messages }}" in text:
+                    clients_with_errors = []
+                    try:
+                        for client_name, st in orch._state.items():
+                            try:
+                                if (
+                                    st.get("error")
+                                    and st.get("error_message") is not None
+                                ):
+                                    msg = st.get("error_message")
+                                    if isinstance(msg, (list, tuple)):
+                                        msg = ", ".join(str(m) for m in msg)
+                                    clients_with_errors.append(f"{client_name}: {msg}")
+                            except Exception:
+                                continue
+                    except Exception:
+                        clients_with_errors = []
+                    clients_error_messages_str = (
+                        "; ".join(sorted(clients_with_errors))
+                        if clients_with_errors
+                        else "(brak)"
+                    )
+                    text = text.replace(
+                        "{{ clients_error_messages }}", clients_error_messages_str
+                    )
+
                 if "{{ trigger.source }}" in text:
                     trigger_source = None
                     if context.trigger_data and context.trigger_data.get("source"):
@@ -159,6 +186,35 @@ class SendSmsAction(BaseAction):
                             else "autonomous"
                         )
                     text = text.replace("{{ trigger.source }}", trigger_source)
+
+                # Nowe: fallback dla {{ trigger.error_message }} oraz {{ error_message }}
+                if "{{ trigger.error_message }}" in text:
+                    trig_err = None
+                    if (
+                        context.trigger_data
+                        and context.trigger_data.get("error_message") is not None
+                    ):
+                        trig_err = str(context.trigger_data["error_message"])
+                    else:
+                        clients_with_errors = []
+                        for client_name, st in orch._state.items():
+                            try:
+                                if (
+                                    st.get("error")
+                                    and st.get("error_message") is not None
+                                ):
+                                    msg = st.get("error_message")
+                                    if isinstance(msg, (list, tuple)):
+                                        msg = ", ".join(str(m) for m in msg)
+                                    clients_with_errors.append(f"{client_name}: {msg}")
+                            except Exception:
+                                continue
+                        trig_err = (
+                            "; ".join(sorted(clients_with_errors))
+                            if clients_with_errors
+                            else "(brak)"
+                        )
+                    text = text.replace("{{ trigger.error_message }}", trig_err)
             except Exception:
                 # Nie przerywaj wysyłki przy problemach z rozszerzeniami placeholderów
                 pass
