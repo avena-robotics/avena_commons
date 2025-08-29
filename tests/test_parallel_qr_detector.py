@@ -1,3 +1,4 @@
+# pytest tests/test_parallel_qr_detector.py::TestParallelQRDetection::test_parallel_9_configs -v -s
 import asyncio
 import json
 import os
@@ -5,7 +6,7 @@ import random
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
@@ -29,26 +30,11 @@ def process_single_config(args):
 
     try:
         # W każdym procesie odtwórz detektor i konfiguracje
-        from unittest.mock import Mock
-
         import numpy as np
         from pupil_apriltags import Detector
 
-        # Odtwórz detektor
-        detector = Mock(spec=Detector)
-
-        def mock_detect(image, *args, **kwargs):
-            if hasattr(image, "shape"):
-                if image.shape[0] > 400:
-                    return [
-                        Mock(center=[100, 100], id=1),
-                        Mock(center=[200, 200], id=2),
-                    ]
-                else:
-                    return [Mock(center=[150, 150], id=1)]
-            return []
-
-        detector.detect = mock_detect
+        # Odtwórz detektor (bez Mock objects!)
+        detector = Detector()  # Prawdziwy detektor AprilTag
 
         # Pobierz konfigurację po indeksie
         qr_configs = [
@@ -158,10 +144,32 @@ def process_single_config(args):
         elapsed_time_ms = elapsed_time * 1000
         print(f"DEBUG: elapsed_time = {elapsed_time_ms:.2f}ms")
 
+        # Zwróć tylko dane które można spicklować (NIE Mock objects!)
         return {
             "success": True,
             "time": elapsed_time,
             "result": result is not None,
+            "detection_count": len(result)
+            if result
+            else 0,  # Liczba znalezionych kodów
+            "detection_details": [
+                {
+                    "id": tag.id if hasattr(tag, "id") else None,
+                    "center": tag.center
+                    if isinstance(tag.center, list)
+                    else tag.center.tolist()
+                    if hasattr(tag.center, "tolist")
+                    else tag.center,
+                    "corners": tag.corners
+                    if isinstance(tag.corners, list)
+                    else tag.corners.tolist()
+                    if hasattr(tag.corners, "tolist")
+                    else tag.corners,
+                }
+                for tag in (result or [])
+            ]
+            if result
+            else [],  # Szczegóły detekcji jako zwykłe dane
         }
     except Exception as e:
         return {"success": False, "time": 0.0, "error": str(e)}
@@ -214,23 +222,63 @@ class TestParallelQRDetection:
 
     @pytest.fixture
     def mock_detector(self):
-        """Mock detektora AprilTag."""
-        detector = Mock(spec=Detector)
+        """Symulowany detektor AprilTag (bez Mock objects)."""
 
-        def mock_detect(image, *args, **kwargs):
-            # Symulujemy różne wyniki detekcji
-            if hasattr(image, "shape"):
-                if image.shape[0] > 400:
-                    return [
-                        Mock(center=[100, 100], id=1),
-                        Mock(center=[200, 200], id=2),
-                    ]
-                else:
-                    return [Mock(center=[150, 150], id=1)]
-            return []
+        class SimulatedDetector:
+            def detect(self, image, *args, **kwargs):
+                # Symulujemy różne wyniki detekcji jako zwykłe dane
+                if hasattr(image, "shape"):
+                    if image.shape[0] > 400:
+                        return [
+                            type(
+                                "obj",
+                                (object,),
+                                {
+                                    "center": [100, 100],
+                                    "id": 1,
+                                    "corners": [
+                                        [100, 100],
+                                        [110, 100],
+                                        [110, 110],
+                                        [100, 110],
+                                    ],
+                                },
+                            )(),
+                            type(
+                                "obj",
+                                (object,),
+                                {
+                                    "center": [200, 200],
+                                    "id": 2,
+                                    "corners": [
+                                        [200, 200],
+                                        [210, 200],
+                                        [210, 210],
+                                        [200, 210],
+                                    ],
+                                },
+                            )(),
+                        ]
+                    else:
+                        return [
+                            type(
+                                "obj",
+                                (object,),
+                                {
+                                    "center": [150, 150],
+                                    "id": 1,
+                                    "corners": [
+                                        [150, 150],
+                                        [160, 150],
+                                        [160, 160],
+                                        [150, 160],
+                                    ],
+                                },
+                            )()
+                        ]
+                return []
 
-        detector.detect = mock_detect
-        return detector
+        return SimulatedDetector()
 
     @pytest.fixture
     def camera_params(self):
@@ -456,7 +504,7 @@ class TestParallelQRDetection:
             print(f"  Uruchamiam {len(worker_args)} konfiguracji równolegle...")
 
             # Przygotuj executor PRZED pomiarem czasu (tworzenie procesów nie wchodzi w pomiar)
-            with ProcessPoolExecutor(max_workers=4) as executor:
+            with ProcessPoolExecutor(max_workers=9) as executor:
                 # Submit wszystkie zadania PRZED pomiarem
                 future_to_config = {
                     executor.submit(process_single_config, args): j
@@ -468,18 +516,32 @@ class TestParallelQRDetection:
                     # Zbierz wyniki (to zajmie czas)
                     results = []
                     for future in as_completed(future_to_config):
+                        # print(f"Skonczyl sie: {future}")
                         config_idx = future_to_config[future]
                         config_name = f"config_{chr(97 + config_idx)}"
 
                         try:
                             result = future.result()
+                            print(
+                                f"  Proces {config_idx} ({config_name}) zwrocil: {result}"
+                            )
+
                             elapsed_time = result["time"]
                             elapsed_time_ms = elapsed_time * 1000
                             all_times.append(elapsed_time)
                             total_parallel_time += elapsed_time
 
                             if result["success"]:
-                                print(f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms")
+                                detection_count = result.get("detection_count", 0)
+                                detection_details = result.get("detection_details", [])
+                                print(
+                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono {detection_count} kodów QR"
+                                )
+                                if detection_details:
+                                    for i, det in enumerate(detection_details):
+                                        print(
+                                            f"      Kod {i + 1}: ID={det['id']}, środek={det['center']}"
+                                        )
                             else:
                                 print(
                                     f"    ✗ {config_name}: BŁĄD - {result.get('error', 'Unknown error')}"
