@@ -116,7 +116,7 @@ def reconstruct_tags(
             rois = tag_reconstruction.divide_image_into_roi(image)
 
     with Catchtime() as ct4:
-        debug(f"rois: {len(rois)}")
+        # debug(f"rois: {len(rois)}")
         for i, roi in enumerate(rois):
             roi, _ = tag_reconstruction.wrap_tag_to_roi(
                 ref_tag_shapes, roi, config["scene_corners"][i]

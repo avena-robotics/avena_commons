@@ -141,8 +141,8 @@ def process_single_config(args):
         elapsed_time = time.perf_counter() - start_time
 
         # DEBUG: sprawdź czas w milisekundach
-        elapsed_time_ms = elapsed_time * 1000
-        print(f"DEBUG: elapsed_time = {elapsed_time_ms:.2f}ms")
+        # elapsed_time_ms = elapsed_time * 1000
+        # print(f"DEBUG: elapsed_time = {elapsed_time_ms:.2f}ms")
 
         # Zwróć tylko dane które można spicklować (NIE Mock objects!)
         return {
@@ -522,9 +522,9 @@ class TestParallelQRDetection:
 
                         try:
                             result = future.result()
-                            print(
-                                f"  Proces {config_idx} ({config_name}) zwrocil: {result}"
-                            )
+                            # print("=" * 100)
+                            # print(result)
+                            # print("=" * 100)
 
                             elapsed_time = result["time"]
                             elapsed_time_ms = elapsed_time * 1000
@@ -535,12 +535,12 @@ class TestParallelQRDetection:
                                 detection_count = result.get("detection_count", 0)
                                 detection_details = result.get("detection_details", [])
                                 print(
-                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono {detection_count} kodów QR"
+                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono QR-kodów: {detection_count}"
                                 )
                                 if detection_details:
                                     for i, det in enumerate(detection_details):
                                         print(
-                                            f"      Kod {i + 1}: ID={det['id']}, środek={det['center']}"
+                                            f"      Kod {i + 1}: ID={det['id']}, środek={', '.join(f'{x:.2f}' for x in det['center'])}"
                                         )
                             else:
                                 print(
