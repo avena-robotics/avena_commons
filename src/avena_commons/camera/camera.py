@@ -87,15 +87,7 @@ class Camera(EventListener):
             raise ValueError(f"Brak konfiguracji CAMERA_IP dla kamery")
         self.camera_address = self._configuration["camera_ip"]
 
-        # self.camera_pipeline = None
-        # self.camera_config = None
-
         self.camera_running = False
-
-        # czat insetrion
-        # self.align_filter = None
-        # self.spatial_filter = None
-        # self.temporal_filter = None
 
         # Bufory dla synchronizacji ramek
         self.latest_color_frame = None
@@ -122,5 +114,3 @@ class Camera(EventListener):
 
     async def on_stopping(self):
         self.camera.stop()
-
-

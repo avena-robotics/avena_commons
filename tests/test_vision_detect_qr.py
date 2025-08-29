@@ -58,20 +58,14 @@ if __name__ == "__main__":
 
     qr_config_a = {
         "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
-        "gray_image_type": "gray",
+        "mode": "gray",
         "clahe": {"clip_limit": 4.0, "grid_size": 8},
-        "binarization": {
-            "gamma": 3,
-            "binarization": {"block_size": 31, "C": 1},
-            "morph": {"kernel_size": 3, "open_iter": 1, "close_iter": 3},
-        },
-        "merge_image_weight": 0.7,
         "middle_area": {"min_x": 0.56, "max_x": 1.44},
     }
     qr_config_b = {
         "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
-        "gray_image_type": "gray",
-        "clahe": {"clip_limit": 1.0, "grid_size": 1},
+        "mode": "gray_with_binarization",
+        "clahe": {"clip_limit": 4.0, "grid_size": 8},
         "binarization": {
             "gamma": 3,
             "binarization": {"block_size": 31, "C": 1},
@@ -82,19 +76,13 @@ if __name__ == "__main__":
     }
     qr_config_c = {
         "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
-        "gray_image_type": "saturation",
-        "clahe": {"clip_limit": 4.0, "grid_size": 8},
-        "binarization": {
-            "gamma": 3,
-            "binarization": {"block_size": 31, "C": 1},
-            "morph": {"kernel_size": 3, "open_iter": 1, "close_iter": 3},
-        },
-        "merge_image_weight": 0.7,
+        "mode": "gray",
+        "clahe": {"clip_limit": 1.0, "grid_size": 1},
         "middle_area": {"min_x": 0.56, "max_x": 1.44},
     }
     qr_config_d = {
         "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
-        "gray_image_type": "saturation",
+        "mode": "gray_with_binarization",
         "clahe": {"clip_limit": 1.0, "grid_size": 1},
         "binarization": {
             "gamma": 3,
@@ -106,8 +94,44 @@ if __name__ == "__main__":
     }
     qr_config_e = {
         "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
-        "tag_reconstruction": True,
-        "tag_reconstruction_config": {
+        "mode": "saturation",
+        "clahe": {"clip_limit": 4.0, "grid_size": 8},
+        "middle_area": {"min_x": 0.56, "max_x": 1.44},
+    }
+    qr_config_f = {
+        "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
+        "mode": "saturation_with_binarization",
+        "clahe": {"clip_limit": 4.0, "grid_size": 8},
+        "binarization": {
+            "gamma": 3,
+            "binarization": {"block_size": 31, "C": 1},
+            "morph": {"kernel_size": 3, "open_iter": 1, "close_iter": 3},
+        },
+        "merge_image_weight": 0.7,
+        "middle_area": {"min_x": 0.56, "max_x": 1.44},
+    }
+    qr_config_g = {
+        "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
+        "mode": "saturation",
+        "clahe": {"clip_limit": 1.0, "grid_size": 1},
+        "middle_area": {"min_x": 0.56, "max_x": 1.44},
+    }
+    qr_config_h = {
+        "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
+        "mode": "saturation_with_binarization",
+        "clahe": {"clip_limit": 1.0, "grid_size": 1},
+        "binarization": {
+            "gamma": 3,
+            "binarization": {"block_size": 31, "C": 1},
+            "morph": {"kernel_size": 3, "open_iter": 1, "close_iter": 3},
+        },
+        "merge_image_weight": 0.7,
+        "middle_area": {"min_x": 0.56, "max_x": 1.44},
+    }
+    qr_config_i = {
+        "qr_size": 0.026,  # 0.026 #TODO: było 0.02 - małe tacki
+        "mode": "tag_reconstruction",  # "tag_reconstruction", "saturation", "gray", "gray_with_binarization", "saturation_with_binarization"
+        "tag_reconstruction": {
             "roi_config": {
                 "horizontal_slice": (0.33, 0.66),
                 "vertical_slice": (0.0, 1.0),  # Cała wysokość
@@ -187,12 +211,51 @@ if __name__ == "__main__":
                     distortion_coefficients=distortion_coefficients,
                     config=qr_config_e,
                 )
-
+            with Catchtime() as t6:
+                result = qr_detector(
+                    qr_image=png_image,
+                    qr_number=0,
+                    detector=detector,
+                    camera_params=camera_params,
+                    distortion_coefficients=distortion_coefficients,
+                    config=qr_config_f,
+                )
+            with Catchtime() as t7:
+                result = qr_detector(
+                    qr_image=png_image,
+                    qr_number=0,
+                    detector=detector,
+                    camera_params=camera_params,
+                    distortion_coefficients=distortion_coefficients,
+                    config=qr_config_g,
+                )
+            with Catchtime() as t8:
+                result = qr_detector(
+                    qr_image=png_image,
+                    qr_number=0,
+                    detector=detector,
+                    camera_params=camera_params,
+                    distortion_coefficients=distortion_coefficients,
+                    config=qr_config_h,
+                )
+            with Catchtime() as t9:
+                result = qr_detector(
+                    qr_image=png_image,
+                    qr_number=0,
+                    detector=detector,
+                    camera_params=camera_params,
+                    distortion_coefficients=distortion_coefficients,
+                    config=qr_config_i,
+                )
             print(t1)
             print(t2)
             print(t3)
             print(t4)
             print(t5)
+            print(t6)
+            print(t7)
+            print(t8)
+            print(t9)
             # print(result)
             break
     except KeyboardInterrupt:

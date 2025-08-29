@@ -1,5 +1,12 @@
+import traceback
+
+import cv2
+import pkg_resources
+
 import avena_commons.vision.camera as camera
-import avena_commons.vision.vision.preprocess as preprocess
+import avena_commons.vision.preprocess as preprocess
+import avena_commons.vision.tag_reconstruction as tag_reconstruction
+from avena_commons.util.logger import error
 
 
 def qr_detector(
@@ -36,9 +43,9 @@ def qr_detector(
         qr_image, camera_matrix, camera_distortion
     )
 
-    config_index = 0
+    # config_index = 0
 
-    output_list = []
+    # output_list = []
 
     # for idx, config in enumerate(configs):
     #     config_name = f"config_{chr(97 + idx)}"
@@ -48,56 +55,103 @@ def qr_detector(
     #         "reconstructed_detections": [],
     #     }
 
-    # if (
-    #     config.get("tag_reconstruction", False) == True
-    # ):  # MARK: TAG RECONSTRUCTION USE HERE
-    #     try:
-    #         tag_image = cv2.imread(
-    #             "lib/supervisor_fairino/module/util/tag36h11-0.png"
-    #         )
-    #         merged_image = TagReconstuction.reconsturct_tags_on_image(
-    #             qr_image, tag_image, config["tag_reconstruction_config"]
-    #         )
-    #         gray_image = image_to_gray(merged_image)
-    #         detection_list_reconstructed = detector.detect(
-    #             gray_image, True, camera_params, config["qr_size"]
-    #         )
-    #         for detection in detection_list_reconstructed:
-    #             if detection.center[0] > (
-    #                 middle_point_x * config["middle_area"]["min_x"]
-    #             ) and detection.center[0] < (
-    #                 middle_point_x * config["middle_area"]["max_x"]
-    #             ):
-    #                 results_dict[config_name]["reconstructed_detections"].append(
-    #                     detection
-    #                 )
-    #                 if ObjectDetector._is_unique_detection(detection, output_list):
-    #                     output_list.append(detection)
-    #     except Exception as e:
-    #         error(
-    #             f"OBJECT DETECTOR: tag reconstruction error: {e} traceback: {traceback.format_exc()}",
-    #             message_logger,
-    #         )
+    detection = None
+    match config["mode"]:
+        case "gray":
+            gray_image = preprocess.to_gray(qr_image_undistorted)
+            # CLAHE
+            image_clahe = preprocess.clahe(
+                gray_image,
+                clip_limit=config["clahe"]["clip_limit"],
+                grid_size=config["clahe"]["grid_size"],
+            )
 
-    #     if len(output_list) >= qr_number_func:
-    #         return output_list, results_dict
-    #     continue
+            detection = detector.detect(  # apriltag detect
+                image_clahe, True, camera_params, config["qr_size"]
+            )
 
-    if config["gray_image_type"] == "gray":
-        gray_image = preprocess.to_gray(qr_image_undistorted)
-    elif config["gray_image_type"] == "saturation":
-        gray_image = preprocess.extract_saturation_channel(qr_image_undistorted)
+        case "gray_with_binarization":
+            gray_image = preprocess.to_gray(qr_image_undistorted)
+            # CLAHE
+            image_clahe = preprocess.clahe(
+                gray_image,
+                clip_limit=config["clahe"]["clip_limit"],
+                grid_size=config["clahe"]["grid_size"],
+            )
 
-    # CLAHE
-    image_clahe = preprocess.clahe(
-        gray_image,
-        clip_limit=config["clahe"]["clip_limit"],
-        grid_size=config["clahe"]["grid_size"],
-    )
+            binary_image = preprocess.binarize_and_clean(
+                gray_image, config["binarization"]
+            )
 
-    detection_list_clahe = detector.detect(  # apriltag detect
-        image_clahe, True, camera_params, config["qr_size"]
-    )
+            preprocessed_image = preprocess.blend(
+                image1=binary_image,
+                image2=image_clahe,
+                merge_image_weight=config["merge_image_weight"],
+            )
+
+            detection = detector.detect(  # apriltag detect
+                preprocessed_image, True, camera_params, config["qr_size"]
+            )
+
+        case "saturation":
+            gray_image = preprocess.extract_saturation_channel(qr_image_undistorted)
+            # CLAHE
+            image_clahe = preprocess.clahe(
+                gray_image,
+                clip_limit=config["clahe"]["clip_limit"],
+                grid_size=config["clahe"]["grid_size"],
+            )
+
+            detection = detector.detect(  # apriltag detect
+                image_clahe, True, camera_params, config["qr_size"]
+            )
+
+        case "saturation_with_binarization":
+            gray_image = preprocess.extract_saturation_channel(qr_image_undistorted)
+            # CLAHE
+            image_clahe = preprocess.clahe(
+                gray_image,
+                clip_limit=config["clahe"]["clip_limit"],
+                grid_size=config["clahe"]["grid_size"],
+            )
+
+            binary_image = preprocess.binarize_and_clean(
+                gray_image, config["binarization"]
+            )
+
+            preprocessed_image = preprocess.blend(
+                image1=binary_image,
+                image2=image_clahe,
+                merge_image_weight=config["merge_image_weight"],
+            )
+
+            detection = detector.detect(  # apriltag detect
+                preprocessed_image, True, camera_params, config["qr_size"]
+            )
+
+        case "tag_reconstruction":
+            try:
+                tag_path = pkg_resources.resource_filename(
+                    "avena_commons.vision.data", "tag36h11-0.png"
+                )
+                tag_image = cv2.imread(tag_path)
+                # tag_image = cv2.imread(
+                #     "lib/supervisor_fairino/module/util/tag36h11-0.png"
+                # )
+                merged_image = tag_reconstruction.reconstruct_tags(
+                    qr_image, tag_image, config["tag_reconstruction"]
+                )
+                gray_image = preprocess.to_gray(merged_image)
+                detection = detector.detect(
+                    gray_image, True, camera_params, config["qr_size"]
+                )
+            except Exception as e:
+                error(
+                    f"OBJECT DETECTOR: tag reconstruction error: {e} traceback: {traceback.format_exc()}",
+                )
+
+        case _:
+            raise ValueError(f"Invalid mode: {config['mode']}")
 
     # for detection in detection_list_clahe:
     #     if detection.center[0] > (
@@ -113,17 +167,6 @@ def qr_detector(
     #     return output_list, results_dict
 
     # BINARY
-    binary_image = preprocess.binarize_and_clean(gray_image, config["binarization"])
-
-    preprocessed_image = preprocess.blend(
-        image1=binary_image,
-        image2=image_clahe,
-        merge_image_weight=config["merge_image_weight"],
-    )
-
-    detection_list_binary = detector.detect(  # apriltag detect
-        preprocessed_image, True, camera_params, config["qr_size"]
-    )
 
     # for detection in detection_list_binary:
     #     if detection.center[0] > (
@@ -141,4 +184,5 @@ def qr_detector(
 
     # config_index += 1
 
-    return detection_list_clahe, detection_list_binary
+    # return detection_list_clahe, detection_list_binary
+    return detection
