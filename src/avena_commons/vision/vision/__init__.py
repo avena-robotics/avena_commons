@@ -18,7 +18,6 @@ from .propagate_by_shape import propagate_by_shape
 from .rectangle_from_contours import rectangle_from_contours
 from .remove_contours_outside_box import remove_contours_outside_box
 from .remove_edge_contours import remove_edge_contours
-from .validate_rectangle import validate_rectangle
 
 __all__ = [
     "create_box_color_mask",
@@ -33,8 +32,6 @@ __all__ = [
     "merge_depth_lists",
     "propagate",
     "propagate_by_shape",
-    "create_camera_matrix",
-    "validate_rectangle",
     "remove_edge_contours",
     "remove_contours_outside_box",
     "find_contours",
