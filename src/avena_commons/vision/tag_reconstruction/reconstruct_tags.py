@@ -108,7 +108,7 @@ def reconstruct_tags(
         ref_tag_shapes = tag_reconstruction.create_reference_tag_shapes(tag_image)
 
     with Catchtime() as ct3:
-        if config.get("central", False) == False:
+        if not config.get("central", False):
             rois = tag_reconstruction.divide_image_into_rois(
                 image, config["roi_config"]
             )
