@@ -14,7 +14,9 @@ pymodbus==3.9.2
 httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
-./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl
+./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl; platform_system=="Windows"
+./install/pyorbbecsdk-2.0.10-cp310-cp310-linux_x86_64.whl; platform_system=="Linux"
+
 # DEV
 ruff
 black
