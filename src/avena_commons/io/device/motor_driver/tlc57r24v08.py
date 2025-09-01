@@ -220,8 +220,8 @@ class TLC57R24V08:
                                 ):
                                     self._error = True
                                     self._error_message = (
-                                        f"{self.device_name} - Position command send failed: "
-                                        f"exceeded retries ("
+                                        f"{self.device_name} - Wysyłanie parametrów pozycji: "
+                                        f"przekroczono liczbę prób ("
                                         f"{self._command_send_attempts_made}/"
                                         f"{self._command_send_retry_attempts})"
                                     )
@@ -255,8 +255,8 @@ class TLC57R24V08:
                                 ):
                                     self._error = True
                                     self._error_message = (
-                                        f"{self.device_name} - Jog command send failed: "
-                                        f"exceeded retries ("
+                                        f"{self.device_name} - Wysyłanie parametrów ruchu: "
+                                        f"przekroczono liczbę prób ("
                                         f"{self._command_send_attempts_made}/"
                                         f"{self._command_send_retry_attempts})"
                                     )
@@ -347,8 +347,8 @@ class TLC57R24V08:
                                         # Exceeded retry attempts → escalate error
                                         self._error = True
                                         self._error_message = (
-                                            f"{self.device_name} - Movement error during {self._last_command_type or 'unknown'}: "
-                                            f"exceeded retries ({self._move_attempts_made}/{self._move_retry_attempts})"
+                                            f"{self.device_name} - Błąd ruchu podczas {self._last_command_type or 'unknown'}: "
+                                            f"przekroczono liczbę prób ({self._move_attempts_made}/{self._move_retry_attempts})"
                                         )
                                         error(
                                             self._error_message,
