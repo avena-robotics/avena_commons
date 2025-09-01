@@ -22,6 +22,7 @@ class TLC57R24V08:
         movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
+        command_send_retry_attempts: int = 3,
     ):
         self.device_name = device_name
         self.bus = bus
@@ -72,7 +73,6 @@ class TLC57R24V08:
         self._di_stop_event: threading.Event = threading.Event()
 
         # DO writing thread properties
-        # TODO: implement DO writing thread
         self.do_current_state: list[int] = [0] * self.do_count
         self.do_state_changed: bool = False
         self.do_previous_state: list[int] = [0] * self.do_count
@@ -95,6 +95,14 @@ class TLC57R24V08:
         self._move_attempts_made: int = 0
         self._last_command_type: str | None = None  # 'jog' | 'position' | None
         self._waiting_for_failure_clear: bool = False
+
+        # Command send retry configuration/state (independent from movement retries)
+        self._command_send_retry_attempts: int = (
+            int(command_send_retry_attempts)
+            if command_send_retry_attempts is not None
+            else 0
+        )
+        self._command_send_attempts_made: int = 0
 
         self.__setup()
 
@@ -202,8 +210,30 @@ class TLC57R24V08:
                             )
                             if response:
                                 self._run = False
+                                self._command_send_attempts_made = 0
                             else:
-                                self._run = True
+                                self._command_send_attempts_made += 1
+                                if (
+                                    self._command_send_retry_attempts > 0
+                                    and self._command_send_attempts_made
+                                    >= self._command_send_retry_attempts
+                                ):
+                                    self._error = True
+                                    self._error_message = (
+                                        f"{self.device_name} - Position command send failed: "
+                                        f"exceeded retries ("
+                                        f"{self._command_send_attempts_made}/"
+                                        f"{self._command_send_retry_attempts})"
+                                    )
+                                    error(
+                                        self._error_message,
+                                        message_logger=self.message_logger,
+                                    )
+                                    self._move_in_progress = False
+                                    self._last_command_type = None
+                                    self._run = False
+                                else:
+                                    self._run = True
                             debug(
                                 f"{self.device_name} Position parameters sent: target={target}, speed={speed}, accel={accel}, decel={decel}",
                                 message_logger=self.message_logger,
@@ -215,8 +245,30 @@ class TLC57R24V08:
                             )
                             if response:
                                 self._run = False
+                                self._command_send_attempts_made = 0
                             else:
-                                self._run = True
+                                self._command_send_attempts_made += 1
+                                if (
+                                    self._command_send_retry_attempts > 0
+                                    and self._command_send_attempts_made
+                                    >= self._command_send_retry_attempts
+                                ):
+                                    self._error = True
+                                    self._error_message = (
+                                        f"{self.device_name} - Jog command send failed: "
+                                        f"exceeded retries ("
+                                        f"{self._command_send_attempts_made}/"
+                                        f"{self._command_send_retry_attempts})"
+                                    )
+                                    error(
+                                        self._error_message,
+                                        message_logger=self.message_logger,
+                                    )
+                                    self._move_in_progress = False
+                                    self._last_command_type = None
+                                    self._run = False
+                                else:
+                                    self._run = True
                             debug(
                                 f"{self.device_name} Jog parameters sent: speed={speed}, accel={accel}, decel={decel}",
                                 message_logger=self.message_logger,
@@ -315,16 +367,9 @@ class TLC57R24V08:
 
                                 # Detect success and clear in-progress flags
                                 if self._move_in_progress:
-                                    if self._last_command_type == "position" and (
-                                        self.operation_status_motor_running
-                                        or self.operation_status_in_place
-                                    ):
-                                        self._move_in_progress = False
-                                        self._last_command_type = None
-                                        self._move_attempts_made = 0
-                                    elif self._last_command_type == "jog" and (
-                                        self.operation_status_motor_running
-                                        or self.operation_status_in_place  # VERIFY TODO
+                                    if (
+                                        self.operation_status_in_place
+                                        or self.operation_status_motor_running
                                     ):
                                         self._move_in_progress = False
                                         self._last_command_type = None
@@ -505,6 +550,7 @@ class TLC57R24V08:
         self._move_attempts_made = 0
         self._error = False
         self._error_message = None
+        self._command_send_attempts_made = 0
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         """
@@ -533,6 +579,7 @@ class TLC57R24V08:
         self._move_attempts_made = 0
         self._error = False
         self._error_message = None
+        self._command_send_attempts_made = 0
 
     def stop(self):
         """Stop motor operation and disable jog mode"""
@@ -552,6 +599,7 @@ class TLC57R24V08:
         # Clear movement tracking (stop requested)
         self._move_in_progress = False
         self._last_command_type = None
+        self._command_send_attempts_made = 0
 
     def di(self, index: int):
         """Read DI value from cached data"""
