@@ -136,6 +136,63 @@ class IO_server(EventListener):
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
         error("FSM: Entering error state (IO)", message_logger=self._message_logger)
 
+        # 1) Spróbuj zatrzymać każde urządzenie wirtualne wywołując jego metodę __stop (jeśli istnieje)
+        try:
+            if hasattr(self, "virtual_devices") and isinstance(
+                self.virtual_devices, dict
+            ):
+                for device_name, device in self.virtual_devices.items():
+                    if device is None:
+                        continue
+                    try:
+                        # Znajdź zamanglowaną metodę __stop (np. _ClassName__stop)
+                        stop_attr_name = None
+                        for attr_name in dir(device):
+                            try:
+                                if attr_name.endswith("__stop"):
+                                    candidate = getattr(device, attr_name)
+                                    if callable(candidate):
+                                        stop_attr_name = attr_name
+                                        break
+                            except Exception:
+                                continue
+
+                        if stop_attr_name:
+                            stop_callable = getattr(device, stop_attr_name)
+                            # Spróbuj przekazać parametry z device.methods["stop"]
+                            stop_kwargs = {}
+                            try:
+                                methods = getattr(device, "methods", {})
+                                if isinstance(methods, dict) and "stop" in methods:
+                                    stop_kwargs = methods["stop"]
+                            except Exception:
+                                stop_kwargs = {}
+
+                            try:
+                                if stop_kwargs:
+                                    stop_callable(**stop_kwargs)
+                                else:
+                                    stop_callable()
+                                debug(
+                                    f"Sent __stop to virtual device {device_name}",
+                                    message_logger=self._message_logger,
+                                )
+                            except Exception as call_exc:
+                                error(
+                                    f"Error calling __stop on {device_name}: {call_exc}",
+                                    message_logger=self._message_logger,
+                                )
+                    except Exception as dev_exc:
+                        error(
+                            f"Error while trying to stop virtual device {device_name}: {dev_exc}",
+                            message_logger=self._message_logger,
+                        )
+        except Exception as e:
+            error(
+                f"on_error: stopping virtual devices failed: {e}",
+                message_logger=self._message_logger,
+            )
+
     async def on_fault(self):
         """Metoda wywoływana podczas przejścia w stan FAULT.
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
