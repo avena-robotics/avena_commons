@@ -1,0 +1,17 @@
+site_name: APS Docs
+theme:
+  name: material
+plugins:
+  - search
+  - literate-nav
+  - section-index
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google     # albo: numpy
+            show_source: true
+nav:
+  - Wprowadzenie: docs/index.md
+  - API:
+      - avena_commons: docs/api/avena_commons.md
