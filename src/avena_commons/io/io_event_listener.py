@@ -508,6 +508,73 @@ class IO_server(EventListener):
                 self._change_fsm_state(EventListenerState.ON_ERROR)
                 return
 
+            # Proaktywna detekcja błędów urządzeń fizycznych (eskalacja do ON_ERROR przy problemie ruchu)
+            try:
+                if hasattr(self, "physical_devices") and isinstance(
+                    self.physical_devices, dict
+                ):
+                    for device_name, device in self.physical_devices.items():
+                        if device is None:
+                            continue
+                        try:
+                            # Preferuj atrybuty _error/_error_message gdy dostępne
+                            dev_error = False
+                            dev_error_message = None
+
+                            if hasattr(device, "_error"):
+                                try:
+                                    dev_error = bool(getattr(device, "_error"))
+                                except Exception:
+                                    dev_error = False
+                            # Dodatkowo spróbuj odczytać error z to_dict() gdy dostępne
+                            if (
+                                not dev_error
+                                and hasattr(device, "to_dict")
+                                and callable(device.to_dict)
+                            ):
+                                try:
+                                    d = device.to_dict() or {}
+                                    dev_error = bool(d.get("error", False))
+                                    dev_error_message = d.get("error_message")
+                                except Exception:
+                                    pass
+                            if dev_error_message is None and hasattr(
+                                device, "_error_message"
+                            ):
+                                try:
+                                    dev_error_message = getattr(
+                                        device, "_error_message"
+                                    )
+                                except Exception:
+                                    dev_error_message = None
+
+                            if dev_error:
+                                # Ustaw lokalny stan błędu IO i przełącz FSM do ON_ERROR
+                                self._error = True
+                                self._error_message = f"{device_name}: {dev_error_message if dev_error_message else 'unknown device error'}"
+                                error(
+                                    f"Detected physical device error → IO ON_ERROR: {self._error_message}",
+                                    message_logger=self._message_logger,
+                                )
+                                if self.fsm_state not in {
+                                    EventListenerState.ON_ERROR,
+                                    EventListenerState.FAULT,
+                                }:
+                                    self._change_fsm_state(EventListenerState.ON_ERROR)
+                                    return
+                        except Exception as dev_scan_exc:
+                            # Nie blokuj przetwarzania w razie problemów w pojedynczym urządzeniu
+                            warning(
+                                f"Error while scanning physical device '{device_name}': {dev_scan_exc}",
+                                message_logger=self._message_logger,
+                            )
+            except Exception as scan_exc:
+                # Nie przerywaj dalszej logiki w razie błędów skanowania urządzeń fizycznych
+                warning(
+                    f"Error while scanning physical devices: {scan_exc}",
+                    message_logger=self._message_logger,
+                )
+
             # Proaktywny health-check magistral (eskalacja do ON_ERROR przy problemie)
             self._assert_bus_healthy(escalate_on_failure=True)
 

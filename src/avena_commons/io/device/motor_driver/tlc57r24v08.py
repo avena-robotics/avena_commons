@@ -18,6 +18,8 @@ class TLC57R24V08:
         period: float = 0.05,
         do_count: int = 3,
         di_count: int = 5,
+        movement_retry_attempts: int = 3,
+        movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
     ):
@@ -77,6 +79,22 @@ class TLC57R24V08:
         self.__do_lock: threading.Lock = threading.Lock()
         self._do_thread: threading.Thread | None = None
         self._do_stop_event: threading.Event = threading.Event()
+
+        # Error propagation fields (for IO_server escalation)
+        self._error: bool = False
+        self._error_message: str | None = None
+
+        # Movement retry configuration/state
+        self._move_retry_attempts: int = (
+            int(movement_retry_attempts) if movement_retry_attempts is not None else 0
+        )
+        self._move_retry_delay: float = (
+            float(movement_retry_delay) if movement_retry_delay is not None else 0.0
+        )
+        self._move_in_progress: bool = False
+        self._move_attempts_made: int = 0
+        self._last_command_type: str | None = None  # 'jog' | 'position' | None
+        self._waiting_for_failure_clear: bool = False
 
         self.__setup()
 
@@ -248,6 +266,75 @@ class TLC57R24V08:
                         else:
                             debug(message, message_logger=self.message_logger)
 
+                        # Movement error handling with retry and reset
+                        try:
+                            if self.operation_status_failure:
+                                # Avoid hammering retry while failure bit still set
+                                if not self._waiting_for_failure_clear:
+                                    # Reset error at drive and schedule retry or escalate
+                                    try:
+                                        self.reset_error()
+                                    except Exception as _e:
+                                        error(
+                                            f"{self.device_name} - Reset error failed: {_e}",
+                                            message_logger=self.message_logger,
+                                        )
+
+                                    self._move_attempts_made += 1
+                                    if (
+                                        self._move_in_progress
+                                        and self._move_attempts_made
+                                        <= self._move_retry_attempts
+                                    ):
+                                        # Re-send the last command by toggling _run
+                                        with self._jog_lock:
+                                            self._run = True
+                                        if self._move_retry_delay > 0:
+                                            time.sleep(self._move_retry_delay)
+                                    else:
+                                        # Exceeded retry attempts → escalate error
+                                        self._error = True
+                                        self._error_message = (
+                                            f"{self.device_name} - Movement error during {self._last_command_type or 'unknown'}: "
+                                            f"exceeded retries ({self._move_attempts_made}/{self._move_retry_attempts})"
+                                        )
+                                        error(
+                                            self._error_message,
+                                            message_logger=self.message_logger,
+                                        )
+                                        # Stop trying further
+                                        self._move_in_progress = False
+                                        self._last_command_type = None
+
+                                    # From now wait until failure bit clears to avoid repeated retries in tight loop
+                                    self._waiting_for_failure_clear = True
+                            else:
+                                # Failure bit cleared → allow next detection
+                                if self._waiting_for_failure_clear:
+                                    self._waiting_for_failure_clear = False
+
+                                # Detect success and clear in-progress flags
+                                if self._move_in_progress:
+                                    if self._last_command_type == "position" and (
+                                        self.operation_status_motor_running
+                                        or self.operation_status_in_place
+                                    ):
+                                        self._move_in_progress = False
+                                        self._last_command_type = None
+                                        self._move_attempts_made = 0
+                                    elif self._last_command_type == "jog" and (
+                                        self.operation_status_motor_running
+                                        or self.operation_status_in_place  # VERIFY TODO
+                                    ):
+                                        self._move_in_progress = False
+                                        self._last_command_type = None
+                                        self._move_attempts_made = 0
+                        except Exception as _eh:
+                            error(
+                                f"{self.device_name} - Error in movement retry handler: {_eh}",
+                                message_logger=self.message_logger,
+                            )
+
                 with self._jog_lock:
                     self._jog_counter = jog_counter + 1
 
@@ -370,7 +457,7 @@ class TLC57R24V08:
     def reset_error(self):
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
         debug(
-            f"{self.device_name} - Reset bo byciu w stanie failure",
+            f"{self.device_name} - Reset po byciu w stanie failure",
             message_logger=self.message_logger,
         )
 
@@ -412,6 +499,12 @@ class TLC57R24V08:
             self._position_start_speed = start_speed
             self._position_control_word = 1
             self._run = True
+        # Initialize movement tracking
+        self._move_in_progress = True
+        self._last_command_type = "position"
+        self._move_attempts_made = 0
+        self._error = False
+        self._error_message = None
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         """
@@ -434,6 +527,12 @@ class TLC57R24V08:
             self._jog_decel = decel
             self._jog_control_word = 8
             self._run = True
+        # Initialize movement tracking
+        self._move_in_progress = True
+        self._last_command_type = "jog"
+        self._move_attempts_made = 0
+        self._error = False
+        self._error_message = None
 
     def stop(self):
         """Stop motor operation and disable jog mode"""
@@ -450,6 +549,9 @@ class TLC57R24V08:
 
         info(f"{self.device_name}.stop", message_logger=self.message_logger)
         # The jog thread will handle sending the stop command when jog is disabled
+        # Clear movement tracking (stop requested)
+        self._move_in_progress = False
+        self._last_command_type = None
 
     def di(self, index: int):
         """Read DI value from cached data"""
@@ -765,6 +867,10 @@ class TLC57R24V08:
             result["di_value"] = self.di_value
             result["do_current_state"] = self.do_current_state.copy()
 
+            # Eskalacja błędu (dla IO_server i monitoringu)
+            result["error"] = self._error
+            result["error_message"] = self._error_message
+
             # Dodanie głównego stanu urządzenia
             if self.operation_status_failure:
                 result["main_state"] = "FAILURE"
@@ -781,6 +887,7 @@ class TLC57R24V08:
             # W przypadku błędu dodajemy informację o błędzie
             result["main_state"] = "ERROR"
             result["error"] = str(e)
+            result["error_message"] = str(e)
 
             if self.message_logger:
                 error(
