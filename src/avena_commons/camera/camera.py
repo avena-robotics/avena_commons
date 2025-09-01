@@ -76,16 +76,18 @@ class Camera(EventListener):
         )
 
         debug(f"camera init", self._message_logger)
+        self.__camera_config = self._configuration.get("camera_configuration", {})
+        self.__postprocess_config = self._configuration.get("postprocessors", {})
 
-        # print(self._configuration)
+        print(self.__postprocess_config)
 
-        if self._configuration.get("camera_ip", None) is None:
+        if self.__camera_config.get("camera_ip", None) is None:
             error(
                 f"EVENT_LISTENER_INIT: Brak konfiguracji CAMERA_IP dla kamery",
                 self._message_logger,
             )
             raise ValueError(f"Brak konfiguracji CAMERA_IP dla kamery")
-        self.camera_address = self._configuration["camera_ip"]
+        self.camera_address = self.__camera_config["camera_ip"]
 
         self.camera_running = False
 
@@ -100,16 +102,24 @@ class Camera(EventListener):
             f"EVENT_LISTENER_INIT: Event listener kamery został zainicjalizowany dla ip {self.camera_address}",
             self._message_logger,
         )
-        self.camera = OrbecGemini335Le(self.camera_address, self._message_logger)
+        match self.__camera_config.get("model", None):
+            case "orbec_gemini_335le":
+                self.camera = OrbecGemini335Le(self.camera_address, self._message_logger)
+            case _:
+                error(
+                    f"EVENT_LISTENER_INIT: Brak obsługiwanej kamery {self.__camera_config.get('model', None)} obsługiwane modele: orbec_gemini_335le",
+                    self._message_logger,
+                )
 
     async def on_initializing(self):
         """Metoda wywoływana podczas przejścia w stan INITIALIZING.
         Tu komponent powinien nawiązywać połączenia, alokować zasoby itp."""
-        self.camera.init(self._configuration["camera_settings"])
+        self.camera.init(self.__camera_config)
 
     async def on_starting(self):
         """Metoda wywoływana podczas przejścia w stan STARTING.
         Tu komponent przygotowuje się do uruchomienia głównych operacji."""
+        self.camera.set_postprocess_configuration(configuration=self.__postprocess_config["qr_detection"])
         self.camera.start()
 
     async def on_stopping(self):

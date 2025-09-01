@@ -32,20 +32,7 @@ from avena_commons.camera.driver.general import (
     GeneralCameraWorker,
 )
 
-# from pymodbus.client import ModbusTcpClient
 from avena_commons.util.logger import MessageLogger, debug, error, info
-from avena_commons.util.worker import Connector, Worker
-
-# class CameraState(Enum):
-#     IDLE = 0  # idle
-#     INITIALIZING = 1  # init camera
-#     INITIALIZED = 2  # init camera
-#     STARTING = 3  # start camera pipeline
-#     STARTED = 4  # start camera pipeline
-#     STOPPING = 6  # stop camera pipeline
-#     STOPPED = 7  # stop camera pipeline
-#     SHUTDOWN = 8  # stop camera pipeline
-#     ERROR = 255  # error
 
 
 class OrbecGemini335LeWorker(GeneralCameraWorker):
@@ -104,6 +91,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             """
 
             # camera_settings = configuration
+            debug(f"CAMERA_INIT: camera_settings: {camera_settings}", self._message_logger)
             color_settings = camera_settings.get("color", {})
             depth_settings = camera_settings.get("depth", {})
 
@@ -500,10 +488,8 @@ class OrbecGemini335Le(GeneralCameraConnector):
             target=self._run, args=(_pipe_in, camera_ip, None)
         )
         self._process.start()
-        # self.core = self._core
 
     def _run(self, pipe_in, camera_ip, message_logger=None):
-        # self.__lock = threading.Lock()
         worker = OrbecGemini335LeWorker(
             camera_ip=camera_ip, message_logger=message_logger
         )

@@ -12,7 +12,7 @@ from avena_commons.camera.camera import Camera, CameraState
 from avena_commons.event_listener import Event, EventListenerState
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug, error
-from avena_commons.vision.detector import ObjectDetector
+# from avena_commons.vision.detector import ObjectDetector
 
 
 class CameraServer(Camera):
@@ -28,36 +28,8 @@ class CameraServer(Camera):
         self._state = {}
 
         self._default_configuration = {  # domyslna konfiguracja
-            "camera_ip": camera_ip,
-            "camera_settings": {
-                "align": "d2c",  # None, d2c, potem: c2d
-                "disparity_to_depth": True,
-                "color": {
-                    "width": 1280,
-                    "height": 800,
-                    "fps": 30,
-                    "format": "MJPG",
-                    "exposure": 500,
-                    "gain": 10,
-                    "white_balance": 4000,
-                },
-                "depth": {
-                    "width": 640,
-                    "height": 400,
-                    "fps": 30,
-                    "format": "Y16",
-                    "exposure": 500,
-                    "gain": 10,
-                    "laser_power": 5,
-                },
-                # "disparity": {"range_mode": "Default", "search_offset": 0},
-                "filters": {
-                    "spatial": False,
-                    "temporal": False,
-                },
-            },
         }
-        self.detector = ObjectDetector()
+        self.detector = None
         self.check_local_data_frequency: int = 60
         super().__init__(
             name=f"camera_server_{camera_ip}",

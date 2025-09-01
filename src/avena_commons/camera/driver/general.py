@@ -3,6 +3,7 @@ import threading
 import traceback
 from enum import Enum
 from typing import Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed  # ← DODAJ TO!
 
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
@@ -31,6 +32,9 @@ class GeneralCameraWorker(Worker):
         # self.spatial_filter = None
         # self.temporal_filter = None
         self.last_frames = None
+        self.postprocess_configuration = None
+        self.executor = None
+        self.image_processing_workers = []
 
 
     @property
@@ -96,6 +100,71 @@ class GeneralCameraWorker(Worker):
         except Exception as e:
             self.state = CameraState.ERROR
             error(f"{self.device_name} - Stopping failed: {e}", self._message_logger)
+            return False
+
+    async def _run_image_processing_workers(self, frames):
+        """Uruchom workery przez ProcessPoolExecutor."""
+        if not self.executor:
+            return None
+        
+        try:
+            # Submit funkcji do procesów (NIE tworzenie nowych workerów!)
+            futures = {}
+            for i, config in enumerate(self.postprocess_configuration):
+                # ✅ POPRAWNE - submit funkcji, nie tworzenie workerów
+                future = self.executor.submit(
+                    self._process_single_config,  # Funkcja do wykonania
+                    frames,                       # Dane
+                    config,                       # Konfiguracja
+                    i                             # ID
+                )
+                futures[future] = i
+            
+            # Zbierz wyniki
+            results = []
+            for future in as_completed(futures):
+                config_id = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    error(f"Błąd w config_{config_id}: {e}", self._message_logger)
+            
+            return results
+            
+        except Exception as e:
+            error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
+            return None
+            
+    async def _setup_image_processing_workers(self, configs: list):
+        """Utwórz workery raz przy konfiguracji."""
+        try:
+            # Zamknij poprzedni executor jeśli istnieje
+            if self.executor:
+                self.executor.shutdown(wait=True)
+            
+            # Utwórz nowy executor
+            self.executor = ProcessPoolExecutor(max_workers=len(configs))
+            self.postprocess_configuration = configs
+            
+            # Przygotuj workery (ale nie uruchamiaj jeszcze!)
+            self.image_processing_workers = []
+            for i, config in enumerate(configs):
+                worker_info = {
+                    "worker_id": i,
+                    "config": config,
+                    "config_name": config["mode"],
+                    "status": "READY"  # READY, RUNNING, COMPLETED, ERROR
+                }
+                self.image_processing_workers.append(worker_info)
+            
+            debug(f"Utworzono {len(self.image_processing_workers)} workerów do przetwarzania obrazów", 
+                  self._message_logger)
+            
+            return True
+            
+        except Exception as e:
+            error(f"Błąd podczas tworzenia workerów: {e}", self._message_logger)
             return False
 
     async def _run(self, pipe_in):
@@ -171,10 +240,10 @@ class GeneralCameraWorker(Worker):
                         case "GET_STATE":
                             try:
                                 state = self.state
-                                debug(
-                                    f"{self.device_name} - Getting state: {state.name}",
-                                    message_logger=self._message_logger,
-                                )
+                                # debug(
+                                #     f"{self.device_name} - Getting state: {state.name}",
+                                #     message_logger=self._message_logger,
+                                # )
                                 pipe_in.send(state)
                             except Exception as e:
                                 error(
@@ -189,6 +258,20 @@ class GeneralCameraWorker(Worker):
                             except Exception as e:
                                 error(f"{self.device_name} - Error getting last frames: {e}", message_logger=self._message_logger)
                                 pipe_in.send(None)
+
+                        case "SET_POSTPROCESS_CONFIGURATION":
+                            try:
+                                debug(
+                                    f"{self.device_name} - Received SET_POSTPROCESS_CONFIGURATION: {data[1]}",
+                                    self._message_logger,
+                                )
+                                self.postprocess_configuration = data[1]
+                                await self._setup_image_processing_workers(self.postprocess_configuration)
+
+                                pipe_in.send(True)
+                            except Exception as e:
+                                error(f"{self.device_name} - Error setting postprocess configuration: {e}", message_logger=self._message_logger)
+                                pipe_in.send(False)
 
                         case _:
                             error(
@@ -209,6 +292,8 @@ class GeneralCameraWorker(Worker):
                         self._message_logger,
                     )
                     # przetwarzanie wizyjne
+                    if self.postprocess_configuration:
+                        print(f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}")
 
         except asyncio.CancelledError:
             info(
@@ -271,7 +356,13 @@ class GeneralCameraConnector(Connector):
             return value
 
     def get_last_frames(self):
-        """Get camera state"""
+        """Get last frames"""
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAMES"])
+            return value
+
+    def set_postprocess_configuration(self, *, configuration: list = None):
+        """Set postprocess configuration"""
+        with self.__lock:
+            value = super()._send_thru_pipe(self._pipe_out, ["SET_POSTPROCESS_CONFIGURATION", configuration])
             return value
