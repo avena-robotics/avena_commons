@@ -3,6 +3,7 @@ Moduł wizyjny avena_commons
 """
 
 # Importuj funkcje z modułu vision
+from .calculate_pose_pnp import calculate_pose_pnp
 from .create_box_color_mask import create_box_color_mask
 from .create_box_depth_mask import create_box_depth_mask
 from .find_contours import find_contours
@@ -15,6 +16,7 @@ from .prepare_image_output import prepare_image_output
 from .preprocess_mask import preprocess_mask
 from .propagate import propagate
 from .propagate_by_shape import propagate_by_shape
+from .qr_output_process import qr_output_process
 from .rectangle_from_contours import rectangle_from_contours
 from .remove_contours_outside_box import remove_contours_outside_box
 from .remove_edge_contours import remove_edge_contours
@@ -35,4 +37,6 @@ __all__ = [
     "remove_edge_contours",
     "remove_contours_outside_box",
     "find_contours",
+    "qr_output_process",
+    "calculate_pose_pnp",
 ]

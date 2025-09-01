@@ -4,6 +4,7 @@ import json
 import os
 import random
 import time
+import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,9 +14,11 @@ import numpy as np
 import pytest
 from pupil_apriltags import Detector
 
+import avena_commons.vision.detector as detector
+import avena_commons.vision.merge as merge
+import avena_commons.vision.sorter as sorter
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import error
-from avena_commons.vision.detector import qr_detector
 
 
 def process_single_config(args):
@@ -23,18 +26,17 @@ def process_single_config(args):
     (
         image_data,  # Obraz jako numpy array (pickleable)
         config_index,  # Indeks konfiguracji (0-8)
-        qr_number,  # Liczba QR
         camera_params,  # Parametry kamery
         distortion_coefficients,  # Współczynniki zniekształcenia
     ) = args
 
     try:
         # W każdym procesie odtwórz detektor i konfiguracje
-        import numpy as np
-        from pupil_apriltags import Detector
+        # import numpy as np
+        # from pupil_apriltags import Detector
 
         # Odtwórz detektor (bez Mock objects!)
-        detector = Detector()  # Prawdziwy detektor AprilTag
+        apriltag_detector = Detector()  # Prawdziwy detektor AprilTag
 
         # Pobierz konfigurację po indeksie
         qr_configs = [
@@ -127,18 +129,18 @@ def process_single_config(args):
         ]
 
         config = qr_configs[config_index]
-
+        # print(camera_params)
         # Prosty pomiar czasu (bez Catchtime w procesie workera)
         start_time = time.perf_counter()
-        result = qr_detector(
+        result, _ = detector.qr_detector(
+            detector=apriltag_detector,
             qr_image=image_data,
-            qr_number=qr_number,
-            detector=detector,
             camera_params=camera_params,
             distortion_coefficients=distortion_coefficients,
             config=config,
         )
         elapsed_time = time.perf_counter() - start_time
+        # print(f"result: {result}")
 
         # DEBUG: sprawdź czas w milisekundach
         # elapsed_time_ms = elapsed_time * 1000
@@ -148,28 +150,11 @@ def process_single_config(args):
         return {
             "success": True,
             "time": elapsed_time,
-            "result": result is not None,
-            "detection_count": len(result)
-            if result
-            else 0,  # Liczba znalezionych kodów
-            "detection_details": [
-                {
-                    "id": tag.id if hasattr(tag, "id") else None,
-                    "center": tag.center
-                    if isinstance(tag.center, list)
-                    else tag.center.tolist()
-                    if hasattr(tag.center, "tolist")
-                    else tag.center,
-                    "corners": tag.corners
-                    if isinstance(tag.corners, list)
-                    else tag.corners.tolist()
-                    if hasattr(tag.corners, "tolist")
-                    else tag.corners,
-                }
-                for tag in (result or [])
-            ]
-            if result
-            else [],  # Szczegóły detekcji jako zwykłe dane
+            # "result": result,
+            "detections": result,
+            # if result
+            # else 0,  # Liczba znalezionych kodów
+            # "detection_details": result,
         }
     except Exception as e:
         return {"success": False, "time": 0.0, "error": str(e)}
@@ -181,14 +166,14 @@ class TestParallelQRDetection:
     @pytest.fixture
     def test_images_data(self):
         """Dane testowe z katalogu z obrazami."""
-        path = "../challenging-3d-samples/dataset/qr_cold"
+        path = "../challenging-3d-samples/dataset/qr_cold_big_qr"
         test_data = []
 
         if not os.path.exists(path):
             print(f"Katalog {path} nie istnieje - pomijam test")
             return test_data
 
-        json_files = sorted(Path(path).glob("*.json"))
+        json_files = sorted(Path(path).glob("0018.json"))
         json_files = list(json_files)
         random.shuffle(json_files)
 
@@ -385,7 +370,6 @@ class TestParallelQRDetection:
     def test_sequential_9_configs(
         self,
         test_images_data,
-        mock_detector,
         camera_params,
         distortion_coefficients,
         qr_configs,
@@ -399,6 +383,7 @@ class TestParallelQRDetection:
 
         all_times = []
         total_sequential_time = 0
+        apriltag_detector = Detector()  # Prawdziwy detektor AprilTag
 
         for i, test_data in enumerate(test_images_data):
             print(
@@ -412,10 +397,9 @@ class TestParallelQRDetection:
 
                 with Catchtime() as timer:
                     try:
-                        result = qr_detector(
+                        result = detector.qr_detector(
+                            detector=apriltag_detector,
                             qr_image=test_data["image"],
-                            qr_number=test_data["expected_qr_count"],
-                            detector=mock_detector,
                             camera_params=camera_params,
                             distortion_coefficients=distortion_coefficients,
                             config=config,
@@ -467,7 +451,6 @@ class TestParallelQRDetection:
     def test_parallel_9_configs(
         self,
         test_images_data,
-        mock_detector,
         camera_params,
         distortion_coefficients,
         qr_configs,
@@ -494,7 +477,226 @@ class TestParallelQRDetection:
                 worker_args.append((
                     test_data["image"],  # Obraz jako numpy array
                     j,  # Indeks konfiguracji (0-8)
-                    test_data["expected_qr_count"],
+                    camera_params,
+                    distortion_coefficients,
+                ))
+                print(f"  Przygotowano {config_name} (mode: {config['mode']})")
+
+            # Uruchom równolegle na procesach
+            print(f"  Uruchamiam {len(worker_args)} konfiguracji równolegle...")
+            results = {}
+
+            # Przygotuj executor PRZED pomiarem czasu (tworzenie procesów nie wchodzi w pomiar)
+            with ProcessPoolExecutor(max_workers=9) as executor:
+                # Submit wszystkie zadania PRZED pomiarem
+                future_to_config = {
+                    executor.submit(process_single_config, args): j
+                    for j, args in enumerate(worker_args)
+                }
+
+                # TERAZ zacznij mierzyć czas (wysyłka + przetwarzanie + odpowiedź)
+                with Catchtime() as total_timer:
+                    # Zbierz wyniki (to zajmie czas)
+                    for future in as_completed(future_to_config):
+                        # print(f"Skonczyl sie: {future}")
+                        config_idx = future_to_config[future]
+                        config_name = f"config_{chr(97 + config_idx)}"
+
+                        try:
+                            result = future.result()
+
+                            elapsed_time = result["time"]
+                            elapsed_time_ms = elapsed_time * 1000
+                            all_times.append(elapsed_time)
+                            total_parallel_time += elapsed_time
+
+                            if result["success"]:
+                                detections = result.get("detections", {})
+                                detection_count = len(detections)
+                                print(
+                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono QR-kodów: {detection_count}, spodziewanych: {test_data['expected_qr_count']} type: {type(detections)}"
+                                )
+                                for i, detection in enumerate(detections):
+                                    pass
+                                    print(
+                                        f"    ✓ {config_name}: Unsorted {i} {detection.center}"
+                                    )
+                                sorted_detections = sorter.sort_qr_by_center_position(
+                                    expected_count=test_data["expected_qr_count"],
+                                    detections=detections,
+                                )
+                                for key, value in sorted_detections.items():
+                                    print(
+                                        f"    ✓ {config_name}: Sorted {key} {value.center if value else None}"
+                                    )
+                                results = merge.merge_qr_detections_with_confidence(
+                                    sorted_detections,
+                                    results,
+                                )
+                                actual_detections = sum(
+                                    1 for v in results.values() if v is not None
+                                )
+                                print(
+                                    f"    ✓ {config_name}: Actual detections after merge {actual_detections}"
+                                )
+                                # gdy actual_detections = test_data["expected_qr_count"] - to natychmiast zakonczyc pozostale procesy bez analizy wynikow!
+                                if actual_detections == test_data["expected_qr_count"]:
+                                    print(
+                                        f"    ✓ {config_name}: Actual detections after merge {actual_detections} = expected {test_data['expected_qr_count']} - zakonczenie pozostalych procesow --------------------------------------------------------------"
+                                    )
+                            else:
+                                print(
+                                    f"    ✗ {config_name}: BŁĄD - {result.get('error', 'Unknown error')}"
+                                )
+
+                        except Exception as e:
+                            print(f"    ✗ {config_name}: BŁĄD PROCESU - {str(e)}")
+                            all_times.append(0.0)
+                            traceback.print_exc()
+
+            total_processing_time = total_timer.sec
+            actual_detections = sum(1 for v in results.values() if v is not None)
+            print(f"\n  Podsumowanie dla obrazu {Path(test_data['png_file']).name}:")
+            print(f"    Całkowity czas przetwarzania: {total_processing_time:.6f}s")
+            print(f"    Suma czasów konfiguracji: {total_parallel_time:.6f}s")
+            print(
+                f"    Przyspieszenie: {total_parallel_time / total_processing_time:.2f}x"
+            )
+
+        # Podsumowanie ogólne
+        print(f"\n=== WYNIKI RÓWNOLEGŁE ===")
+        print(f"Łączny czas wszystkich konfiguracji: {total_parallel_time:.6f}s")
+        print(f"Liczba testowanych konfiguracji: {len(all_times)}")
+        print(
+            f"Średni czas na konfigurację: {total_parallel_time / len(all_times):.6f}s"
+        )
+
+        # Dodaj minimalny i maksymalny czas
+        if all_times:
+            min_time = min(all_times)
+            max_time = max(all_times)
+            min_time_ms = min_time * 1000
+            max_time_ms = max_time * 1000
+            print(f"Minimalny czas: {min_time_ms:.2f}ms")
+            print(f"Maksymalny czas: {max_time_ms:.2f}ms")
+
+        # Sprawdź czy wszystkie konfiguracje zostały przetestowane
+        assert len(all_times) == len(test_images_data) * len(qr_configs), (
+            "Nie wszystkie konfiguracje zostały przetestowane"
+        )
+
+        # Sprawdź czy równoległość daje korzyści
+        assert total_parallel_time > 0, "Brak wyników z równoległego przetwarzania"
+
+    def test_sequential_9_configs(
+        self,
+        test_images_data,
+        camera_params,
+        distortion_coefficients,
+        qr_configs,
+    ):
+        """Test sekwencyjnego uruchomienia 9 konfiguracji."""
+        if not test_images_data:
+            pytest.skip("Brak danych testowych z katalogu")
+
+        print(f"=== SEKWENCYJNE WYKRYWANIE - 9 konfiguracji ===")
+        print(f"Test na {len(test_images_data)} obrazach")
+
+        all_times = []
+        total_sequential_time = 0
+
+        for i, test_data in enumerate(test_images_data):
+            print(
+                f"\n--- Obraz {i + 1}/{len(test_images_data)}: {Path(test_data['png_file']).name} ---"
+            )
+
+            image_times = []
+            for j, config in enumerate(qr_configs):
+                config_name = f"config_{chr(97 + j)}"  # a, b, c, d, e, f, g, h, i
+                print(f"  Testuję {config_name} (mode: {config['mode']})...")
+
+                with Catchtime() as timer:
+                    try:
+                        result = qr_detector(
+                            qr_image=test_data["image"],
+                            qr_number=test_data["expected_qr_count"],
+                            camera_params=camera_params,
+                            distortion_coefficients=distortion_coefficients,
+                            config=config,
+                        )
+                        elapsed_time = timer.sec
+                        image_times.append(elapsed_time)
+                        all_times.append(elapsed_time)
+                        total_sequential_time += elapsed_time
+                        print(
+                            f"    ✓ {config_name}: {elapsed_time:.6f}s (mode: {config['mode']})"
+                        )
+                    except Exception as e:
+                        elapsed_time = 0.0
+                        image_times.append(elapsed_time)
+                        all_times.append(elapsed_time)
+                        print(f"    ✗ {config_name}: BŁĄD - {str(e)}")
+
+            # Podsumowanie dla tego obrazu
+            total_image_time = sum(image_times)
+            successful_configs = len([t for t in image_times if t > 0])
+            print(f"\n  Podsumowanie dla obrazu {Path(test_data['png_file']).name}:")
+            print(f"    Udało się: {successful_configs}/{len(qr_configs)} konfiguracji")
+            print(f"    Łączny czas: {total_image_time:.6f}s")
+            time_str = ", ".join([f"{t:.6f}s" for t in image_times])
+            print(f"    Czasy pojedyncze: {time_str}")
+
+        # Podsumowanie ogólne
+        print(f"\n=== WYNIKI SEKWENCYJNE ===")
+        print(f"Łączny czas wszystkich konfiguracji: {total_sequential_time:.6f}s")
+        print(f"Liczba testowanych konfiguracji: {len(all_times)}")
+        print(
+            f"Średni czas na konfigurację: {total_sequential_time / len(all_times):.6f}s"
+        )
+
+        # Dodaj minimalny i maksymalny czas
+        if all_times:
+            min_time = min(all_times)
+            max_time = max(all_times)
+            min_time_ms = min_time * 1000
+            max_time_ms = max_time * 1000
+            print(f"Minimalny czas: {min_time_ms:.2f}ms")
+            print(f"Maksymalny czas: {max_time_ms:.2f}ms")
+
+        # Sprawdź czy wszystkie konfiguracje zostały przetestowane
+        assert len(all_times) == len(test_images_data) * len(qr_configs), (
+            "Nie wszystkie konfiguracje zostały przetestowane"
+        )
+
+    def test_parallel_9_configs_with_break(
+        self,
+        test_images_data,
+        camera_params,
+        distortion_coefficients,
+        qr_configs,
+    ):
+        """Test równoległego uruchomienia 9 konfiguracji na oddzielnych procesach."""
+        if not test_images_data:
+            pytest.skip("Brak danych testowych z katalogu")
+
+        print(f"=== RÓWNOLEGŁE WYKRYWANIE - 9 konfiguracji na procesach z break ===")
+        print(f"Test na {len(test_images_data)} obrazach")
+
+        all_times = []
+        total_parallel_time = 0
+
+        for i, test_data in enumerate(test_images_data):
+            print(
+                f"\n--- Obraz {i + 1}/{len(test_images_data)}: {Path(test_data['png_file']).name} ---"
+            )
+
+            # Przygotuj argumenty dla wszystkich konfiguracji
+            worker_args = []
+            for j, config in enumerate(qr_configs):
+                config_name = f"config_{chr(97 + j)}"  # a, b, c, d, e, f, g, h, i
+                worker_args.append((
+                    test_data["image"],  # Obraz jako numpy array
+                    j,  # Indeks konfiguracji (0-8)
                     camera_params,
                     distortion_coefficients,
                 ))
@@ -514,7 +716,7 @@ class TestParallelQRDetection:
                 # TERAZ zacznij mierzyć czas (wysyłka + przetwarzanie + odpowiedź)
                 with Catchtime() as total_timer:
                     # Zbierz wyniki (to zajmie czas)
-                    results = []
+                    results = {}
                     for future in as_completed(future_to_config):
                         # print(f"Skonczyl sie: {future}")
                         config_idx = future_to_config[future]
@@ -522,9 +724,6 @@ class TestParallelQRDetection:
 
                         try:
                             result = future.result()
-                            # print("=" * 100)
-                            # print(result)
-                            # print("=" * 100)
 
                             elapsed_time = result["time"]
                             elapsed_time_ms = elapsed_time * 1000
@@ -532,16 +731,40 @@ class TestParallelQRDetection:
                             total_parallel_time += elapsed_time
 
                             if result["success"]:
-                                detection_count = result.get("detection_count", 0)
-                                detection_details = result.get("detection_details", [])
+                                detections = result.get("detections", {})
+                                detection_count = len(detections)
                                 print(
-                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono QR-kodów: {detection_count}"
+                                    f"    ✓ {config_name}: {elapsed_time_ms:.2f}ms, znaleziono QR-kodów: {detection_count}, spodziewanych: {test_data['expected_qr_count']} type: {type(detections)}"
                                 )
-                                if detection_details:
-                                    for i, det in enumerate(detection_details):
-                                        print(
-                                            f"      Kod {i + 1}: ID={det['id']}, środek={', '.join(f'{x:.2f}' for x in det['center'])}"
-                                        )
+                                for i, detection in enumerate(detections):
+                                    pass
+                                    print(
+                                        f"    ✓ {config_name}: Unsorted {i} {detection.center}"
+                                    )
+                                sorted_detections = sorter.sort_qr_by_center_position(
+                                    expected_count=test_data["expected_qr_count"],
+                                    detections=detections,
+                                )
+                                for key, value in sorted_detections.items():
+                                    print(
+                                        f"    ✓ {config_name}: Sorted {key} {value.center if value else None}"
+                                    )
+                                results = merge.merge_qr_detections_with_confidence(
+                                    sorted_detections,
+                                    results,
+                                )
+                                actual_detections = sum(
+                                    1 for v in results.values() if v is not None
+                                )
+                                print(
+                                    f"    ✓ {config_name}: Actual detections after merge {actual_detections}"
+                                )
+                                # gdy actual_detections = test_data["expected_qr_count"] - to natychmiast zakonczyc pozostale procesy bez analizy wynikow!
+                                if actual_detections == test_data["expected_qr_count"]:
+                                    print(
+                                        f"    ✓ {config_name}: Actual detections after merge {actual_detections} = expected {test_data['expected_qr_count']} - zakonczenie pozostalych procesow --------------------------------------------------------------"
+                                    )
+                                    break
                             else:
                                 print(
                                     f"    ✗ {config_name}: BŁĄD - {result.get('error', 'Unknown error')}"
@@ -550,6 +773,7 @@ class TestParallelQRDetection:
                         except Exception as e:
                             print(f"    ✗ {config_name}: BŁĄD PROCESU - {str(e)}")
                             all_times.append(0.0)
+                            traceback.print_exc()
 
             total_processing_time = total_timer.sec
             print(f"\n  Podsumowanie dla obrazu {Path(test_data['png_file']).name}:")
