@@ -75,6 +75,7 @@ class IO_server(EventListener):
                 f"Initialisation error during on_initializing: {e}",
                 message_logger=self._message_logger,
             )
+            raise
 
         if self._debug:
             debug(
@@ -138,7 +139,8 @@ class IO_server(EventListener):
     async def on_fault(self):
         """Metoda wywoływana podczas przejścia w stan FAULT.
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
-        error("FSM: Entering fault state (IO)", message_logger=self._message_logger)
+        # error("FSM: Entering fault state (IO)", message_logger=self._message_logger)
+        pass
 
     async def on_starting(self):
         """
@@ -449,42 +451,152 @@ class IO_server(EventListener):
                 self._change_fsm_state(EventListenerState.ON_ERROR)
                 return
 
-            # Proactive BUS health check: if any bus is unhealthy, trigger IO FSM ON_ERROR
-            try:
-                if hasattr(self, "buses") and isinstance(self.buses, dict):
-                    for bus_name, bus in self.buses.items():
-                        if bus is None:
-                            continue
-                        if hasattr(bus, "check_device_connection") and callable(
-                            bus.check_device_connection
-                        ):
-                            bus.check_device_connection()
-                        elif hasattr(bus, "is_connected"):
-                            # Accept both property and method styles
-                            is_connected = (
-                                bus.is_connected
-                                if not callable(bus.is_connected)
-                                else bus.is_connected()
-                            )
-                            if is_connected is False:
+            # Proaktywny health-check magistral (eskalacja do ON_ERROR przy problemie)
+            self._assert_bus_healthy(escalate_on_failure=True)
+
+    def _assert_bus_healthy(
+        self,
+        escalate_on_failure: bool = True,
+        during_initialization: bool = False,
+    ) -> bool:
+        """
+        Sprawdza stan zdrowia wszystkich magistral (BUS) przypiętych do serwera IO.
+
+        Zasady wykrywania stanu magistrali (kolejność priorytetów):
+        - Jeżeli obiekt magistrali udostępnia metodę `check_device_connection()`,
+          wywołuje ją i interpretuje wynik jako bool (True = OK, False = problem).
+          Wyjątek z tej metody traktowany jest jako błąd magistrali.
+        - W przeciwnym razie, jeżeli obiekt ma atrybut/metodę `is_connected`,
+          odczytuje wartość (lub wynik wywołania) i interpretuje jako bool.
+        - Przy wykryciu problemu próbuje pozyskać szczegóły z `_error_message`,
+          a jeśli to niemożliwe, to z `to_dict().get('error_message')`.
+
+        Reakcja zależy od kontekstu:
+        - during_initialization=True: fail-fast. Ustawia lokalny stan błędu, loguje
+          i rzuca `RuntimeError`, aby przerwać inicjalizację.
+        - during_initialization=False i `escalate_on_failure=True`: loguje, ustawia
+          lokalny stan błędu i przełącza FSM IO do ON_ERROR (o ile nie jest już w
+          ON_ERROR/FAULT), po czym zwraca False.
+
+        Args:
+            escalate_on_failure: Eskalować błąd do ON_ERROR w trakcie pracy.
+            during_initialization: Czy sprawdzenie jest wykonywane w trakcie inicjalizacji.
+
+        Returns:
+            bool: True, jeżeli wszystkie magistrale są zdrowe; False, jeżeli wykryto
+                  błąd i został on obsłużony lokalnie (tryb runtime).
+
+        Raises:
+            RuntimeError: Gdy `during_initialization=True` i health-check wykryje błąd
+                          lub zostanie rzucony wyjątek podczas sprawdzania.
+        """
+        try:
+            if not (hasattr(self, "buses") and isinstance(self.buses, dict)):
+                return True
+
+            for bus_name, bus in self.buses.items():
+                if bus is None:
+                    continue
+
+                try:
+                    # 1) Preferuj check_device_connection()
+                    if hasattr(bus, "check_device_connection") and callable(
+                        bus.check_device_connection
+                    ):
+                        ok = bool(bus.check_device_connection())
+                        if not ok:
+                            details = None
+                            try:
+                                details = getattr(bus, "_error_message", None)
+                            except Exception:
+                                details = None
+                            if not details and hasattr(bus, "to_dict"):
+                                try:
+                                    d = bus.to_dict() or {}
+                                    details = d.get("error_message")
+                                except Exception:
+                                    details = None
+
+                            if during_initialization:
+                                self._error = True
+                                self._error_message = f"{bus_name}: {details if details else 'unknown reason'}"
+                                error(
+                                    f"Initial bus health check failed for {bus_name}: {self._error_message}",
+                                    message_logger=self._message_logger,
+                                )
                                 raise RuntimeError(
-                                    f"Bus {bus_name} reported disconnected state"
+                                    f"Bus {bus_name} health check failed during initialization: {self._error_message}"
+                                )
+                            else:
+                                raise RuntimeError(
+                                    f"Bus {bus_name} health check failed: {details if details else 'unknown reason'}"
                                 )
 
-            except Exception as bus_exc:
-                error(
-                    f"Bus health check failed for {[bus_name if bus_name else 'unknown']}: {bus_exc}",
-                    message_logger=self._message_logger,
-                )
-                # Zapisz źródło błędu
-                self._error = True
-                self._error_message = [bus_name if bus_name else "unknown"]
-                if self.fsm_state not in {
-                    EventListenerState.ON_ERROR,
-                    EventListenerState.FAULT,
-                }:
-                    self._change_fsm_state(EventListenerState.ON_ERROR)
-                    return
+                    # 2) Fallback do is_connected (akceptuj property lub metodę)
+                    elif hasattr(bus, "is_connected"):
+                        is_connected = (
+                            bus.is_connected
+                            if not callable(bus.is_connected)
+                            else bus.is_connected()
+                        )
+                        if is_connected is False:
+                            details = None
+                            try:
+                                details = getattr(bus, "_error_message", None)
+                            except Exception:
+                                details = None
+
+                            if during_initialization:
+                                self._error = True
+                                self._error_message = f"{bus_name}: {details if details else 'unknown reason'}"
+                                error(
+                                    f"Initial bus health check failed for {bus_name}: {self._error_message}",
+                                    message_logger=self._message_logger,
+                                )
+                                raise RuntimeError(
+                                    f"Bus {bus_name} health check failed during initialization: {self._error_message}"
+                                )
+                            else:
+                                raise RuntimeError(
+                                    f"Bus {bus_name} reported disconnected state{(': ' + str(details)) if details else ''}"
+                                )
+
+                except Exception as inner_exc:
+                    if during_initialization:
+                        # Semantyka: log i propagacja wyjątku w trakcie inicjalizacji
+                        self._error = True
+                        self._error_message = f"{bus_name}: {inner_exc}"
+                        error(
+                            f"Initial bus health check raised for {bus_name}: {inner_exc}",
+                            message_logger=self._message_logger,
+                        )
+                        raise
+                    else:
+                        if escalate_on_failure:
+                            error(
+                                f"Bus health check failed for {bus_name if bus_name else 'unknown'}: {inner_exc}",
+                                message_logger=self._message_logger,
+                            )
+                            self._error = True
+                            self._error_message = (
+                                f"{bus_name if bus_name else 'unknown'}: {inner_exc}"
+                            )
+                            if self.fsm_state not in {
+                                EventListenerState.ON_ERROR,
+                                EventListenerState.FAULT,
+                            }:
+                                self._change_fsm_state(EventListenerState.ON_ERROR)
+                            return False
+                        else:
+                            raise
+
+            return True
+        except Exception:
+            # Propaguj błąd dalej (zachowuje się identycznie względem poprzedniej logiki)
+            if during_initialization:
+                raise
+            else:
+                raise
 
     def _execute_before_shutdown(
         self,
@@ -825,6 +937,12 @@ class IO_server(EventListener):
                     )
 
             debug(f"Buses: {self.buses}", message_logger=self._message_logger)
+
+            # STEP 1.1: Initial bus health check (fail-fast before devices)
+            # Jeżeli którykolwiek BUS jest w stanie błędu już na starcie, eskalujemy.
+            self._assert_bus_healthy(
+                escalate_on_failure=True, during_initialization=True
+            )
 
             # STEP 2: Initialize standalone physical devices
             if self._debug:
