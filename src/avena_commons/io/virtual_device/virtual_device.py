@@ -11,6 +11,15 @@ from .sensor_watchdog import SensorTimerTask, SensorWatchdog
 
 
 class VirtualDeviceState(Enum):
+    """Enum przedstawiający stany pracy urządzenia wirtualnego.
+
+    Atrybuty:
+        UNINITIALIZED: Urządzenie nie zostało jeszcze zainicjalizowane.
+        INITIALIZING: Urządzenie jest w trakcie inicjalizacji.
+        WORKING: Urządzenie pracuje prawidłowo.
+        ERROR: Urządzenie znajduje się w stanie błędu.
+    """
+
     UNINITIALIZED = 0
     INITIALIZING = 1
     WORKING = 2
@@ -18,7 +27,22 @@ class VirtualDeviceState(Enum):
 
 
 class VirtualDevice(ABC):
+    """Abstrakcyjna baza dla urządzeń wirtualnych sterowanych przez serwer IO.
+
+    Klasa dostarcza wspólną infrastrukturę: obsługę zdarzeń, kolejek
+    przetwarzania i zakończonych zdarzeń, mechanizm watchdogów czujników
+    oraz podstawowy FSM stanu urządzenia.
+    """
+
     def __init__(self, **kwargs):
+        """Inicjalizuje urządzenie wirtualne.
+
+        Oczekiwane pola w `kwargs`:
+            - device_name (str): Nazwa urządzenia wirtualnego.
+            - devices (dict[str, Any]): Mapa podłączonych urządzeń fizycznych.
+            - methods (dict[str, Any]): Konfiguracja mapująca metody wirtualne na urządzenia fizyczne.
+            - message_logger: Logger wiadomości używany do logowania.
+        """
         self.device_name = kwargs["device_name"]
         self.devices = kwargs["devices"]
         self.methods = kwargs["methods"]
@@ -65,6 +89,19 @@ class VirtualDevice(ABC):
         on_timeout: Optional[Callable[[SensorTimerTask], None]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """Dodaje zadanie watchdog do monitorowania warunku w czasie.
+
+        Args:
+            condition (Callable[[], bool]): Funkcja, która powinna zwracać True przed upływem czasu.
+            timeout_s (float): Limit czasu w sekundach.
+            description (str): Opis zadania/warunku.
+            id (str | None): Opcjonalny identyfikator zadania; gdy None, zostanie nadany automatycznie.
+            on_timeout (Callable[[SensorTimerTask], None] | None): Niestandardowa akcja na timeout.
+            metadata (dict[str, Any] | None): Dodatkowe metadane zadania.
+
+        Returns:
+            str: Identyfikator utworzonego zadania watchdoga.
+        """
         return self._watchdog.until(
             condition=condition,
             timeout_s=timeout_s,
@@ -75,13 +112,27 @@ class VirtualDevice(ABC):
         )
 
     def cancel_sensor_timeout(self, id: str) -> bool:
+        """Anuluje zadanie watchdoga o podanym identyfikatorze.
+
+        Args:
+            id (str): Identyfikator zadania zwrócony przez `add_sensor_timeout`.
+
+        Returns:
+            bool: True, jeśli anulowano; False, jeśli zadanie nie istniało.
+        """
         return self._watchdog.cancel(id)
 
     def _tick_watchdogs(self) -> None:
+        """Wywołuje cykliczną obsługę wszystkich zadań watchdoga dla urządzenia."""
         self._watchdog.tick()
 
     # Ensure watchdog.tick() is invoked before subclass tick() body
     def __init_subclass__(cls, **kwargs):
+        """Hak klasowy, który opakowuje metodę `tick` potomków.
+
+        Zapewnia, że przed właściwą logiką `tick()` urządzenia zawsze
+        zostanie wywołany `watchdog.tick()`.
+        """
         super().__init_subclass__(**kwargs)
         if "tick" in cls.__dict__:
             original_tick = cls.__dict__["tick"]
@@ -172,6 +223,16 @@ class VirtualDevice(ABC):
     def _move_event_to_finished(
         self, event_type: str, result: str, result_message: str | None = None
     ) -> bool:
+        """Przenosi zdarzenie z kolejki przetwarzania do listy zakończonych.
+
+        Args:
+            event_type (str): Typ zdarzenia do przeniesienia.
+            result (str): Wynik przetwarzania (np. "success", "error").
+            result_message (str | None): Opcjonalna wiadomość błędu/rezultatu.
+
+        Returns:
+            bool: True, jeśli operacja się powiodła; False w przypadku błędu.
+        """
         try:
             debug(
                 f"{self.device_name} - Current processing events: {self._processing_events}",
@@ -198,9 +259,34 @@ class VirtualDevice(ABC):
 
     @abstractmethod
     def _instant_execute_event(self, event: Event) -> Event:
+        """Abstrakcyjna metoda natychmiastowego wykonania akcji dla zdarzenia.
+
+        Potomne klasy powinny zaimplementować logikę bezpośredniej obsługi akcji,
+        która nie wymaga dodawania zdarzenia do kolejki długotrwałego przetwarzania.
+
+        Args:
+            event (Event): Zdarzenie do obsłużenia.
+
+        Returns:
+            Event: Zdarzenie z uzupełnionym polem `result`.
+        """
         pass
 
     def execute_event(self, event: Event) -> Event | None:  # wywolanie akcji
+        """Wykonuje akcję związaną z przekazanym zdarzeniem.
+
+        Zachowanie:
+            - Jeśli zdarzenie jest już w przetwarzaniu, zwraca je z wynikiem błędu.
+            - Jeśli `to_be_processed` jest True, zdarzenie trafia do kolejki i funkcja zwraca None.
+            - W przeciwnym wypadku akcja jest wykonywana natychmiast (w tym standardowy `*_check_fsm_state`).
+
+        Args:
+            event (Event): Zdarzenie do obsłużenia.
+
+        Returns:
+            Event | None: Zdarzenie (gdy obsługa zakończona natychmiast) lub None
+            (gdy dodano do kolejki przetwarzania).
+        """
         with MeasureTime(
             label=f"{self.device_name} execute_event: {event.event_type}",
             max_execution_time=1.0,
@@ -226,6 +312,11 @@ class VirtualDevice(ABC):
                             return self._instant_execute_event(event)
 
     def finished_events(self) -> list[Event]:  # odbior zakonczonych zdarzen
+        """Zwraca listę zakończonych zdarzeń i czyści wewnętrzną kolejkę.
+
+        Returns:
+            list[Event]: Kopia listy zakończonych zdarzeń od ostatniego wywołania.
+        """
         with self._finished_events_lock:
             temp_list = self._finished_events.copy()
             self._finished_events.clear()
@@ -233,7 +324,11 @@ class VirtualDevice(ABC):
 
     @abstractmethod
     def tick(self):
-        """Module main loop method. Io Server calls this method periodically. Device checks should take place here. Do not use this method for blocking operations."""
+        """Główna metoda pętli modułu wywoływana cyklicznie przez serwer IO.
+
+        W tej metodzie powinny odbywać się okresowe kontrole urządzenia. Nie należy
+        umieszczać tu operacji blokujących.
+        """
         pass
 
     def __str__(self) -> str:
