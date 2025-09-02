@@ -8,6 +8,24 @@ from ..io_utils import init_device_di, init_device_do
 
 
 class TLC57R24V08:
+    """Sterownik TLC57R24V08 z trybem jog/pozycja, wątkami DI/DO i obsługą błędów.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        configuration_type: Typ konfiguracji urządzenia (mapowanie wejść/wyjść).
+        reverse_direction (bool): Odwrócenie kierunku enkodera.
+        period (float): Okres pętli wątków (s).
+        do_count (int): Liczba linii DO.
+        di_count (int): Liczba linii DI.
+        movement_retry_attempts (int): Maks. próby ponawiania ruchu przy błędzie.
+        movement_retry_delay (float): Opóźnienie między próbami (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+        command_send_retry_attempts (int): Próby ponownego wysłania komendy (niezależnie od retry ruchu).
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -107,6 +125,7 @@ class TLC57R24V08:
         self.__setup()
 
     def __setup(self):
+        """Konfiguruje rejestry sterownika, uruchamia wątki jog/DI/DO."""
         try:
             if self.configuration_type == 1:  # komora odbiorcza
                 # komora odbiorcza
@@ -153,7 +172,7 @@ class TLC57R24V08:
             return None
 
     def _start_jog_thread(self):
-        """Start the continuous jog thread"""
+        """Uruchamia wątek sterowania jog, jeśli nie działa."""
         try:
             if self._jog_thread is None or not self._jog_thread.is_alive():
                 self._stop_event.clear()
@@ -172,7 +191,7 @@ class TLC57R24V08:
             )
 
     def __jog_thread_worker(self):
-        """Continuous jog thread worker that sends jog or position parameters when enabled"""
+        """Wątek: wysyła parametry jog/pozycja po ustawieniu flagi run, z obsługą retry."""
 
         while not self._stop_event.is_set():
             now = time.time()
@@ -395,7 +414,7 @@ class TLC57R24V08:
     def __send_jog_parameters(
         self, speed: int, accel: int, decel: int, control_word: int
     ):
-        """Send jog parameters to the device via Modbus"""
+        """Wysyła do urządzenia parametry trybu jog przez Modbus."""
         try:
             response_setup = self.bus.write_holding_registers(
                 address=self.address,
@@ -431,7 +450,7 @@ class TLC57R24V08:
         start_speed: int,
         control_word: int,
     ):
-        """Send position parameters to the device via Modbus"""
+        """Wysyła do urządzenia parametry trybu pozycja przez Modbus."""
         try:
             high_word = (position >> 16) & 0xFFFF
             low_word = position & 0xFFFF
@@ -462,6 +481,7 @@ class TLC57R24V08:
             return False
 
     def __operation_status_thread(self):
+        """Wątek śledzący status operacyjny podczas pracy silnika."""
         while self.__motor_running:
             response_status = self.bus.read_holding_registers(
                 address=self.address, first_register=4, count=2
@@ -489,17 +509,21 @@ class TLC57R24V08:
             time.sleep(0.1)
 
     def __run_operation_status_read(self):
+        """Uruchamia wątek odczytu statusu operacyjnego."""
         self.__motor_running = True
         self._status_thread = threading.Thread(target=self.__operation_status_thread)
         self._status_thread.start()
 
     def is_motor_running(self):
+        """Zwraca True, jeśli silnik jest uruchomiony (bit motor_running)."""
         return self.operation_status_motor_running
 
     def is_failure(self):
+        """Zwraca True, jeśli występuje stan awarii (failure)."""
         return self.operation_status_failure
 
     def reset_error(self):
+        """Resetuje błąd w urządzeniu (zapis do rejestru resetu błędów)."""
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
         debug(
             f"{self.device_name} - Reset po byciu w stanie failure",
@@ -520,15 +544,14 @@ class TLC57R24V08:
         decel: int = 1,
         start_speed: int = 0,
     ):
-        """
-        Enable position mode with specified parameters. The jog thread will handle sending the parameters.
+        """Włącza tryb pozycja z podanymi parametrami (wysyłką zajmuje się wątek jog).
 
         Args:
-            position (int): Target position in pulses (-2147483648~2147483647)
-            speed (int): Positioning speed in r/min (0-3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
-            start_speed (int): Positioning start speed in r/min (0-3000)
+            position (int): Docelowa pozycja w impulsach (-2147483648..2147483647).
+            speed (int): Prędkość pozycjonowania w r/min (0..3000).
+            accel (int): Czas narastania prędkości w ms (0..2000).
+            decel (int): Czas opadania prędkości w ms (0..2000).
+            start_speed (int): Prędkość startowa w r/min (0..3000).
         """
         info(
             f"{self.device_name}.run_position(position={position}, speed={speed}, accel={accel}, decel={decel}, start_speed={start_speed})",
@@ -553,13 +576,12 @@ class TLC57R24V08:
         self._command_send_attempts_made = 0
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
-        """
-        Enable jog mode with specified parameters. The jog thread will handle sending the parameters.
+        """Włącza tryb jog z podanymi parametrami (wysyłką zajmuje się wątek jog).
 
         Args:
-            speed (int): Positioning speed in r/min (-3000 - 3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
+            speed (int): Prędkość w r/min (-3000..3000).
+            accel (int): Czas narastania w ms (0..2000).
+            decel (int): Czas opadania w ms (0..2000).
         """
         info(
             f"{self.device_name}.run_jog(speed={speed}, accel={accel}, decel={decel})",
@@ -582,7 +604,7 @@ class TLC57R24V08:
         self._command_send_attempts_made = 0
 
     def stop(self):
-        """Stop motor operation and disable jog mode"""
+        """Zatrzymuje silnik i wyłącza tryb jog."""
         self.__motor_running = False
 
         # Disable jog mode

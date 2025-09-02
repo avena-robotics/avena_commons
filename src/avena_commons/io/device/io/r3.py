@@ -5,6 +5,15 @@ from .EtherCatSlave import EtherCatDevice, EtherCatSlave
 
 # TODO: CHECK IF THIS IS CORRECT
 class R3_Slave(EtherCatSlave):
+    """Slave R3 dla EtherCAT: 16 wejść i 16 wyjść cyfrowych.
+
+    Args:
+        master: Obiekt mastera EtherCAT.
+        address: Adres slave'a w sieci.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self, master, address, message_logger: MessageLogger | None = None, debug=True
     ):
@@ -13,12 +22,14 @@ class R3_Slave(EtherCatSlave):
         self.outputs_ports = [0 for _ in range(16)]
 
     def _config_function(self, slave_pos):
+        """Ustawienia konfiguracyjne wykonywane przez mastera EtherCAT."""
         debug(
             f"Configuring {self.address} {slave_pos}",
             message_logger=self.message_logger,
         )
 
     def _read_pdo(self):
+        """Odczytuje wejścia cyfrowe z PDO i aktualizuje `inputs_ports`."""
         # Get the input bytes from the slave
         input_bytes = self.master.slaves[self.address].input
 
@@ -30,17 +41,20 @@ class R3_Slave(EtherCatSlave):
             self.inputs_ports[i] = (input_value >> i) & 1
 
     def _write_pdo(self):
+        """Zapisuje wyjścia cyfrowe do PDO na podstawie `outputs_ports`."""
         output_bytes = bytes([self.outputs_ports[i] for i in range(16)])
         self.master.slaves[self.address].output = output_bytes
 
     def _process(self):
-        # TODO: Add logic to process the inputs and outputs
+        """Miejsce na logikę przetwarzania wejść/wyjść (do rozszerzenia)."""
         pass
 
     def read_input(self, port: int):
+        """Zwraca stan wejścia cyfrowego o podanym porcie 0..15."""
         return self.inputs_ports[port]
 
     def write_output(self, port: int, value: bool):
+        """Ustawia stan wyjścia cyfrowego w buforze dla portu 0..15."""
         self.outputs_ports[port] = value
 
     def __str__(self) -> str:
@@ -94,6 +108,15 @@ class R3_Slave(EtherCatSlave):
 
 
 class R3(EtherCatDevice):
+    """Urządzenie R3 na warstwie logiki: 16 DI/16 DO.
+
+    Args:
+        bus: Magistrala EtherCAT.
+        address: Adres slave'a.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self, bus, address, message_logger: MessageLogger | None = None, debug=True
     ):
@@ -104,14 +127,17 @@ class R3(EtherCatDevice):
         self.outputs_ports = [0 for _ in range(16)]
 
     def read_input(self, port: int):
+        """Odczytuje stan wejścia cyfrowego przez magistralę i aktualizuje bufor."""
         self.inputs_ports[port] = self.bus.read_input(self.address, port)
         return self.inputs_ports[port]
 
     def read_output(self, port: int):
+        """Zwraca stan wyjścia cyfrowego z lokalnego bufora."""
         print(f"read_output {port}")
         return self.outputs_ports[port]
 
     def write_output(self, port: int, value: bool):
+        """Ustawia stan wyjścia cyfrowego i wysyła go do urządzenia przez magistralę."""
         self.outputs_ports[port] = value
         self.bus.write_output(self.address, port, value)
 

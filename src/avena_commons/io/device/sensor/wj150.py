@@ -1,7 +1,8 @@
-from avena_commons.util.logger import MessageLogger, debug, error, info
 import threading
-from enum import Enum
 import time
+from enum import Enum
+
+from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
 class WorkingMode(Enum):
@@ -10,6 +11,17 @@ class WorkingMode(Enum):
 
 
 class WJ150:
+    """Czujnik/enkoder WJ150 z trybem AB lub niezależnymi licznikami, z wątkiem monitorującym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        working_mode (WorkingMode): Tryb pracy (AB_ENCODER lub INDEPENDENT_COUNTERS).
+        period (float): Okres odczytu (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -35,6 +47,7 @@ class WJ150:
         self.__reset()
 
     def __setup(self):
+        """Konfiguruje urządzenie i uruchamia wątek odczytu w wybranym trybie."""
         try:
             if self.working_mode == WorkingMode.AB_ENCODER:
                 with self.__lock:
@@ -65,6 +78,7 @@ class WJ150:
             return None
 
     def __reset(self):
+        """Resetuje liczniki/enkoder w urządzeniu."""
         with self.__lock:
             self.bus.write_holding_registers(
                 address=self.address, first_register=16, values=[0, 0]
@@ -74,6 +88,7 @@ class WJ150:
             )
 
     def _encoder_thread(self):
+        """Wątek cyklicznie odczytujący wartości enkodera lub liczników (zależnie od trybu)."""
         while not self._stop_event.is_set():
             now = time.time()
             match self.working_mode:

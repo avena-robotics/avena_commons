@@ -14,6 +14,18 @@ from avena_commons.util.measure_time import MeasureTime
 
 
 class IO_server(EventListener):
+    """Komponent serwera IO odpowiedzialny za obsługę operacji wejścia/wyjścia oraz zdarzeń.
+
+    Args:
+        name (str): Nazwa serwera IO.
+        port (int): Port serwera IO.
+        configuration_file (str): Ścieżka do lokalnego pliku konfiguracji.
+        general_config_file (str): Ścieżka do ogólnego (domyślnego) pliku konfiguracji.
+        message_logger (MessageLogger | None): Logger wiadomości (opcjonalny).
+        debug (bool): Czy wypisywać komunikaty debug (domyślnie True).
+        load_state (bool): Czy wczytywać zapisany stan urządzeń (domyślnie True).
+    """
+
     def __init__(
         self,
         name: str,
@@ -24,6 +36,17 @@ class IO_server(EventListener):
         debug: bool = True,
         load_state: bool = True,
     ):
+        """Inicjalizuje serwer IO oraz przygotowuje podstawowy stan.
+
+        Args:
+            name (str): Nazwa serwera IO.
+            port (int): Port serwera IO.
+            configuration_file (str): Ścieżka do lokalnego pliku konfiguracji urządzeń.
+            general_config_file (str): Ścieżka do ogólnego pliku konfiguracji.
+            message_logger (MessageLogger | None): Logger wiadomości używany do logowania.
+            debug (bool): Włącza/wyłącza komunikaty debug.
+            load_state (bool): Włącza/wyłącza wczytywanie poprzedniego stanu urządzeń.
+        """
         self._message_logger = message_logger
         self._debug = debug
         self._load_state = load_state
@@ -96,7 +119,7 @@ class IO_server(EventListener):
     async def on_stopping(self):
         """
         FSM Callback: RUN → auto PAUSE → STOPPED
-        Cleanup processing events and disable IO related resources
+        Sprzątanie przetwarzanych zdarzeń oraz wyłączenie zasobów związanych z IO
         """
         if self._debug:
             debug(
@@ -123,7 +146,7 @@ class IO_server(EventListener):
     async def on_ack(self):
         """
         FSM Callback: FAULT → INITIALIZED
-        Acknowledge fault and reset internal error state
+        Potwierdza błąd i resetuje wewnętrzny stan błędu serwera IO.
         """
         if self._debug:
             debug("FSM: Acknowledging fault (IO)", message_logger=self._message_logger)
@@ -202,7 +225,7 @@ class IO_server(EventListener):
     async def on_starting(self):
         """
         FSM Callback: INITIALIZED → RUN
-        Enable IO processing and activate modules if needed
+        Włącza przetwarzanie IO i aktywuje moduły w razie potrzeby.
         """
         if self._debug:
             debug("FSM: Enabling IO operations", message_logger=self._message_logger)
@@ -211,7 +234,7 @@ class IO_server(EventListener):
     async def on_pausing(self):
         """
         FSM Callback: RUN → PAUSE
-        Stop current IO-related operations gracefully
+        Zatrzymuje trwające operacje IO w kontrolowany sposób.
         """
         if self._debug:
             debug("FSM: Pausing IO operations", message_logger=self._message_logger)
@@ -220,7 +243,7 @@ class IO_server(EventListener):
     async def on_resuming(self):
         """
         FSM Callback: PAUSE → RUN
-        Re-enable IO operations and continue processing
+        Ponownie włącza operacje IO i wznawia przetwarzanie.
         """
         if self._debug:
             debug("FSM: Resuming IO operations", message_logger=self._message_logger)
@@ -228,8 +251,8 @@ class IO_server(EventListener):
 
     async def on_soft_stopping(self):
         """
-        FSM Callback: RUN → INITIALIZED (graceful)
-        Stop accepting new events, wait for current operations to complete naturally
+        FSM Callback: RUN → INITIALIZED (łagodne zatrzymanie)
+        Wstrzymuje przyjmowanie nowych zdarzeń i pozwala bieżącym zakończyć się naturalnie.
         """
         if self._debug:
             debug(
@@ -241,7 +264,7 @@ class IO_server(EventListener):
     async def on_hard_stopping(self):
         """
         FSM Callback: RUN → auto PAUSE → STOPPED
-        Cleanup processing events and disable IO resources immediately
+        Natychmiast sprząta kolejkę zdarzeń i wyłącza zasoby IO.
         """
         if self._debug:
             debug(
@@ -260,7 +283,7 @@ class IO_server(EventListener):
             )
 
     async def get_status(self):
-        """Update IO_server internal state (FSM aware)"""
+        """Aktualizuje wewnętrzny stan serwera IO (z uwzględnieniem FSM)."""
         try:
             if hasattr(self, "update_state"):
                 self._state = self.update_state()
@@ -269,23 +292,20 @@ class IO_server(EventListener):
 
     async def _analyze_event(self, event: Event) -> Result:
         """
-        Analyze and route incoming events to appropriate handlers.
+        Analizuje oraz kieruje nadejście zdarzeń do właściwych obsługujących je elementów.
 
-        This method examines the source of each incoming event and routes it to the
-        appropriate handler.
-
-        It calls the device_selector method to determine
-        which virtual device should handle the event, and adds successfully matched
-        events to the processing queue.
+        Metoda wykorzystuje `device_selector`, aby wskazać urządzenie wirtualne odpowiedzialne
+        za obsługę zdarzenia. Jeżeli urządzenie zwróci zdarzenie odpowiedzi, zostanie ono wysłane,
+        w przeciwnym razie zdarzenie zostanie dodane do kolejki przetwarzania.
 
         Args:
-            event (Event): Incoming event to process
+            event (Event): Zdarzenie wejściowe do przetworzenia.
 
         Returns:
-            bool: True if event was successfully processed
+            bool: True w przypadku poprawnej obsługi i/lub dodania do przetwarzania.
 
-        Raises:
-            ValueError: If event source is invalid or not supported
+        Exceptions:
+            ValueError: Gdy źródło lub typ zdarzenia jest nieprawidłowe lub nieobsługiwane.
         """
         if self._debug:
             debug(
@@ -299,21 +319,18 @@ class IO_server(EventListener):
 
     async def device_selector(self, event: Event) -> bool:
         """
-        Select the appropriate virtual device based on the event data and action type.
+        Wybiera właściwe urządzenie wirtualne na podstawie danych zdarzenia i typu akcji.
 
-        This method extracts the device_id from the event data and parses the event_type
-        to determine which virtual device should handle the event. It constructs the device name
-        by combining the device prefix (extracted from event_type) with the device_id.
-
-        If the corresponding virtual device exists and has an 'execute_event' method,
-        the method will call it with the event data. If the device method returns an Event object,
-        it will reply with that event. Otherwise, it adds the event to processing queue.
+        Metoda odczytuje `device_id` z danych zdarzenia oraz analizuje `event_type`, aby zbudować
+        nazwę urządzenia wirtualnego i wskazać jego metodę `execute_event`. Jeżeli metoda zwróci
+        obiekt `Event`, odpowiedź zostanie odesłana bez dodawania do kolejki; w przeciwnym wypadku
+        zdarzenie trafi do kolejki przetwarzania.
 
         Args:
-            event (Event): Incoming event to process
+            event (Event): Zdarzenie do obsłużenia.
 
         Returns:
-            bool: True if action is going to be processed, False otherwise
+            bool: True, gdy zdarzenie należy dodać do kolejki przetwarzania; False w przeciwnym wypadku.
         """
         device_id = event.data.get("device_id")
         if device_id is None:
@@ -378,22 +395,16 @@ class IO_server(EventListener):
 
     async def _check_local_data(self):
         """
-        Process virtual devices and handle finished events.
+        Przetwarza urządzenia wirtualne i obsługuje zakończone zdarzenia.
 
-        This method periodically checks all virtual devices, calls their tick() method if available,
-        and processes any finished events. Key operations:
+        Metoda cyklicznie sprawdza wszystkie urządzenia wirtualne, wywołuje ich metodę `tick()`
+        (jeżeli istnieje) oraz przetwarza listę zakończonych zdarzeń. W razie wykrycia błędu
+        na urządzeniu (wirtualnym lub fizycznym) wykonuje eskalację do stanu ON_ERROR FSM.
 
-        1. Iterates through all virtual devices
-        2. Calls tick() on each device (if method exists)
-        3. Processes the 'finished_events' list for each device (if exists)
-           - Removes finished events from the processing queue
-           - Logs processing status
-
-        Implementation details:
-        - Uses defensive programming to handle missing attributes or methods
-        - Catches and logs exceptions at the device level to prevent one failing device
-          from affecting others
-        - Error handling at multiple levels (device level and method level)
+        Główne kroki:
+        - iteracja po urządzeniach wirtualnych i wywołanie `tick()`;
+        - obsługa listy `finished_events` oraz usuwanie zdarzeń z kolejki przetwarzania;
+        - proaktywna detekcja błędów urządzeń i magistral.
         """
         with MeasureTime(
             label="io - checking local data",
@@ -944,59 +955,51 @@ class IO_server(EventListener):
         self, configuration_file: str, general_config_file: str = None
     ):
         """
-        Load and process device configuration from JSON files, merging general and local configurations.
+        Wczytuje i przetwarza konfigurację urządzeń z plików JSON, łącząc konfigurację ogólną z lokalną.
 
-        This method loads both general (default) and local configuration files, merging them with
-        local configuration taking precedence. It then initializes all buses, physical devices, and
-        virtual devices based on the merged configuration.
+        Metoda najpierw wczytuje konfigurację ogólną (jeśli podana), następnie lokalną, dokonuje głębokiego
+        scalenia (lokalne wartości mają pierwszeństwo), po czym inicjalizuje kolejno: magistrale (BUS),
+        urządzenia fizyczne oraz urządzenia wirtualne.
 
-        1. Parse the JSON configuration file
-        2. First initialize all buses
-        3. Then initialize all physical devices, passing bus references to devices
-        4. Initialize virtual devices with references to physical devices based on "methods"
+        Kroki:
+        1) Parsowanie plików JSON i scalanie konfiguracji;
+        2) Inicjalizacja wszystkich magistral;
+        3) Inicjalizacja urządzeń fizycznych, z przekazaniem referencji do bus;
+        4) Inicjalizacja urządzeń wirtualnych, z mapowaniem metod na urządzenia fizyczne.
 
-        The configuration structure follows this pattern:
+        Struktura przykładowej konfiguracji:
         ```json
         {
             "bus": {
-                "modbus_1": {
-                    "class": "ModbusRTU",
-                    "configuration": {}
-                }
+                "modbus_1": { "class": "ModbusRTU", "configuration": {} }
             },
-            "device": {              # Physical devices definitions
+            "device": {
                 "device_name": {
                     "class": "motor_driver/DriverClass",
                     "configuration": {},
-                    "bus": "modbus_1"      # Reference to parent bus
+                    "bus": "modbus_1"
                 }
             },
-            "virtual_device": {      # Virtual devices with methods
+            "virtual_device": {
                 "feeder1": {
                     "class": "Feeder",
-                    "methods": {           # Methods referencing physical devices
-                        "method_name": {
-                            "device": "device_name",
-                            "method": "device_method"
-                        }
+                    "methods": {
+                        "method_name": { "device": "device_name", "method": "device_method" }
                     }
                 }
             }
         }
         ```
 
-        This approach eliminates hardcoded device types, allowing the system to adapt
-        to any structure in the configuration file based on the presence of specific attributes.
-
         Args:
-            configuration_file (str): Path to the local JSON configuration file
-            general_config_file (str, optional): Path to the general (default) configuration file
+            configuration_file (str): Ścieżka do lokalnego pliku konfiguracji JSON.
+            general_config_file (str | None): Ścieżka do ogólnego (domyślnego) pliku konfiguracji.
 
-        Raises:
-            FileNotFoundError: If a required configuration file doesn't exist
-            ValueError: If a configuration file contains invalid JSON
-            RuntimeError: If any device fails to initialize properly
-            Exception: For any other error during configuration loading
+        Exceptions:
+            FileNotFoundError: Gdy wymagany plik nie istnieje.
+            ValueError: Gdy plik konfiguracji zawiera nieprawidłowy JSON.
+            RuntimeError: Gdy nie udało się poprawnie zainicjalizować któregoś urządzenia.
+            Exception: Inne błędy podczas wczytywania konfiguracji.
         """
         if self._debug:
             debug(
@@ -1251,24 +1254,24 @@ class IO_server(EventListener):
         self, general_config_file: str, local_config_file: str
     ) -> dict:
         """
-        Load and merge general and local configuration files.
+        Wczytuje i scala konfiguracje ogólną oraz lokalną.
 
-        This method implements a deep merge strategy where:
-        1. General configuration is loaded first as the base
-        2. Local configuration is loaded and merged on top
-        3. Local values override general values when there's a conflict
-        4. For nested dictionaries, the merge is performed recursively
+        Stosowana jest strategia głębokiego scalania:
+        1) Najpierw wczytywana jest konfiguracja ogólna (bazowa),
+        2) Następnie wczytywana i nakładana jest konfiguracja lokalna,
+        3) Wartości lokalne mają pierwszeństwo przy konflikcie,
+        4) Dla zagnieżdżonych słowników scalanie wykonywane jest rekurencyjnie.
 
         Args:
-            general_config_file (str): Path to the general (default) configuration file
-            local_config_file (str): Path to the local configuration file with overrides
+            general_config_file (str): Ścieżka do ogólnego (domyślnego) pliku konfiguracji.
+            local_config_file (str): Ścieżka do lokalnego pliku konfiguracji z nadpisaniami.
 
         Returns:
-            dict: Merged configuration dictionary
+            dict: Słownik ze scaloną konfiguracją.
 
-        Raises:
-            FileNotFoundError: If a required configuration file doesn't exist
-            json.JSONDecodeError: If a configuration file contains invalid JSON
+        Exceptions:
+            FileNotFoundError: Gdy wymagany plik nie istnieje.
+            json.JSONDecodeError: Gdy plik konfiguracji zawiera nieprawidłowy JSON.
         """
         # Initialize with empty dictionary
         merged_config = {}
@@ -1325,14 +1328,14 @@ class IO_server(EventListener):
 
     def _deep_merge(self, base_dict: dict, override_dict: dict) -> dict:
         """
-        Recursively merge two dictionaries with nested structures.
+        Rekurencyjnie scala dwa słowniki z uwzględnieniem struktur zagnieżdżonych.
 
         Args:
-            base_dict (dict): Base dictionary to merge into
-            override_dict (dict): Dictionary with values to override base
+            base_dict (dict): Słownik bazowy, do którego scalane są wartości.
+            override_dict (dict): Słownik z wartościami nadpisującymi bazę.
 
         Returns:
-            dict: Merged dictionary
+            dict: Wynik scalania słowników.
         """
         result = base_dict.copy()
 
@@ -1598,16 +1601,17 @@ class IO_server(EventListener):
         parent: Optional[Any] = None,
     ) -> Any:
         """
-        Initialize a class from config using dynamic folder name.
+        Inicjalizuje klasę na podstawie konfiguracji, wykorzystując dynamiczną ścieżkę modułu.
 
         Args:
-            class_name: Name of the class to instantiate (can include subfolder path like "test/Example")
-            folder_name: Folder name to look for the class (from JSON structure)
-            config: Configuration dictionary
-            parent: Parent object (for nested items)
+            device_name (str): Nazwa instancji urządzenia.
+            class_name (str): Nazwa klasy do zainicjalizowania (może zawierać podfolder, np. "test/Example").
+            folder_name (str): Katalog logiczny poszukiwania (np. "bus", "device", "virtual_device").
+            config (Dict[str, Any]): Słownik konfiguracji dla danej instancji.
+            parent (Optional[Any]): Obiekt nadrzędny (np. bus dla urządzenia fizycznego).
 
         Returns:
-            Initialized instance or None if failed
+            Any: Zainicjalizowaną instancję lub None w razie niepowodzenia.
         """
         try:
             # Check if class_name contains a path separator

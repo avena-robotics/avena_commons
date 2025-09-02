@@ -8,6 +8,8 @@ from .EtherCatSlave import EtherCatDevice, EtherCatSlave
 
 
 class ImpulseFSM(Enum):
+    """Enum stanów wewnętrznego FSM osi impulsowej."""
+
     IDLE = 0
     POS_PROFILE_START = 1
     POS_PROFILE_RUN = 2
@@ -17,6 +19,15 @@ class ImpulseFSM(Enum):
 
 
 class ImpulseAxis:
+    """Symulator osi impulsowej generującej sygnały PULSE/DIR.
+
+    Args:
+        device_name (str): Nazwa urządzenia (do logowania).
+        pulse_port (int): Numer portu wyjściowego dla impulsów.
+        direction_port (int): Numer portu wyjściowego dla kierunku.
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -37,6 +48,11 @@ class ImpulseAxis:
         self.direction_state = False
 
     def process(self):
+        """Przetwarza jeden krok FSM osi i wylicza stany PULSE/DIR.
+
+        Returns:
+            tuple[bool, bool]: Krotka (pulse_state, direction_state).
+        """
         match self.ImpulseFSM:
             case ImpulseFSM.IDLE:
                 pass
@@ -54,6 +70,13 @@ class ImpulseAxis:
         return self.pulse_state, self.direction_state
 
     def start_pos_profile(self, pos, vel, direction):
+        """Rozpoczyna profil pozycyjny.
+
+        Args:
+            pos (int): Docelowa liczba impulsów.
+            vel (int): Prędkość (imp/s).
+            direction (bool): Kierunek ruchu.
+        """
         if self.ImpulseFSM == ImpulseFSM.IDLE:
             self.ImpulseFSM = ImpulseFSM.POS_PROFILE_START
             self.velocity = vel
@@ -66,6 +89,12 @@ class ImpulseAxis:
             )
 
     def start_vel_profile(self, vel, direction):
+        """Rozpoczyna profil prędkościowy.
+
+        Args:
+            vel (int): Prędkość (imp/s).
+            direction (bool): Kierunek ruchu.
+        """
         if self.ImpulseFSM == ImpulseFSM.IDLE:
             self.ImpulseFSM = ImpulseFSM.VEL_PROFILE_START
             self.velocity = vel
@@ -77,9 +106,11 @@ class ImpulseAxis:
             )
 
     def stop(self):
+        """Zatrzymuje oś (przejście do STOP)."""
         self.ImpulseFSM = ImpulseFSM.STOP
 
     def _vel_profile_start(self):
+        """Inicjuje parametry profilu prędkościowego i przechodzi do RUN."""
         self.pulse_counter = 0
         self.output_change_time = (
             1 / self.velocity
@@ -91,6 +122,7 @@ class ImpulseAxis:
         self.ImpulseFSM = ImpulseFSM.VEL_PROFILE_RUN
 
     def _pos_profile_start(self):
+        """Inicjuje parametry profilu pozycyjnego i przechodzi do RUN."""
         self.pulse_counter = 0
         self.output_change_time = (
             1 / self.velocity
@@ -98,6 +130,7 @@ class ImpulseAxis:
         self.ImpulseFSM = ImpulseFSM.POS_PROFILE_RUN
 
     def _pos_profile_run(self):
+        """Główna logika generacji impulsów dla profilu pozycyjnego."""
         current_time = time.time()
         if current_time - self.last_pulse_time >= self.output_change_time:
             self.pulse_state = not self.pulse_state
@@ -109,6 +142,7 @@ class ImpulseAxis:
             self.ImpulseFSM = ImpulseFSM.STOP
 
     def _vel_profile_run(self):
+        """Główna logika generacji impulsów dla profilu prędkościowego."""
         current_time = time.time()
         info(
             f"{self.device_name} - time_change {current_time - self.last_pulse_time} output_change_time: {self.output_change_time}",
@@ -124,12 +158,24 @@ class ImpulseAxis:
             self.last_pulse_time = current_time
 
     def _stop(self):
+        """Czyści stany i ustawia FSM na IDLE."""
         self.ImpulseFSM = ImpulseFSM.IDLE
         self.pulse_state = False
         self.direction_state = False
 
 
 class EC3A_IO1632_Slave(EtherCatSlave):
+    """Slave EC3A IO 16xDI/16xDO z obsługą osi impulsowych.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        master: Obiekt mastera EtherCAT.
+        address: Adres slave'a.
+        config (dict): Konfiguracja zawierająca listę osi.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -157,12 +203,18 @@ class EC3A_IO1632_Slave(EtherCatSlave):
             )
 
     def _config_function(self, slave_pos):
+        """Konfiguracja slave'a wywoływana przez mastera.
+
+        Args:
+            slave_pos: Pozycja urządzenia w łańcuchu EtherCAT.
+        """
         debug(
             f"{self.device_name} - Configuring {self.address} {slave_pos}",
             message_logger=self.message_logger,
         )
 
     def _read_pdo(self):
+        """Odczytuje wejścia cyfrowe z PDO i aktualizuje `inputs_ports`."""
         # info(f"Reading PDO {self.address}", message_logger=self.message_logger)
         input_bytes = self.master.slaves[self.address].input
         input_value = int.from_bytes(input_bytes, byteorder="little")
@@ -177,6 +229,7 @@ class EC3A_IO1632_Slave(EtherCatSlave):
                 )
 
     def _write_pdo(self):
+        """Zapisuje wyjścia cyfrowe do PDO na podstawie `outputs_ports`."""
         # output_bytes = self.master.slaves[self.address].output
         # info(f"output_bytes: {output_bytes}", message_logger=self.message_logger)
         # output_value = int.from_bytes(output_bytes, byteorder='little')
@@ -213,6 +266,7 @@ class EC3A_IO1632_Slave(EtherCatSlave):
                     self.previous_outputs[i] = self.outputs_ports[i]
 
     def axis_process(self):
+        """Aktualizuje stany wyjść na podstawie przetwarzania wszystkich osi."""
         for axis in self.axis:
             output_state, direction_state = axis.process()
 
@@ -220,28 +274,44 @@ class EC3A_IO1632_Slave(EtherCatSlave):
             self.outputs_ports[axis.direction_port] = direction_state
 
     def _process(self):
+        """Główna pętla przetwarzania urządzenia (wywoływana cyklicznie)."""
         # info(f"Processing {self.address}", message_logger=self.message_logger)
         self.axis_process()
 
     def read_input(self, port: int):
+        """Zwraca stan wejścia cyfrowego.
+
+        Args:
+            port (int): Numer portu 0..15.
+        """
         return self.inputs_ports[port]
 
     def write_output(self, port: int, value: bool):
+        """Ustawia stan wyjścia cyfrowego w buforze.
+
+        Args:
+            port (int): Numer portu 0..15.
+            value (bool): Wartość do ustawienia.
+        """
         self.outputs_ports[port] = value
 
     def start_axis_pos_profile(self, axis: int, pos: int, vel: int, direction: bool):
+        """Rozpoczyna profil pozycyjny na wskazanej osi."""
         print(f"Starting axis {axis} pos profile {pos} {vel} {direction}")
         self.axis[axis].start_pos_profile(pos, vel, direction)
 
     def start_axis_vel_profile(self, axis: int, vel: int, direction: bool):
+        """Rozpoczyna profil prędkościowy na wskazanej osi."""
         print(f"Starting axis {axis} vel profile {vel} {direction}")
         self.axis[axis].start_vel_profile(vel, direction)
 
     def stop_axis(self, axis: int):
+        """Zatrzymuje wskazaną oś."""
         print(f"Stopping axis {axis}")
         self.axis[axis].stop()
 
     def in_move(self, axis: int):
+        """Informuje, czy wskazana oś jest w ruchu (w trakcie profilu)."""
         if (
             self.axis[axis].ImpulseFSM == ImpulseFSM.POS_PROFILE_RUN
             or self.axis[axis].ImpulseFSM == ImpulseFSM.VEL_PROFILE_RUN
@@ -315,6 +385,17 @@ class EC3A_IO1632_Slave(EtherCatSlave):
 
 
 class EC3A_IO1632(EtherCatDevice):
+    """Abstrakcja urządzenia EC3A_IO1632 na poziomie logiki magistrali.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Obiekt magistrali EtherCAT.
+        address: Adres slave'a.
+        axis (list): Konfiguracja osi.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -345,13 +426,16 @@ class EC3A_IO1632(EtherCatDevice):
         # init_device_do(self, 16)
 
     def _read_input(self, port: int):
+        """Odczytuje stan wejścia cyfrowego z urządzenia przez magistralę."""
         self.inputs_ports[port] = self.bus.read_input(self.address, port)
         return self.inputs_ports[port]
 
     def _read_output(self, port: int):
+        """Zwraca stan bufora wyjścia cyfrowego."""
         return self.outputs_ports[port]
 
     def _write_output(self, port: int, value: bool):
+        """Ustawia wyjście cyfrowe w urządzeniu przez magistralę i aktualizuje bufor."""
         self.outputs_ports[port] = value
         # debug(f"{self.device_name} - Writing output {port} to {value}", message_logger=self.message_logger)
         self.bus.write_output(self.address, port, value)
@@ -359,6 +443,7 @@ class EC3A_IO1632(EtherCatDevice):
     def _start_axis_pos_profile(
         self, axis: int, position: int, velocity: int, direction: bool
     ):
+        """Rozpoczyna profil pozycyjny na wskazanej osi (wywołanie do magistrali)."""
         debug(
             f"{self.device_name}: Axis={axis}, start_axis_pos, position={position}, velocity={velocity}, direction={direction}",
             message_logger=self.message_logger,
@@ -368,6 +453,7 @@ class EC3A_IO1632(EtherCatDevice):
         )
 
     def _start_axis_vel_profile(self, axis: int, velocity: int, direction: bool):
+        """Rozpoczyna profil prędkościowy na wskazanej osi (wywołanie do magistrali)."""
         debug(
             f"{self.device_name}: Axis={axis}, start_axis_pos, velocity={velocity}, direction={direction}",
             message_logger=self.message_logger,
@@ -375,6 +461,7 @@ class EC3A_IO1632(EtherCatDevice):
         self.bus.start_axis_vel_profile(self.address, axis, velocity, direction)
 
     def _stop_axis(self, axis: int):
+        """Zatrzymuje wskazaną oś (wywołanie do magistrali)."""
         self.bus.stop_axis(self.address, axis)
         debug(
             f"{self.device_name}: Axis={axis}, stop_axis",
@@ -382,12 +469,20 @@ class EC3A_IO1632(EtherCatDevice):
         )
 
     def _axis_in_move(self, axis: int):
+        """Zwraca informację o ruchu osi (zapytanie do magistrali)."""
         return self.bus.axis_in_move(self.address, axis)
 
     def di(self, index: int):
+        """Zwraca stan wejścia cyfrowego (skrót do `_read_input`)."""
         return self._read_input(index)
 
     def do(self, index: int, value: bool = None):
+        """Ustawia lub zwraca stan wyjścia cyfrowego.
+
+        Args:
+            index (int): Port wyjściowy.
+            value (bool | None): Wartość do ustawienia; gdy None, zwraca bieżący stan.
+        """
         if value is None:
             return self._read_output(index)
         else:

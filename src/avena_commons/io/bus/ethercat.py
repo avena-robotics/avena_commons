@@ -12,6 +12,8 @@ from avena_commons.util.worker import Connector, Worker
 
 
 class EtherCATState(Enum):
+    """Enum stanów wewnętrznego FSM dla pracy magistrali EtherCAT."""
+
     PREINIT = 0
     INIT = 1
     CONFIG = 2
@@ -20,6 +22,8 @@ class EtherCATState(Enum):
 
 
 class PysoemStates(Enum):
+    """Mapowanie kodów stanów pysoem na czytelne nazwy (pomoc przy logowaniu)."""
+
     NONE_STATE = 0
     INIT_STATE = 1
     PREOP_STATE = 2
@@ -31,6 +35,15 @@ class PysoemStates(Enum):
 
 
 class EtherCATWorker(Worker):
+    """Worker obsługujący komunikację i przetwarzanie PDO w wątku EtherCAT.
+
+    Args:
+        device_name (str): Nazwa instancji.
+        network_interface (str): Interfejs sieciowy (np. "eth0").
+        number_of_devices (int): Oczekiwana liczba slave'ów.
+        message_logger: Logger komunikatów.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -57,6 +70,7 @@ class EtherCATWorker(Worker):
         self.__cycle_frequency: int = 0
 
     def _init(self):
+        """Inicjalizuje mastera pysoem i weryfikuje liczbę urządzeń."""
         self.master.open(self._network_interface)
         number_of_slaves = self.master.config_init()
         info(
@@ -87,6 +101,11 @@ class EtherCATWorker(Worker):
                 )
 
     def __process(self, sleep: float = 0.0):
+        """Realizuje jeden cykl komunikacji: receive → process per-slave → send → state check.
+
+        Args:
+            sleep (float): Dodatkowe opóźnienie na koniec cyklu (sekundy).
+        """
         ret = self.master.receive_processdata(1000)  # odczyt danych z sieci EtherCat
 
         if ret == 0:
@@ -125,6 +144,7 @@ class EtherCATWorker(Worker):
         time.sleep(sleep)
 
     def _add_device(self, device_args: list):
+        """Dodaje obiekt slave do wewnętrznej listy na podstawie konfiguracji."""
         device_class = device_args[4].lower()
         module_path = f"lib.io.device.io.{device_class}"
         module = importlib.import_module(module_path)
@@ -140,6 +160,7 @@ class EtherCATWorker(Worker):
         self._slaves.append(device)
 
     def __configure(self, slave_args: list):
+        """Konfiguruje slave'y, ustawia PREOP, mapuje PDO i przygotowuje DC."""
         for slave_arg in slave_args:
             device_name = slave_arg[0]
             slave_product_code = slave_arg[1]
@@ -225,7 +246,12 @@ class EtherCATWorker(Worker):
         )
 
     def __measure_actual_network_cycle(self, count: int = 20, sleep: float = 0.0):
-        """Zmierz rzeczywisty cykl komunikacyjny sieci EtherCAT"""
+        """Mierzy rzeczywisty cykl komunikacyjny sieci EtherCAT i zapisuje medianę.
+
+        Args:
+            count (int): Liczba pomiarów pełnych cykli.
+            sleep (float): Przerwa między kolejnymi pomiarami (s).
+        """
         info(
             f"{self.device_name} - Measuring actual EtherCAT network cycle...",
             message_logger=self._message_logger,
@@ -343,13 +369,15 @@ class EtherCATWorker(Worker):
         )
 
     def get_cycle_time(self):
+        """Zwraca ostatnio zmierzoną medianę czasu cyklu (sekundy)."""
         return self.__cycle_time
 
     def get_cycle_frequency(self):
+        """Zwraca częstotliwość cyklu wyliczoną z mediany czasu (Hz)."""
         return self.__cycle_frequency
 
     def _check_dc_support(self, slave_address):
-        """Sprawdź czy slave obsługuje Distributed Clock"""
+        """Sprawdza, czy dany slave obsługuje Distributed Clock (DC)."""
         try:
             # Sprawdź ESC Feature register (0x0008-0x0009)
             feature_data = self.master.FPRD(slave_address, 0x0008, 2, timeout=1000)
@@ -419,6 +447,7 @@ class EtherCATWorker(Worker):
             return False
 
     def __change_state(self, state: EtherCATState):
+        """Ustawia bieżący stan worker'a EtherCAT i loguje zmianę."""
         self._ethercat_state = state
         info(
             f"{self.device_name} - Changing state to {state}",
@@ -426,7 +455,7 @@ class EtherCATWorker(Worker):
         )
 
     def __communication_thread(self, pipe_in):
-        """Wątek obsługujący komunikację przez pipe"""
+        """Wątek obsługujący komunikację z procesem nadrzędnym przez pipe."""
         info(
             f"{self.device_name} - Starting communication thread",
             message_logger=self._message_logger,
@@ -518,7 +547,7 @@ class EtherCATWorker(Worker):
             raise e
 
     def __ethercat_thread(self):
-        """Wątek obsługujący logikę EtherCAT"""
+        """Wątek obsługujący logikę stanów i cyklicznego przetwarzania EtherCAT."""
         info(
             f"{self.device_name} - Starting EtherCAT thread",
             message_logger=self._message_logger,
@@ -601,7 +630,7 @@ class EtherCATWorker(Worker):
             raise e
 
     def _run(self, pipe_in):
-        """Główna metoda uruchamiająca oba wątki"""
+        """Uruchamia wątki: komunikacyjny oraz EtherCAT i czeka na ich zakończenie."""
         info(
             f"{self.device_name} - Starting EtherCATWorker with threads",
             message_logger=self._message_logger,
@@ -643,6 +672,17 @@ class EtherCATWorker(Worker):
 
 
 class EtherCAT(Connector):
+    """Magistrala EtherCAT jako Connector z procesem potomnym (workerem).
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        network_interface (str): Interfejs sieciowy (np. "eth0").
+        number_of_devices (int): Oczekiwana liczba slave'ów.
+        core (int): Rdzeń CPU dla procesu potomnego.
+        message_logger: Logger komunikatów.
+        max_send_failures (int): Limit kolejnych błędów wysyłki przed eskalacją.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -746,6 +786,7 @@ class EtherCAT(Connector):
         return value
 
     def _run(self, pipe_in, message_logger):
+        """Funkcja wejściowa procesu potomnego uruchamiająca `EtherCATWorker`."""
         self.__lock = threading.Lock()
         debug(
             f"{self.device_name} - Starting {self.__class__.__name__} subprocess",
@@ -763,6 +804,7 @@ class EtherCAT(Connector):
             pass
 
     def configure(self, dict_of_slaves: dict):
+        """Konfiguruje listę slave'ów powiązanych z tą magistralą."""
         list_of_slaves = []
         for slave_name in dict_of_slaves:
             if (
@@ -792,11 +834,13 @@ class EtherCAT(Connector):
             return value
 
     def read_input(self, address: int, port: int):
+        """Odczytuje stan wejścia cyfrowego z wybranego slave'a/portu."""
         with self.__lock:
             value = self.__execute_command(["READ_INPUT", address, port])
             return value
 
     def write_output(self, address: int, port: int, value: bool):
+        """Ustawia stan wyjścia cyfrowego dla wybranego slave'a/portu."""
         with self.__lock:
             result = self.__execute_command(["WRITE_OUTPUT", address, port, value])
             return result
@@ -804,6 +848,7 @@ class EtherCAT(Connector):
     def start_axis_pos_profile(
         self, address: int, axis: int, pos: int, vel: int, direction: bool
     ):
+        """Rozpoczyna ruch osi w profilu pozycja (position profile)."""
         with self.__lock:
             result = self.__execute_command([
                 "START_AXIS_POS_PROFILE",
@@ -818,6 +863,7 @@ class EtherCAT(Connector):
     def start_axis_vel_profile(
         self, address: int, axis: int, vel: int, direction: bool
     ):
+        """Rozpoczyna ruch osi w profilu prędkość (velocity profile)."""
         with self.__lock:
             result = self.__execute_command([
                 "START_AXIS_VEL_PROFILE",
@@ -829,11 +875,13 @@ class EtherCAT(Connector):
             return result
 
     def stop_axis(self, address: int, axis: int):
+        """Zatrzymuje zadaną oś."""
         with self.__lock:
             result = self.__execute_command(["STOP_AXIS", address, axis])
             return result
 
     def axis_in_move(self, address: int, axis: int):
+        """Zwraca informację, czy wskazana oś jest w ruchu."""
         with self.__lock:
             result = self.__execute_command(["AXIS_IN_MOVE", address, axis])
             return result
@@ -867,6 +915,7 @@ class EtherCAT(Connector):
 
     @property
     def is_connected(self) -> bool:
+        """Zwraca True, jeśli proces żyje i brak stanu błędu."""
         try:
             proc = getattr(self, "_process", None)
             alive = proc is not None and (
@@ -877,6 +926,7 @@ class EtherCAT(Connector):
             return False
 
     def to_dict(self):
+        """Zwraca słownikowy stan magistrali do monitoringu IO_server."""
         return {
             "name": self.device_name,
             "type": self.__class__.__name__,
@@ -890,5 +940,6 @@ class EtherCAT(Connector):
         }
 
     def __del__(self):
+        """Zamyka proces potomny i kanały IPC przy usuwaniu obiektu."""
         super()._send_thru_pipe(self._pipe_out, ["STOP"])  # type: ignore[attr-defined]
         self.pipe_out.close()

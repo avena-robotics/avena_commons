@@ -8,6 +8,21 @@ from ..io_utils import init_device_di, init_device_do
 
 
 class DSR:
+    """Sterownik napędu DSR z buforowanym odczytem DI, zapisem DO oraz trybem prędkościowym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        configuration_type: Typ konfiguracji logiki wejść/wyjść.
+        reverse_direction (bool): Odwrócenie kierunku enkodera.
+        period (float): Okres pracy wątków (s).
+        do_count (int): Liczba linii DO.
+        di_count (int): Liczba linii DI.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -74,6 +89,7 @@ class DSR:
         self.__setup()
 
     def __setup(self):
+        """Wykonuje konfigurację rejestrów i uruchamia wątki DI/DO oraz prędkości."""
         try:
             if self.configuration_type == 1:
                 # Set DI to do nothing
@@ -113,7 +129,7 @@ class DSR:
             return None
 
     def _start_velocity_thread(self):
-        """Start the continuous velocity thread"""
+        """Uruchamia wątek sterowania prędkością, jeśli nie działa."""
         try:
             if self._velocity_thread is None or not self._velocity_thread.is_alive():
                 self._velocity_stop_event.clear()
@@ -132,7 +148,7 @@ class DSR:
             )
 
     def __velocity_thread_worker(self):
-        """Continuous velocity thread worker that sends velocity parameters when enabled"""
+        """Wątek sterowania prędkością: wysyła parametry po włączeniu trybu."""
 
         while not self._velocity_stop_event.is_set():
             now = time.time()
@@ -232,7 +248,7 @@ class DSR:
     def __send_velocity_parameters(
         self, speed: int, accel: int, decel: int, control_word: int
     ):
-        """Send velocity parameters to the device via Modbus"""
+        """Wysyła do urządzenia parametry trybu prędkościowego przez Modbus."""
         try:
             # Set operating mode to velocity mode (3)
             response_mode = self.bus.write_holding_register(
@@ -299,7 +315,7 @@ class DSR:
 
     def run_velocity(self, speed: int, accel: int = 0, decel: int = 0):
         """
-        Enable velocity mode with specified parameters. The velocity thread will handle sending the parameters.
+        Włącza tryb prędkościowy z podanymi parametrami (obsługę wysyła wątek).
 
         Args:
             speed (int): Target velocity in rpm (-3000 - 3000)
@@ -321,7 +337,7 @@ class DSR:
             self._velocity_run = True
 
     def stop_velocity(self):
-        """Stop velocity operation"""
+        """Zatrzymuje tryb prędkościowy i wysyła komendę STOP/EMERGENCY STOP."""
         info(f"{self.device_name}.stop_velocity", message_logger=self.message_logger)
 
         # Send stop command (bit 8) and emergency stop (bit 9) via control register
@@ -353,11 +369,11 @@ class DSR:
             )
 
     def is_motor_running(self):
-        """Check if motor is currently running (motor enabling bit)"""
+        """Zwraca True, jeśli silnik jest aktualnie włączony (bit motor enabling)."""
         return self.operation_status_motor_enabling
 
     def is_failure(self):
-        """Check if there are any failure conditions"""
+        """Zwraca True przy obecności warunków błędów/awarii."""
         return (
             self.operation_status_error_bit
             or self.operation_status_overcurrent
@@ -368,15 +384,15 @@ class DSR:
         )
 
     def is_in_place(self):
-        """Check if motor is in place (positioning completed)"""
+        """Zwraca True, jeśli pozycjonowanie jest zakończone (in place)."""
         return self.operation_status_in_place
 
     def is_homing_completed(self):
-        """Check if homing operation is completed"""
+        """Zwraca True, jeśli operacja homingu została zakończona."""
         return self.operation_status_homing_completed
 
     def di(self, index: int):
-        """Read DI value from cached data"""
+        """Zwraca wartość DI z bufora (bitowo)."""
         with self.__di_lock:
             result = 1 if (self.di_value & (1 << index)) else 0
             if self.__debug:
@@ -387,7 +403,7 @@ class DSR:
             return result
 
     def do(self, index: int, value: bool = None):
-        """Set or get DO value - buffered write via thread"""
+        """Ustawia lub zwraca wartość DO; zapis wykonywany asynchronicznie przez wątek."""
         if value is None:
             # Return current state of the specified DO from buffer
             with self.__do_lock:
@@ -405,7 +421,7 @@ class DSR:
             return None
 
     def _start_di_thread(self):
-        """Start the DI reading thread"""
+        """Uruchamia wątek odczytu DI, jeśli nie działa."""
         try:
             if self._di_thread is None or not self._di_thread.is_alive():
                 self._di_stop_event.clear()
@@ -425,7 +441,7 @@ class DSR:
             )
 
     def _start_do_thread(self):
-        """Start the DO writing thread"""
+        """Uruchamia wątek zapisu DO, jeśli nie działa."""
         try:
             if self._do_thread is None or not self._do_thread.is_alive():
                 self._do_stop_event.clear()

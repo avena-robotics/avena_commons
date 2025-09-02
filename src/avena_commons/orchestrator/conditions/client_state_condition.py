@@ -7,6 +7,22 @@ class ClientStateCondition(BaseCondition):
     """Sprawdza stan klienta."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Ewaluacja warunku na podstawie stanów klientów w kontekście.
+
+        Obsługiwane klucze w konfiguracji:
+        - any_service_in_state (str|List[str]) – True, jeśli dowolny klient jest w jednym z podanych stanów.
+        - no_service_in_state (str|List[str]) – True, jeśli żaden klient nie jest w żadnym z podanych stanów.
+        - all_services_in_state (str|List[str]) – True, jeśli wszyscy klienci są w wymaganym stanie/stanach.
+        - client (str), state (str) – klasyczne sprawdzenie pojedynczego klienta.
+        - exclude_clients (str|List[str]) – lista klientów do pominięcia.
+
+        Args:
+            context (Dict[str, Any]): Kontekst z kluczem "clients" zawierającym stany klientów.
+
+        Returns:
+            bool: Wynik ewaluacji warunku.
+        """
         # Sprawdź czy mamy parametry any_service_in_state lub no_service_in_state
         any_service_in_state = self.config.get("any_service_in_state")
         no_service_in_state = self.config.get("no_service_in_state")

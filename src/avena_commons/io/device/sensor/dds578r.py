@@ -7,6 +7,22 @@ from avena_commons.util.logger import MessageLogger, error, info
 
 
 class DDS578R:
+    """Licznik parametrów elektrycznych z mechanizmem cache i wątkiem monitorującym.
+
+    Urządzenie cyklicznie odczytuje podstawowe parametry elektryczne (napięcia fazowe,
+    prądy liniowe, moce czynne/bierne, współczynniki mocy, częstotliwość oraz sumaryczne
+    energie) z magistrali i udostępnia je w bezpieczny wątkowo sposób. Publiczne metody
+    posiadają krótki cache ograniczający koszt odczytów.
+
+    Argumenty:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address (int): Adres slave (1-247).
+        period (float): Okres odczytu w sekundach.
+        cache_time (float): Czas ważności cache w sekundach.
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -80,6 +96,7 @@ class DDS578R:
         self.check_device_connection()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek monitorujący parametry elektryczne."""
         try:
             if self._thread is None or not self._thread.is_alive():
                 self._stop_event.clear()
@@ -97,7 +114,15 @@ class DDS578R:
             )
 
     def _decode_float(self, registers, register_index=0):
-        """Decode a floating point value from registers using struct library."""
+        """Dekoduje wartość typu float z pary 16‑bitowych rejestrów.
+
+        Argumenty:
+            registers (list[int]): Lista rejestrów wejściowych.
+            register_index (int): Indeks pierwszego rejestru z pary.
+
+        Zwraca:
+            float | None: Zdekodowana wartość lub None, gdy wejście niekompletne.
+        """
         if not registers or len(registers) < register_index + 2:
             return None
 
@@ -110,7 +135,14 @@ class DDS578R:
         return struct.unpack(">f", struct.pack(">I", combined))[0]
 
     def _encode_float(self, value):
-        """Encode a floating point value to registers using struct library."""
+        """Koduje wartość typu float do dwóch 16‑bitowych rejestrów.
+
+        Argumenty:
+            value (float): Wartość do zakodowania.
+
+        Zwraca:
+            list[int]: Dwa rejestry reprezentujące wartość w formacie big‑endian.
+        """
         # Pack the float into a 32-bit value
         packed = struct.pack(">f", float(value))
 
@@ -124,7 +156,7 @@ class DDS578R:
         return [reg_1, reg_2]
 
     def _monitoring_thread(self):
-        """Background thread to continuously monitor electrical parameters."""
+        """Wątek cyklicznie odczytujący parametry elektryczne z urządzenia."""
         while not self._stop_event.is_set():
             now = time.time()
 
@@ -219,7 +251,7 @@ class DDS578R:
     # Public methods to read electrical parameters with caching mechanism similar to p7674.py
 
     def read_phase_voltages(self):
-        """Read the A, B, C phase voltages with caching."""
+        """Zwraca napięcia fazowe A, B, C z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -240,7 +272,7 @@ class DDS578R:
             return fresh_value
 
     def read_line_currents(self):
-        """Read the A, B, C line currents with caching."""
+        """Zwraca prądy liniowe A, B, C z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -261,7 +293,7 @@ class DDS578R:
             return fresh_value
 
     def read_active_power(self):
-        """Read total and phase active power with caching."""
+        """Zwraca moc czynną (całkowitą i na fazach) z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -282,7 +314,7 @@ class DDS578R:
             return fresh_value
 
     def read_reactive_power(self):
-        """Read total and phase reactive power with caching."""
+        """Zwraca moc bierną (całkowitą i na fazach) z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -303,7 +335,7 @@ class DDS578R:
             return fresh_value
 
     def read_power_factors(self):
-        """Read the A, B, C phase power factors with caching."""
+        """Zwraca współczynniki mocy faz A, B, C z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -324,7 +356,7 @@ class DDS578R:
             return fresh_value
 
     def read_frequency(self):
-        """Read the frequency with caching."""
+        """Zwraca częstotliwość z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -345,7 +377,7 @@ class DDS578R:
             return fresh_value
 
     def read_total_active_electricity(self):
-        """Read the total active electricity power with caching."""
+        """Zwraca całkowitą energię czynną z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -367,7 +399,7 @@ class DDS578R:
             return fresh_value
 
     def read_total_reactive_electricity(self):
-        """Read the total reactive electricity power with caching."""
+        """Zwraca całkowitą energię bierną z mechanizmem cache."""
         with self.cache_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -389,6 +421,11 @@ class DDS578R:
             return fresh_value
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie z urządzeniem poprzez odczyt rejestru kontrolnego.
+
+        Zwraca:
+            bool: True jeśli urządzenie odpowiada, w przeciwnym razie False.
+        """
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
@@ -398,12 +435,10 @@ class DDS578R:
         )
 
     def __str__(self) -> str:
-        """
-        Zwraca czytelną reprezentację urządzenia DDS578R w formie stringa.
-        Używane przy printowaniu urządzenia.
+        """Zwraca czytelną reprezentację urządzenia w formie tekstu do debugowania.
 
-        Returns:
-            str: Czytelna reprezentacja urządzenia zawierająca nazwę i podstawowe parametry elektryczne
+        Zwraca:
+            str: Nazwa i podstawowe parametry (napięcia, prądy, moce, częstotliwość).
         """
         try:
             # Pobieranie aktualnych wartości z zabezpieczeniem przed błędami
@@ -430,12 +465,10 @@ class DDS578R:
             return f"DDS578R(name='{self.device_name}', state=ERROR, error='{str(e)}')"
 
     def __repr__(self) -> str:
-        """
-        Zwraca reprezentację urządzenia DDS578R dla developerów.
-        Pokazuje więcej szczegółów technicznych.
+        """Zwraca szczegółową reprezentację obiektu dla programistów.
 
-        Returns:
-            str: Szczegółowa reprezentacja urządzenia
+        Zwraca:
+            str: Reprezentacja z technicznymi polami wewnętrznymi.
         """
         try:
             with self.__lock:
@@ -456,25 +489,10 @@ class DDS578R:
             return f"DDS578R(device_name='{self.device_name}', error='{str(e)}')"
 
     def to_dict(self) -> dict:
-        """
-        Zwraca słownikową reprezentację urządzenia DDS578R.
-        Używane do zapisywania stanu urządzenia w strukturach danych.
+        """Zwraca słownikową reprezentację bieżącego stanu urządzenia.
 
-        Returns:
-            dict: Słownik zawierający:
-                - name: nazwa urządzenia
-                - address: adres Modbus urządzenia
-                - period: okres odczytu
-                - phase_voltages: napięcia fazowe A, B, C
-                - line_currents: prądy liniowe A, B, C
-                - active_power: moc czynna (total + A, B, C)
-                - reactive_power: moc bierna (total + A, B, C)
-                - power_factors: współczynniki mocy A, B, C
-                - frequency: częstotliwość
-                - total_active_electricity: całkowita energia czynna
-                - total_reactive_electricity: całkowita energia bierna
-                - summary: podsumowanie stanu urządzenia
-                - error: informacja o błędzie (jeśli wystąpił)
+        Zwraca:
+            dict: Dane adresowe/okres oraz bieżące parametry i podsumowanie.
         """
         result = {
             "name": self.device_name,
@@ -519,6 +537,7 @@ class DDS578R:
         return result
 
     def __del__(self):
+        """Zatrzymuje wątek monitorujący i czyści referencje loggera przy usuwaniu."""
         self.message_logger = None
         try:
             if (

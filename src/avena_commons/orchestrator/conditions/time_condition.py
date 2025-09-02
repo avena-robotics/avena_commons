@@ -8,6 +8,25 @@ class TimeCondition(BaseCondition):
     """Sprawdza warunki czasowe."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Ewaluacja warunków czasowych względem bieżącego czasu.
+
+        Obsługuje klucze w konfiguracji:
+        - time_range: {"start": "HH:MM", "end": "HH:MM"} (obsługa zakresu przez północ)
+        - weekdays: Lista nazw dni tygodnia (lowercase, np. "monday")
+        - specific_date: ISO-8601 data (YYYY-MM-DD lub pełna z czasem)
+
+        Args:
+            context (Dict[str, Any]): Nieużywany (zachowany dla spójności interfejsu).
+
+        Returns:
+            bool: True, jeśli spełniono przynajmniej jeden z warunków.
+
+        Examples:
+            >>> cond = TimeCondition({"time_range": {"start": "08:00", "end": "16:00"}})
+            >>> await cond.evaluate({})
+            True  # w godzinach pracy
+        """
         current_time = datetime.now()
 
         # Sprawdź przedział czasowy

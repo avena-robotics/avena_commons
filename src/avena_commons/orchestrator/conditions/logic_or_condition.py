@@ -7,6 +7,15 @@ class LogicOrCondition(BaseCondition):
     """Warunek logiczny OR - przynajmniej jeden warunek musi być spełniony."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Zwraca True, jeśli co najmniej jeden zagnieżdżony warunek jest spełniony.
+
+        Args:
+            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunków.
+
+        Returns:
+            bool: Wynik alternatywy warunków (OR).
+        """
         conditions_config = self.config.get("conditions", [])
         if not conditions_config:
             if self.message_logger:

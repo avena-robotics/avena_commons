@@ -8,6 +8,18 @@ from ...device import modbus_check_device_connection
 
 
 class P7674:
+    """Sterownik modułu P7674 z buforowanym odczytem DI i zapisem DO w wątkach.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacji.
+        address: Adres urządzenia.
+        offset (int): Przesunięcie indeksów I/O względem PCB.
+        period (float): Okres cyklu wątków (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -62,6 +74,7 @@ class P7674:
             error(traceback.format_exc(), message_logger=message_logger)
 
     def __setup(self):
+        """Uruchamia wątki odczytu DI i zapisu DO (jeśli nie działają)."""
         try:
             # Start DI reading thread
             if self._di_thread is None or not self._di_thread.is_alive():
@@ -92,7 +105,7 @@ class P7674:
             )
 
     def _di_thread_worker(self):
-        """Background thread that periodically reads DI values"""
+        """Wątek cyklicznie czytający wartości DI do bufora."""
         while not self._di_stop_event.is_set():
             now = time.time()
 
@@ -125,7 +138,7 @@ class P7674:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def _do_thread_worker(self):
-        """Background thread that periodically writes DO values from buffer"""
+        """Wątek cyklicznie zapisujący DO z bufora na urządzenie."""
         while not self._do_stop_event.is_set():
             now = time.time()
 
@@ -169,7 +182,7 @@ class P7674:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def __reset_all_coils(self):
-        """Reset all coils to OFF (0)"""
+        """Resetuje wszystkie cewki (DO) do OFF (0) w buforze i wymusza zapis."""
         try:
             with self.__lock:
                 self.coil_state = [0] * 16  # Update buffer
@@ -188,7 +201,7 @@ class P7674:
             raise
 
     def di(self, index: int):
-        """Read DI value from cached data"""
+        """Zwraca wartość DI z bufora (bitowo)."""
         with self.__lock:
             result = 1 if (self.di_value & (1 << index - self.offset)) else 0
             # if self.__debug:
@@ -196,7 +209,7 @@ class P7674:
             return result
 
     def do(self, index: int, value: bool = None):
-        """Set or get DO value - buffered write via thread"""
+        """Ustawia lub zwraca wartość DO; zapis wykonywany asynchronicznie przez wątek."""
         if value is None:
             # Return current state of the specified DO from buffer
             with self.__lock:
@@ -214,7 +227,7 @@ class P7674:
             return None
 
     def __del__(self):
-        """Cleanup when object is destroyed"""
+        """Zamyka wątki DI/DO przy niszczeniu obiektu."""
         self.message_logger = None
         try:
             # Stop DI thread
