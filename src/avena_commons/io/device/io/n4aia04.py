@@ -8,6 +8,18 @@ from ...device import modbus_check_device_connection
 
 
 class N4AIA04:
+    """Moduł 2x napięcie (V) i 2x prąd (mA) czytany przez Modbus Holding Registers.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address (int | None): Adres urządzenia.
+        offset (int): Przesunięcie indeksów (rezerwowane).
+        period (float): Okres odczytu rejestrów (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -55,7 +67,7 @@ class N4AIA04:
             error(traceback.format_exc(), message_logger=message_logger)
 
     def __setup(self):
-        """Initialize and start the analog reading thread"""
+        """Inicjalizuje i uruchamia wątek odczytu wartości analogowych."""
         try:
             # Start analog reading thread
             if self._analog_thread is None or not self._analog_thread.is_alive():
@@ -77,7 +89,7 @@ class N4AIA04:
             )
 
     def _analog_thread_worker(self):
-        """Background thread that periodically reads raw values from Modbus holding registers"""
+        """Wątek cyklicznie odczytujący surowe wartości z rejestrów Holding."""
         while not self._analog_stop_event.is_set():
             now = time.time()
 
@@ -125,27 +137,27 @@ class N4AIA04:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def get_voltage_1(self) -> float:
-        """Get CH1 V1 voltage value in Volts"""
+        """Zwraca napięcie CH1 V1 w Voltach."""
         with self.__lock:
             return self.raw_values[0] * 0.01  # Convert raw value to Volts
 
     def get_voltage_2(self) -> float:
-        """Get CH2 V2 voltage value in Volts"""
+        """Zwraca napięcie CH2 V2 w Voltach."""
         with self.__lock:
             return self.raw_values[1] * 0.01  # Convert raw value to Volts
 
     def get_current_1(self) -> float:
-        """Get CH3 C1 current value in mA"""
+        """Zwraca prąd CH3 C1 w mA."""
         with self.__lock:
             return self.raw_values[2] * 0.1  # Convert raw value to mA
 
     def get_current_2(self) -> float:
-        """Get CH4 C2 current value in mA"""
+        """Zwraca prąd CH4 C2 w mA."""
         with self.__lock:
             return self.raw_values[3] * 0.1  # Convert raw value to mA
 
     def get_all_values(self) -> dict:
-        """Get all analog values as a dictionary"""
+        """Zwraca wszystkie wartości analogowe w słowniku."""
         with self.__lock:
             return {
                 "voltage_1": self.raw_values[0] * 0.01,
@@ -155,7 +167,7 @@ class N4AIA04:
             }
 
     def get_raw_values(self) -> list:
-        """Get raw values from registers as list [V1_raw, V2_raw, C1_raw, C2_raw]"""
+        """Zwraca surowe wartości jako listę [V1_raw, V2_raw, C1_raw, C2_raw]."""
         with self.__lock:
             return self.raw_values.copy()
 
@@ -249,7 +261,7 @@ class N4AIA04:
         return result
 
     def __del__(self):
-        """Cleanup when object is destroyed"""
+        """Zamyka wątek odczytu analogów podczas niszczenia obiektu."""
         try:
             # Stop analog reading thread
             if (

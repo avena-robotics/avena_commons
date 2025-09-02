@@ -6,6 +6,16 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
 class MA01:
+    """Moduł wyjść/wejść cyfrowych MA01 z buforowaniem zapisu DO i cache DI.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -14,6 +24,7 @@ class MA01:
         message_logger: MessageLogger | None = None,
         debug=True,
     ):
+        """Inicjalizuje moduł MA01 i ustawia parametry buforowania DI/DO."""
         try:
             self.device_name = device_name
             info(
@@ -46,6 +57,7 @@ class MA01:
             error(traceback.format_exc(), message_logger=message_logger)
 
     def __setup(self):
+        """Przywraca stan cewek, czyści bufory i inicjuje licznik czasu."""
         self.__reset_all_coils()
         self.coil_buffer = [0, 0]  # Only 2 coils
         self.last_write_time = time.time()
@@ -53,6 +65,7 @@ class MA01:
         self.new_buffer_cycle = True
 
     def __read_di(self):
+        """Czyta wejścia cyfrowe z cache lub urządzenia (z timeoutem cache)."""
         with self.di_lock:
             current_time = time.time()
             # Check if cache is valid
@@ -79,6 +92,7 @@ class MA01:
             return response
 
     def __write_do(self, values: list):
+        """Zapisuje listę wartości DO do urządzenia i aktualizuje stan bufora."""
         try:
             self.bus.write_coils(address=self.address, register=0, values=values)
             self.last_write_time = time.time()
@@ -90,7 +104,7 @@ class MA01:
             raise
 
     def __reset_all_coils(self):
-        """Reset all coils to OFF (0)"""
+        """Resetuje wszystkie cewki do stanu OFF (0)."""
         try:
             self.bus.write_coils(address=self.address, register=0, values=[0, 0])
             self.coil_buffer = [0, 0]
@@ -107,6 +121,12 @@ class MA01:
             raise
 
     def __buffer_write(self, index: int, value: bool):
+        """Wpisuje wartość do bufora DO i harmonogramuje wysyłkę z opóźnieniem.
+
+        Args:
+            index (int): Indeks cewki.
+            value (bool): Docelowa wartość cewki.
+        """
         if self.__debug:
             debug(
                 f"Buffer write: index={index}, value={value}",
@@ -179,7 +199,7 @@ class MA01:
                     self.buffer_timer.start()
 
     def __flush_timer_callback(self):
-        """Callback for the timer to flush the buffer"""
+        """Callback timera: wysyła zmodyfikowany bufor do urządzenia i zamyka cykl."""
         if self.__debug:
             debug(f"Flush timer callback triggered", message_logger=self.message_logger)
         with self.buffer_lock:
@@ -202,7 +222,7 @@ class MA01:
             )
 
     def flush_buffer(self):
-        """Force write any pending values in the buffer"""
+        """Wymusza natychmiastowy zapis aktualnego bufora DO do urządzenia."""
         if self.__debug:
             debug(f"Manual flush buffer requested", message_logger=self.message_logger)
         with self.buffer_lock:
@@ -234,10 +254,12 @@ class MA01:
                     )
 
     def di(self, index: int):
+        """Zwraca stan wejścia cyfrowego DI o podanym indeksie."""
         result = 1 if (self.__read_di() & (1 << index)) else 0
         return result
 
     def do0(self, value: bool):
+        """Ustawia stan wyjścia DO0 i buforuje do wysyłki."""
         if self.__debug:
             debug(
                 f"{self.__class__.__name__} Setting DO0 to {value}",
@@ -247,6 +269,7 @@ class MA01:
         return value
 
     def do1(self, value: bool):
+        """Ustawia stan wyjścia DO1 i buforuje do wysyłki."""
         if self.__debug:
             debug(
                 f"{self.__class__.__name__} Setting DO1 to {value}",

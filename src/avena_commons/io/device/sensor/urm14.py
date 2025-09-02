@@ -6,7 +6,11 @@ from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 
 class URM14:
-    """Controller for DFRobot URM14 RS485 Precision Ultrasonic Sensor"""
+    """Kontroler czujnika ultradźwiękowego DFRobot URM14 (RS485) z pomiarem odległości.
+
+    Obsługuje odczyt rejestrów, konfigurację trybów pomiaru, zmianę adresu i prędkości
+    transmisji oraz buforowanie krótkotrwałe pomiaru odległości.
+    """
 
     # Register indices
     PID = 0  # Product ID
@@ -51,13 +55,13 @@ class URM14:
         message_logger: MessageLogger | None = None,
         debug=True,
     ):
-        """Initialize the URM14 sensor controller
+        """Inicjalizuje kontroler czujnika URM14.
 
         Args:
-            bus (ModbusRTU): ModbusRTU bus instance
-            address (int): Slave address of the device
-            message_logger (MessageLogger): Logger for messaging
-            debug (bool): Enable debug logging
+            bus (ModbusRTU): Instancja magistrali ModbusRTU.
+            address (int): Adres slave urządzenia.
+            message_logger (MessageLogger | None): Logger wiadomości.
+            debug (bool): Włącza logi debug.
         """
         try:
             self.message_logger = message_logger
@@ -90,7 +94,7 @@ class URM14:
                 error(traceback.format_exc(), message_logger=self.message_logger)
 
     def _initialize_sensor(self):
-        """Initialize the sensor to ensure it's in the right mode"""
+        """Inicjalizuje czujnik i ustawia tryb ciągłego pomiaru."""
         try:
             # Check if we can communicate with the sensor first
             pid = self.read_register(self.PID)
@@ -120,13 +124,13 @@ class URM14:
                 )
 
     def read_register(self, register):
-        """Read a holding register from the device
+        """Odczytuje rejestr Holding z urządzenia.
 
         Args:
-            register (int): Register address to read
+            register (int): Adres rejestru do odczytu.
 
         Returns:
-            int: Register value
+            int: Wartość rejestru.
         """
         try:
             response = self.bus.read_holding_register(
@@ -151,14 +155,14 @@ class URM14:
             raise
 
     def write_register(self, register, value):
-        """Write to a holding register
+        """Zapisuje wartość do rejestru Holding.
 
         Args:
-            register (int): Register address to write to
-            value (int): Value to write
+            register (int): Adres rejestru.
+            value (int): Wartość do zapisu.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         try:
             response = self.bus.write_holding_register(
@@ -181,8 +185,7 @@ class URM14:
             raise
 
     def read_distance(self):
-        """Read distance measurement with caching
-
+        """Zwraca zmierzoną odległość (mm) z krótkim buforowaniem.
         Returns:
             float: Distance in mm
         """
@@ -224,8 +227,7 @@ class URM14:
                 return None
 
     def get_internal_temperature(self):
-        """Read internal temperature
-
+        """Zwraca temperaturę wewnętrzną (°C).
         Returns:
             float: Temperature in degrees Celsius
         """
@@ -246,8 +248,7 @@ class URM14:
             return None
 
     def get_external_temperature(self):
-        """Read external temperature
-
+        """Zwraca temperaturę zewnętrzną (°C).
         Returns:
             float: Temperature in degrees Celsius
         """
@@ -268,8 +269,7 @@ class URM14:
             return None
 
     def get_noise(self):
-        """Read noise level
-
+        """Zwraca poziom szumu (jednostki własne czujnika).
         Returns:
             int: Noise level
         """
@@ -287,10 +287,10 @@ class URM14:
             return None
 
     def get_control_register(self):
-        """Read control register
+        """Odczytuje rejestr sterujący.
 
         Returns:
-            int: Control register value
+            int: Wartość rejestru sterującego.
         """
         try:
             control = self.read_register(self.CONTROL)
@@ -308,13 +308,13 @@ class URM14:
             return None
 
     def set_control_register(self, value):
-        """Set control register
+        """Ustawia rejestr sterujący.
 
         Args:
-            value (int): Control register value
+            value (int): Wartość rejestru sterującego.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         try:
             result = self.write_register(self.CONTROL, value)
@@ -332,13 +332,13 @@ class URM14:
             return False
 
     def set_measurement_mode(self, continuous=True):
-        """Set measurement mode
+        """Ustawia tryb pomiaru (ciągły lub wyzwalany).
 
         Args:
-            continuous (bool): True for continuous measurement, False for trigger mode
+            continuous (bool): True dla trybu ciągłego, False dla wyzwalanego.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         try:
             control = self.get_control_register()
@@ -361,10 +361,10 @@ class URM14:
             return False
 
     def trigger_measurement(self):
-        """Trigger a single measurement in trigger mode
+        """Wyzwala pojedynczy pomiar w trybie wyzwalanym.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         try:
             control = self.get_control_register()
@@ -384,14 +384,14 @@ class URM14:
             return False
 
     def set_temperature_compensation(self, external=False, enable=True):
-        """Configure temperature compensation
+        """Konfiguruje kompensację temperaturową.
 
         Args:
-            external (bool): True to use external temperature, False for internal
-            enable (bool): True to enable temperature compensation, False to disable
+            external (bool): True aby użyć temperatury zewnętrznej, False dla wewnętrznej.
+            enable (bool): True aby włączyć, False aby wyłączyć.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         try:
             control = self.get_control_register()
@@ -423,13 +423,13 @@ class URM14:
             return False
 
     def change_address(self, new_address):
-        """Change the slave address of the device
+        """Zmienia adres slave urządzenia.
 
         Args:
-            new_address (int): New slave address (1-247)
+            new_address (int): Nowy adres (1..247).
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         if not 1 <= new_address <= 247:
             error(
@@ -459,15 +459,15 @@ class URM14:
             return False
 
     def change_baudrate(self, baudrate_index):
-        """Change the baudrate of the device
+        """Zmienia szybkość transmisji urządzenia.
 
         Args:
-            baudrate_index (int): Baudrate index (1-8)
+            baudrate_index (int): Indeks prędkości (1..8):
                 1: 2400, 2: 4800, 3: 9600, 4: 14400,
-                5: 19200, 6: 38400, 7: 57600, 8: 115200
+                5: 19200, 6: 38400, 7: 57600, 8: 115200.
 
         Returns:
-            bool: True if successful
+            bool: True w razie powodzenia.
         """
         if not 1 <= baudrate_index <= 8:
             error(

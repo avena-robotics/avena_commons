@@ -11,6 +11,20 @@ from avena_commons.util.worker import Connector, Worker
 
 
 class ModbusRTUWorker(Worker):
+    """Worker asynchroniczny obsługujący klienta Modbus RTU.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        serial_port (str): Port szeregowy (np. "/dev/ttyUSB0").
+        baudrate (int): Prędkość transmisji.
+        timeout_ms (int): Czas oczekiwania (ms).
+        trace_connect (bool): Włącza log śledzenia połączenia.
+        trace_packet (bool): Włącza logowanie pakietów (hex).
+        trace_pdu (bool): Włącza logowanie PDU.
+        retry (int): Liczba ponowień żądania.
+        message_logger: Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -44,6 +58,7 @@ class ModbusRTUWorker(Worker):
         super().__init__(message_logger=self._message_logger)
 
     async def init(self):
+        """Tworzy i łączy klienta `AsyncModbusSerialClient`. Zwraca self po sukcesie."""
         self._client = AsyncModbusSerialClient(
             port=self._serial_port,
             baudrate=self._baudrate,
@@ -72,12 +87,14 @@ class ModbusRTUWorker(Worker):
             raise Exception(f"{self.device_name} - ModbusRTU client is not connected.")
 
     def __trace_connect(self):
+        """Loguje stan połączenia klienta (gdy śledzenie włączone)."""
         debug(
             f"{self.device_name} Connection: {self._client.connect()}",
             message_logger=self._message_logger,
         )
 
     def __trace_packet(self, is_sending: bool, packet: bytes) -> bytes:
+        """Loguje pakiet wyjściowy/wejściowy (hex) oraz czas przejścia OUT→IN."""
         current_time = time.time()
         debug(
             f"{self.device_name} Packet {'OUT' if is_sending else ' IN'}: [{' '.join(f'{b:02X}' for b in packet)}]",
@@ -105,6 +122,7 @@ class ModbusRTUWorker(Worker):
         return packet
 
     def __trace_pdu(self, is_sending: bool, pdu) -> object:
+        """Loguje PDU wysłane i odebrane (gdy śledzenie włączone)."""
         if is_sending:
             self.__last_pdu = pdu
         else:
@@ -115,6 +133,7 @@ class ModbusRTUWorker(Worker):
         return pdu
 
     async def _run(self, pipe_in):
+        """Pętla główna worker'a obsługująca komendy przychodzące przez pipe."""
         try:
             await self.init()
             last_debug_time = time.time()
@@ -324,6 +343,22 @@ class ModbusRTUWorker(Worker):
 
 
 class ModbusRTU(Connector):
+    """Konektor Modbus RTU uruchamiany w procesie potomnym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        serial_port (str): Port szeregowy.
+        baudrate (int): Prędkość transmisji.
+        timeout_ms (int): Czas oczekiwania (ms).
+        trace_connect (bool): Włącza śledzenie connect.
+        trace_packet (bool): Włącza śledzenie pakietów.
+        trace_pdu (bool): Włącza śledzenie PDU.
+        core (int): Rdzeń CPU dla procesu potomnego.
+        retry (int): Liczba ponowień.
+        message_logger: Logger wiadomości.
+        max_send_failures (int): Limit porażek wysyłki przed eskalacją.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -363,13 +398,16 @@ class ModbusRTU(Connector):
         )
 
     def __getstate__(self):
+        """Serializuje stan obiektu (dla picklingu procesu)."""
         state = self.__dict__.copy()
         return state
 
     def __setstate__(self, state):
+        """Przywraca stan obiektu (dla picklingu procesu)."""
         self.__dict__.update(state)
 
     def _run(self, pipe_in, message_logger):
+        """Wejście procesu potomnego: uruchamia `ModbusRTUWorker` w asyncio."""
         self.__lock = threading.Lock()
         debug(
             f"{self.device_name} Starting {self.__class__.__name__} subprocess: {self._serial_port} {self._baudrate}bps {self.timeout_ms}ms",
@@ -416,16 +454,20 @@ class ModbusRTU(Connector):
 
     @property
     def serial_port(self):
+        """Zwraca skonfigurowany port szeregowy."""
         return self._serial_port
 
     @property
     def baudrate(self):
+        """Zwraca skonfigurowaną prędkość transmisji."""
         return self._baudrate
 
     def configure(self, physical_devices: dict):
+        """Konfiguracja urządzeń fizycznych (placeholder)."""
         pass
 
     def __execute_command(self, data: list = []):
+        """Wysyła komendę do procesu worker'a i obsługuje liczniki błędów/timeouty."""
         start_time = time.time()
         # Wyciągnij adres slave (drugi element danych) jeśli jest liczbą całkowitą
         slave_id = None
@@ -542,29 +584,47 @@ class ModbusRTU(Connector):
         return response
 
     def read_discrete_inputs(self, address: int, register: int, count: int):
+        """Czyta rejestry typu Discrete Inputs.
+
+        Returns:
+            list[int]: Lista bitów (0/1) odczytanych z urządzenia.
+        """
         return (
             self.__execute_command(["READ_DISCRETE_INPUTS", address, register, count])
         ).registers
 
     def read_coils(self, address: int, register: int, count: int):
+        """Czyta rejestry typu Coils.
+
+        Returns:
+            list[int]: Lista bitów (0/1) odczytanych z urządzenia.
+        """
         return (self.__execute_command(["READ_COILS", address, register, count])).bits
 
     def write_coils(self, address: int, register: int, values: list):
+        """Zapisuje wartości do rejestrów typu Coils.
+
+        Returns:
+            bool: True, jeśli operacja zakończyła się powodzeniem.
+        """
         return not (
             self.__execute_command(["WRITE_COILS", address, register, values])
         ).isError()
 
     def read_holding_register(self, address: int, register: int):
+        """Czyta pojedynczy rejestr Holding Register."""
         return (
             self.__execute_command(["READ_HOLDING_REGISTER", address, register])
         ).registers[0]
 
     def write_holding_register(self, address: int, register: int, value: int):
+        """Zapisuje wartość do pojedynczego rejestru Holding Register."""
         return not (
             self.__execute_command(["WRITE_HOLDING_REGISTER", address, register, value])
         ).isError()
 
     def read_holding_registers(self, address: int, first_register: int, count: int):
+        """Czyta wiele rejestrów Holding Registers."""
         return (
             self.__execute_command([
                 "READ_HOLDING_REGISTERS",
@@ -575,6 +635,7 @@ class ModbusRTU(Connector):
         ).registers
 
     def read_input_registers(self, address: int, first_register: int, count: int):
+        """Czyta wiele rejestrów Input Registers."""
         return (
             self.__execute_command([
                 "READ_INPUT_REGISTERS",
@@ -585,6 +646,7 @@ class ModbusRTU(Connector):
         ).registers
 
     def write_holding_registers(self, address: int, first_register: int, values: list):
+        """Zapisuje wiele rejestrów Holding Registers."""
         return not (
             self.__execute_command([
                 "WRITE_HOLDING_REGISTERS",
@@ -595,6 +657,7 @@ class ModbusRTU(Connector):
         ).isError()
 
     def __del__(self):
+        """Zamyka proces potomny i kanały IPC przy usuwaniu obiektu."""
         self.message_logger = None
         self.__execute_command(["STOP"])
         self.pipe_out.close()
