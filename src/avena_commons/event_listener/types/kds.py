@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class KdsAction(BaseModel):
     order_number: Optional[int] = None  # np 100
     pickup_number: Optional[int] = None  # np 100
+    next_order_number: Optional[int] = None  # np 101
     message: Optional[str] = None  # np "kds_order_number"
 
     def to_dict(self) -> dict:
