@@ -4,7 +4,7 @@ import cv2
 import pkg_resources
 
 import avena_commons.vision.camera as camera
-import avena_commons.vision.preprocess as preprocess
+import avena_commons.vision.image_preprocess as preprocess
 import avena_commons.vision.tag_reconstruction as tag_reconstruction
 import avena_commons.vision.vision as vision
 from avena_commons.util.logger import error

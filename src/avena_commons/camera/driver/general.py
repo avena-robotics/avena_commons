@@ -10,6 +10,18 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
 
 class CameraState(Enum):
+    """Stany pracy ogólnego sterownika kamery.
+
+    Enum odzwierciedla cykl życia urządzenia od bezczynności po błąd.
+
+    Przykład:
+        >>> state = CameraState.IDLE
+        >>> state.name
+        'IDLE'
+
+    See Also:
+        - `GeneralCameraWorker`: klasa korzystająca z tych stanów.
+    """
     IDLE = 0  # idle
     INITIALIZING = 1  # init camera
     INITIALIZED = 2  # init camera
@@ -22,15 +34,44 @@ class CameraState(Enum):
 
 
 class GeneralCameraWorker(Worker):
+    """Asynchroniczny worker obsługujący cykl życia kamery i postprocess.
+
+    Klasa zarządza inicjalizacją, startem, zatrzymaniem oraz pętlą
+    pobierania ramek. Może uruchamiać przetwarzanie obrazu w wielu
+    procesach poprzez `ProcessPoolExecutor`.
+
+    Przykład:
+        >>> import asyncio
+        >>> from avena_commons.util.logger import MessageLogger
+        >>> worker = GeneralCameraWorker(message_logger=MessageLogger())
+        >>> async def demo():
+        ...     await worker.init({})
+        ...     await worker.start()
+        ...     await worker.stop()
+        >>> asyncio.run(demo())
+
+    See Also:
+        - `GeneralCameraConnector`: synchronizowany interfejs do workera.
+    """
     def __init__(self, message_logger: Optional[MessageLogger] = None):
+        """Zainicjalizuj workera kamery.
+
+        Args:
+            message_logger (Optional[MessageLogger]): Logger do komunikatów.
+
+        Returns:
+            None: Brak zwracanej wartości.
+
+        Przykład:
+            >>> worker = GeneralCameraWorker()
+            >>> isinstance(worker, GeneralCameraWorker)
+            True
+        """
         self._message_logger = None
         self.device_name = f"GeneralCamera"
         super().__init__(message_logger=None)
         self.state = CameraState.IDLE
 
-        # self.align_filter = None
-        # self.spatial_filter = None
-        # self.temporal_filter = None
         self.last_frames = None
         self.postprocess_configuration = None
         self.executor = None
@@ -50,24 +91,122 @@ class GeneralCameraWorker(Worker):
 
     # MARK: METODY DO NADPISANIA
     async def init(self, camera_settings: dict):
-        """Initialize camera connection and resources"""
+        """Zainicjalizuj połączenie i zasoby kamery.
+
+        Metoda do nadpisania w klasie konkretnego sterownika kamery.
+
+        Args:
+            camera_settings (dict): Słownik ustawień kamery.
+
+        Returns:
+            bool: True gdy inicjalizacja się powiodła.
+
+        Raises:
+            Exception: Gdy inicjalizacja nie powiedzie się.
+
+        Przykład:
+            >>> import asyncio
+            >>> class Dummy(GeneralCameraWorker):
+            ...     async def init(self, camera_settings: dict):
+            ...         return True
+            >>> asyncio.run(Dummy().init({}))
+            True
+        """
         return True
 
     async def start(self):
-        """Initialize camera connection and resources"""
+        """Uruchom potok pobierania ramek kamery.
+
+        Do nadpisania w implementacji konkretnej kamery.
+
+        Args:
+            None
+
+        Returns:
+            bool: True gdy start przebiegł pomyślnie.
+
+        Raises:
+            Exception: Gdy start nie powiedzie się.
+
+        Przykład:
+            >>> import asyncio
+            >>> class Dummy(GeneralCameraWorker):
+            ...     async def start(self):
+            ...         return True
+            >>> asyncio.run(Dummy().start())
+            True
+        """
         return True
 
     async def stop(self):
-        """Initialize camera connection and resources"""
+        """Zatrzymaj potok pobierania ramek kamery.
+
+        Do nadpisania w implementacji konkretnej kamery.
+
+        Args:
+            None
+
+        Returns:
+            bool: True gdy zatrzymanie się powiodło.
+
+        Raises:
+            Exception: Gdy zatrzymanie nie powiedzie się.
+
+        Przykład:
+            >>> import asyncio
+            >>> class Dummy(GeneralCameraWorker):
+            ...     async def stop(self):
+            ...         return True
+            >>> asyncio.run(Dummy().stop())
+            True
+        """
         return True
 
     async def grab_frames_from_camera(self):
-        """Initialize camera connection and resources"""
+        """Pobierz aktualne ramki obrazu z kamery.
+
+        Do nadpisania – powinna zwracać strukturę z danymi (np. dict).
+
+        Args:
+            None
+
+        Returns:
+            Optional[dict]: Zbiór ramek (np. klucze 'color', 'depth') lub None.
+
+        Raises:
+            Exception: Gdy pobieranie ramek nie powiedzie się.
+
+        Przykład:
+            >>> import asyncio
+            >>> class Dummy(GeneralCameraWorker):
+            ...     async def grab_frames_from_camera(self):
+            ...         return {"color": b"..."}
+            >>> asyncio.run(Dummy().grab_frames_from_camera())
+            {'color': b'...'}
+        """
         return None
 
     # MARK: WYWOŁYWANE PRZEZ CONNECTOR
     async def init_camera(self, camera_settings: dict):
-        """Initialize camera connection and resources"""
+        """Zainicjalizuj kamerę i zaktualizuj stan.
+
+        Przechwytuje wyjątki i ustawia status błędu w razie problemów.
+
+        Args:
+            camera_settings (dict): Konfiguracja startowa kamery.
+
+        Returns:
+            bool: True w przypadku powodzenia, False w razie błędu.
+
+        Raises:
+            Exception: Nie propaguje; obsługiwane wewnętrznie, ale może się pojawić przy modyfikacjach.
+
+        Przykład:
+            >>> import asyncio
+            >>> worker = GeneralCameraWorker()
+            >>> asyncio.run(worker.init_camera({})) in (True, False)
+            True
+        """
         try:
             self.state = CameraState.INITIALIZING
             await self.init(camera_settings)
@@ -79,7 +218,17 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def start_camera(self):
-        """Start camera frame grabbing"""
+        """Uruchom proces pobierania ramek i zaktualizuj stan.
+
+        Returns:
+            bool: True w przypadku powodzenia, False w razie błędu.
+
+        Przykład:
+            >>> import asyncio
+            >>> worker = GeneralCameraWorker()
+            >>> asyncio.run(worker.start_camera()) in (True, False)
+            True
+        """
         try:
             self.state = CameraState.STARTING
             await self.start()
@@ -91,7 +240,17 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def stop_camera(self):
-        """Stop camera frame grabbing"""
+        """Zatrzymaj proces pobierania ramek i zaktualizuj stan.
+
+        Returns:
+            bool: True w przypadku powodzenia, False w razie błędu.
+
+        Przykład:
+            >>> import asyncio
+            >>> worker = GeneralCameraWorker()
+            >>> asyncio.run(worker.stop_camera()) in (True, False)
+            True
+        """
         try:
             self.state = CameraState.STOPPING
             await self.stop()
@@ -103,7 +262,27 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run_image_processing_workers(self, frames):
-        """Uruchom workery przez ProcessPoolExecutor."""
+        """Uruchom zadania przetwarzania obrazu w procesach.
+
+        Każda konfiguracja postprocess jest wykonywana jako osobne
+        zadanie w `ProcessPoolExecutor`.
+
+        Args:
+            frames (dict): Ostatnie ramki do przetwarzania.
+
+        Returns:
+            Optional[list]: Lista wyników zadań lub None przy błędzie/braku executor-a.
+
+        Raises:
+            Exception: Błędy zadań są przechwytywane i logowane.
+
+        Przykład:
+            >>> import asyncio
+            >>> worker = GeneralCameraWorker()
+            >>> worker.executor = None  # brak executora -> None
+            >>> asyncio.run(worker._run_image_processing_workers({})) is None
+            True
+        """
         if not self.executor:
             return None
         
@@ -137,7 +316,27 @@ class GeneralCameraWorker(Worker):
             return None
             
     async def _setup_image_processing_workers(self):
-        """Utwórz workery raz przy konfiguracji."""
+        """Przygotuj executor i metadane workerów postprocess.
+
+        Tworzy `ProcessPoolExecutor` i listę opisów workerów na
+        podstawie `self.postprocess_configuration`.
+
+        Args:
+            None
+
+        Returns:
+            bool: True po poprawnym przygotowaniu, False w razie błędu.
+
+        Raises:
+            Exception: Obsłużone wewnętrznie; błąd jest logowany.
+
+        Przykład:
+            >>> import asyncio
+            >>> w = GeneralCameraWorker()
+            >>> w.postprocess_configuration = []
+            >>> asyncio.run(w._setup_image_processing_workers()) in (True, False)
+            True
+        """
         try:
             # Zamknij poprzedni executor jeśli istnieje
             if self.executor:
@@ -166,6 +365,27 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run(self, pipe_in):
+        """Główna pętla workera nasłuchująca komend przez pipe.
+
+        Odpowiada za obsługę komend kontrolnych oraz cykliczne
+        pobieranie ramek i ewentualny postprocess.
+
+        Args:
+            pipe_in: Dwukierunkowy kanał komunikacji (multiprocessing Pipe).
+
+        Returns:
+            None: Pętla kończy się przy anulowaniu zadania lub błędzie.
+
+        Raises:
+            asyncio.CancelledError: Gdy zadanie zostanie anulowane.
+
+        Przykład:
+            Nieuruchamialny wprost w docteście (wymaga procesu/pipe),
+            ale wywoływany przez `GeneralCameraConnector`.
+
+        See Also:
+            - `GeneralCameraConnector._run`: metoda tworząca instancję workera.
+        """
         from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger
 
         # Utwórz lokalny logger dla tego procesu
@@ -313,19 +533,69 @@ class GeneralCameraWorker(Worker):
 
 
 class GeneralCameraConnector(Connector):
+    """Wątkowo-bezpieczny łącznik do `GeneralCameraWorker`.
+
+    Zapewnia synchroniczne API wykorzystujące wewnętrznie komunikację
+    przez pipe do procesu workera.
+
+    Przykład:
+        >>> connector = GeneralCameraConnector()
+        >>> hasattr(connector, 'init') and hasattr(connector, 'start')
+        True
+
+    See Also:
+        - `GeneralCameraWorker`: implementacja logiki asynchronicznej.
+    """
     def __init__(self, message_logger: Optional[MessageLogger] = None):
+        """Utwórz konektor z opcjonalnym loggerem.
+
+        Args:
+            message_logger (Optional[MessageLogger]): Zewnętrzny logger.
+
+        Returns:
+            None: Brak zwracanej wartości.
+
+        Przykład:
+            >>> GeneralCameraConnector() is not None
+            True
+        """
         self.__lock = threading.Lock()
         self._local_message_logger = message_logger
 
     def _run(self, pipe_in):
+        """Uruchom pętlę workera w tym procesie.
+
+        Tworzy instancję `GeneralCameraWorker` i wykonuje jego pętlę.
+
+        Args:
+            pipe_in: Końcówka pipe do komunikacji z workerem.
+
+        Returns:
+            None
+
+        Przykład:
+            Metoda wykorzystywana przez infrastrukturę `Connector`.
+        """
         self.__lock = threading.Lock()
         worker = GeneralCameraWorker(message_logger=None)
         asyncio.run(worker._run(pipe_in))
 
     def init(self, configuration: dict = {}):
         """
-        Initialize camera with configuration.
+        Zainicjalizuj kamerę przekazując konfigurację.
+
         Przekazuj tylko serializowalne dane przez pipe.
+
+        Args:
+            configuration (dict): Parametry inicjalizacji kamery.
+
+        Returns:
+            Any: Wartość zwrócona przez proces workera (zwykle bool).
+
+        Przykład:
+            >>> c = GeneralCameraConnector()
+            >>> isinstance(c.init({}), (bool, type(None)))
+            True
         """
         with self.__lock:
             value = super()._send_thru_pipe(
@@ -334,31 +604,77 @@ class GeneralCameraConnector(Connector):
             return value
 
     def start(self):
-        """Start camera frame grabbing"""
+        """Rozpocznij pobieranie ramek w kamerze.
+
+        Returns:
+            Any: Wartość z procesu workera (zwykle bool).
+
+        Przykład:
+            >>> GeneralCameraConnector().start() in (True, False, None)
+            True
+        """
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["CAMERA_START_GRABBING"])
             return value
 
     def stop(self):
-        """Stop camera frame grabbing"""
+        """Zatrzymaj pobieranie ramek w kamerze.
+
+        Returns:
+            Any: Wartość z procesu workera (zwykle bool).
+
+        Przykład:
+            >>> GeneralCameraConnector().stop() in (True, False, None)
+            True
+        """
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["CAMERA_STOP_GRABBING"])
             return value
 
     def get_state(self):
-        """Get camera state"""
+        """Pobierz aktualny stan kamery.
+
+        Returns:
+            Any: Instancja `CameraState` lub None.
+
+        Przykład:
+            >>> GeneralCameraConnector().get_state() in (None, CameraState.IDLE)
+            True
+        """
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["GET_STATE"])
             return value
 
     def get_last_frames(self):
-        """Get last frames"""
+        """Pobierz ostatnio odebrane ramki.
+
+        Returns:
+            Any: Struktura ramek (np. dict) lub None.
+
+        Przykład:
+            >>> GeneralCameraConnector().get_last_frames() is None
+            True
+        """
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAMES"])
             return value
 
     def set_postprocess_configuration(self, *, detector: str = None, configuration: list = None):
-        """Set postprocess configuration"""
+        """Ustaw konfigurację postprocess oraz nazwę detektora.
+
+        Args:
+            detector (str, optional): Nazwa detektora/postprocessu.
+            configuration (list, optional): Lista słowników konfiguracji.
+
+        Returns:
+            Any: Wartość z procesu workera (zwykle bool).
+
+        Przykład:
+            >>> GeneralCameraConnector().set_postprocess_configuration(
+            ...     detector="dummy", configuration=[])
+            in (True, False, None)
+            True
+        """
         with self.__lock:
             value = super()._send_thru_pipe(self._pipe_out, ["SET_POSTPROCESS_CONFIGURATION", detector, configuration])
             return value

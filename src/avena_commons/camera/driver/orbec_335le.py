@@ -36,7 +36,38 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
 class OrbecGemini335LeWorker(GeneralCameraWorker):
+    """Worker kamery Orbbec Gemini 335LE oparty na `GeneralCameraWorker`.
+
+    Odpowiada za inicjalizację urządzenia, konfigurację strumieni,
+    start/stop pipeline'u oraz pobieranie i wstępne przetwarzanie ramek.
+
+    Przykład:
+        >>> import asyncio
+        >>> w = OrbecGemini335LeWorker(camera_ip="192.168.1.10")
+        >>> async def demo():
+        ...     await w.init({"color": {"width": 640, "height": 480, "fps": 30}})
+        ...     await w.start()
+        ...     frames = await w.grab_frames_from_camera()
+        ...     await w.stop()
+        >>> asyncio.run(demo())
+
+    See Also:
+        - `GeneralCameraWorker`: bazowa implementacja cyklu życia kamery.
+    """
     def __init__(self, camera_ip: str, message_logger: Optional[MessageLogger] = None):
+        """Utwórz workera kamery Orbbec Gemini 335LE.
+
+        Args:
+            camera_ip (str): Adres IP kamery.
+            message_logger (Optional[MessageLogger]): Logger wiadomości.
+
+        Returns:
+            None
+
+        Przykład:
+            >>> OrbecGemini335LeWorker(camera_ip="127.0.0.1") is not None
+            True
+        """
         self.__camera_ip = camera_ip
         # NIE przechowuj MessageLogger - zostanie przekazany przez args w _run
         self._message_logger = None
@@ -49,6 +80,25 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         self.temporal_filter = None
 
     def set_int_property(self, device: Device, property_id: OBPropertyID, value: int):
+        """Ustaw właściwość całkowitoliczbową urządzenia.
+
+        Args:
+            device (Device): Instancja urządzenia Orbbec.
+            property_id (OBPropertyID): Identyfikator właściwości.
+            value (int): Wartość do ustawienia.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: Gdy ustawienie właściwości zakończy się błędem.
+
+        Przykład:
+            >>> # Pseudotest — wymaga realnego `Device`
+            >>> # worker.set_int_property(dev, OBPropertyID.OB_PROP_COLOR_GAIN_INT, 10)
+            >>> True
+            True
+        """
         try:
             device.set_int_property(property_id, value)
             debug(
@@ -62,6 +112,25 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             raise e
 
     def set_bool_property(self, device: Device, property_id: OBPropertyID, value: bool):
+        """Ustaw właściwość typu bool urządzenia.
+
+        Args:
+            device (Device): Instancja urządzenia Orbbec.
+            property_id (OBPropertyID): Identyfikator właściwości.
+            value (bool): Wartość do ustawienia.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: Gdy ustawienie właściwości zakończy się błędem.
+
+        Przykład:
+            >>> # Pseudotest — wymaga realnego `Device`
+            >>> # worker.set_bool_property(dev, OBPropertyID.OB_PROP_DISPARITY_TO_DEPTH_BOOL, True)
+            >>> True
+            True
+        """
         try:
             device.set_bool_property(property_id, value)
             debug(
@@ -75,7 +144,26 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             raise e
 
     async def init(self, camera_settings: dict):
-        """Initialize camera connection and resources"""
+        """Zainicjalizuj połączenie, urządzenie i konfigurację strumieni.
+
+        Konfiguruje właściwości kamery, profile strumieni oraz filtry.
+
+        Args:
+            camera_settings (dict): Ustawienia kamery (color/depth/filters/align itp.).
+
+        Returns:
+            bool: True jeśli inicjalizacja się powiodła, False w przeciwnym razie.
+
+        Raises:
+            ValueError: Gdy konfiguracja profilu koloru jest nieprawidłowa.
+            Exception: Inne błędy inicjalizacji (logowane i zwracane jako False).
+
+        Przykład:
+            >>> import asyncio
+            >>> w = OrbecGemini335LeWorker(camera_ip="192.168.1.10")
+            >>> asyncio.run(w.init({"color": {"width": 640, "height": 480, "fps": 30}})) in (True, False)
+            True
+        """
         try:
             self.state = CameraState.INITIALIZING
             debug(f"{self.device_name} - Initializing camera", self._message_logger)
@@ -333,7 +421,21 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             return False
 
     async def start(self):
-        """Start camera frame grabbing"""
+        """Uruchom pipeline kamery i rozpocznij pobieranie ramek.
+
+        Returns:
+            bool: True gdy start się powiedzie, False w razie błędu.
+
+        Raises:
+            ValueError: Gdy pipeline lub konfiguracja nie zostały zainicjalizowane.
+
+        Przykład:
+            >>> import asyncio
+            >>> w = OrbecGemini335LeWorker(camera_ip="192.168.1.10")
+            >>> # asyncio.run(w.start())  # wymagane wcześniejsze init()
+            >>> True
+            True
+        """
         try:
             debug(f"{self.device_name} - Starting camera", self._message_logger)
             # Tu będzie inicjalizacja kamery Orbbec
@@ -358,7 +460,18 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             return False
 
     async def stop(self):
-        """Stop camera frame grabbing"""
+        """Zatrzymaj pipeline kamery i zakończ pobieranie ramek.
+
+        Returns:
+            bool: True gdy zatrzymanie się powiedzie, False w razie błędu.
+
+        Przykład:
+            >>> import asyncio
+            >>> w = OrbecGemini335LeWorker(camera_ip="192.168.1.10")
+            >>> # asyncio.run(w.stop())  # wymagany wcześniejszy start()
+            >>> True
+            True
+        """
         try:
             debug(f"{self.device_name} - Stopping camera", self._message_logger)
             self.camera_pipeline.stop()
@@ -368,7 +481,27 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             return False
 
     async def grab_frames_from_camera(self):
-        """Initialize camera connection and resources"""
+        """Pobierz i przygotuj ramki koloru i głębi z kamery.
+
+        Zwraca słownik z kluczami np. "color" (np.ndarray BGR) oraz
+        "depth" (np.ndarray uint16). Stosuje ewentualne filtry.
+
+        Args:
+            None
+
+        Returns:
+            Optional[dict]: Dane obrazu lub None, gdy brak ramek/błąd.
+
+        Raises:
+            Exception: Błędy pobierania/przetwarzania ramek (obsługiwane i logowane).
+
+        Przykład:
+            >>> import asyncio
+            >>> w = OrbecGemini335LeWorker(camera_ip="192.168.1.10")
+            >>> # frames = asyncio.run(w.grab_frames_from_camera())
+            >>> True
+            True
+        """
         try:
             # Pobierz oryginalne ramki (zawsze FrameSet)
             frames = self.camera_pipeline.wait_for_frames(3)
@@ -480,7 +613,33 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
 
 
 class OrbecGemini335Le(GeneralCameraConnector):
+    """Konektor do kamery Orbbec Gemini 335LE.
+
+    Zapewnia synchroniczny interfejs sterowania pracą kamery w osobnym
+    procesie, korzystając z `OrbecGemini335LeWorker`.
+
+    Przykład:
+        >>> c = OrbecGemini335Le(camera_ip="192.168.1.10")
+        >>> hasattr(c, 'init') and hasattr(c, 'start') and hasattr(c, 'stop')
+        True
+
+    See Also:
+        - `OrbecGemini335LeWorker`: logika asynchroniczna i przetwarzanie ramek.
+    """
     def __init__(self, camera_ip: str, message_logger: Optional[MessageLogger] = None):
+        """Utwórz konektor i uruchom proces workera.
+
+        Args:
+            camera_ip (str): Adres IP kamery.
+            message_logger (Optional[MessageLogger]): Logger wiadomości.
+
+        Returns:
+            None
+
+        Przykład:
+            >>> OrbecGemini335Le(camera_ip="127.0.0.1") is not None
+            True
+        """
         self.camera_ip = camera_ip
         super().__init__(message_logger=message_logger)
         self._pipe_out, _pipe_in = multiprocessing.Pipe()
@@ -490,6 +649,19 @@ class OrbecGemini335Le(GeneralCameraConnector):
         self._process.start()
 
     def _run(self, pipe_in, camera_ip, message_logger=None):
+        """Uruchom pętlę workera Orbbec w procesie potomnym.
+
+        Args:
+            pipe_in: Końcówka pipe do komunikacji.
+            camera_ip: Adres IP kamery.
+            message_logger: Logger, opcjonalny.
+
+        Returns:
+            None
+
+        Przykład:
+            Metoda wykorzystywana przez proces — nie wywołuj bezpośrednio.
+        """
         worker = OrbecGemini335LeWorker(
             camera_ip=camera_ip, message_logger=message_logger
         )

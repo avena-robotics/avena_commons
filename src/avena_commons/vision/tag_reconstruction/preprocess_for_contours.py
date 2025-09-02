@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-import avena_commons.vision.preprocess as preprocess
+import avena_commons.vision.image_preprocess as preprocess
 
 
 def preprocess_for_contours(image: np.ndarray) -> np.ndarray:

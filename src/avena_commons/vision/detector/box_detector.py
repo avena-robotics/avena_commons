@@ -1,7 +1,7 @@
 import numpy as np
 
 import avena_commons.vision.camera as camera
-import avena_commons.vision.preprocess as preprocess
+import avena_commons.vision.image_preprocess as preprocess
 import avena_commons.vision.validation as validation
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import debug
