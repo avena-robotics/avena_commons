@@ -180,6 +180,13 @@ class DatabaseCondition(BaseCondition):
     def _augment_where(self, where: Dict[str, Any], db_component) -> Dict[str, Any]:
         """
         Hook do modyfikacji WHERE przez klasy pochodne. Domyślnie zwraca kopię bez zmian.
+
+        Args:
+            where (Dict[str, Any]): Warunek WHERE z konfiguracji.
+            db_component: Komponent bazy danych (może posłużyć do rozszerzeń).
+
+        Returns:
+            Dict[str, Any]: Zmodyfikowany (lub oryginalny) warunek WHERE.
         """
         return dict(where)
 

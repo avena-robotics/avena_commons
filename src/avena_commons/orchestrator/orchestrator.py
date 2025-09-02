@@ -31,6 +31,22 @@ from .models import ScenarioModel
 
 
 class Orchestrator(EventListener):
+    """
+    Orchestrator sterujący wykonywaniem scenariuszy zdarzeniowych.
+
+    Odpowiada za:
+    - ładowanie i sortowanie scenariuszy,
+    - rejestrację i wykonywanie akcji,
+    - ładowanie, rejestrację i ewaluację warunków,
+    - zarządzanie komponentami zewnętrznymi (np. bazami danych),
+    - harmonogram i współbieżne uruchamianie scenariuszy z limitami.
+
+    Współpracuje z `EventListener`, nasłuchując i interpretując zdarzenia systemowe.
+
+    Przykład:
+        >>> orch = Orchestrator(name="orch", port=5000, address="127.0.0.1")
+    """
+
     def __init__(
         self,
         name: str,
@@ -39,6 +55,19 @@ class Orchestrator(EventListener):
         message_logger: MessageLogger | None = None,
         debug: bool = True,
     ):
+        """
+        Inicjalizuje instancję Orchestratora.
+
+        Args:
+            name (str): Unikalna nazwa instancji.
+            port (int): Port nasłuchu komponentu.
+            address (str): Adres IP lub host do komunikacji.
+            message_logger (MessageLogger | None): Opcjonalny logger komunikatów.
+            debug (bool): Czy włączyć tryb debug (domyślnie True).
+
+        Raises:
+            Exception: Błędy inicjalizacji zależności lub ładowania modułów.
+        """
         self._message_logger = message_logger
         self._debug = debug
 
@@ -1267,6 +1296,19 @@ class Orchestrator(EventListener):
         return await self._action_executor.execute_action(action_config, context)
 
     async def _analyze_event(self, event: Event) -> bool:
+        """
+        Analizuje i obsługuje zdarzenia przychodzące do Orchestratora.
+
+        Obsługuje m.in. aktualizację stanów klientów dla zdarzeń
+        `CMD_GET_STATE` i `CMD_HEALTH_CHECK` oraz porządkuje listę
+        przetwarzanych zdarzeń.
+
+        Args:
+            event (Event): Otrzymane zdarzenie.
+
+        Returns:
+            bool: Zawsze True (zdarzenie zostało obsłużone).
+        """
         match event.event_type:
             case "CMD_GET_STATE":
                 if event.result is not None:
@@ -1694,6 +1736,13 @@ class Orchestrator(EventListener):
                 )
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
+        """
+        Odpytuje zdalnych klientów o stan lokalny i uruchamia kontrolę scenariuszy.
+
+        Wysyła zdarzenia `CMD_GET_STATE` do wszystkich skonfigurowanych klientów,
+        dodając je do kolejki „processing”, a następnie wywołuje sprawdzenie
+        warunków scenariuszy w trybie autonomicznym.
+        """
         for key, client in self._configuration["clients"].items():
             client_port = client["port"]
             client_address = client["address"]
@@ -1718,6 +1767,12 @@ class Orchestrator(EventListener):
             )
 
     def _clear_before_shutdown(self):
+        """
+        Czyści zasoby i anuluje aktywne scenariusze przed wyłączeniem.
+
+        Upewnia się, że wszystkie zadania scenariuszy zostały anulowane oraz
+        zwalnia referencję do loggera.
+        """
         __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
 
         # Anuluj wszystkie aktywne scenariusze przed zamknięciem

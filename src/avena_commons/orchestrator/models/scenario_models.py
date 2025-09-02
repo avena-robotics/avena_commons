@@ -8,7 +8,14 @@ from pydantic import BaseModel, Field, validator
 
 
 class TriggerModel(BaseModel):
-    """Model dla wyzwalacza scenariusza."""
+    """
+    Model wyzwalacza scenariusza.
+
+    Attributes:
+        type (str): Typ wyzwalacza (manual/automatic/scheduled/event).
+        description (str | None): Opis wyzwalacza.
+        conditions (Dict[str, Any] | None): Warunki wyzwalania (np. do ewaluacji).
+    """
 
     type: str = Field(
         ...,
@@ -29,7 +36,11 @@ class TriggerModel(BaseModel):
 
 
 class ActionModel(BaseModel):
-    """Model dla pojedynczej akcji scenariusza."""
+    """
+    Model pojedynczej akcji scenariusza.
+
+    Zawiera parametry wspólne i specyficzne dla wybranych typów akcji.
+    """
 
     type: str = Field(..., description="Typ akcji (np. 'log_event', 'send_command')")
 
@@ -140,7 +151,18 @@ ActionModel.model_rebuild()
 
 
 class ScenarioModel(BaseModel):
-    """Model dla całego scenariusza."""
+    """
+    Model całego scenariusza wykonywanego przez Orchestratora.
+
+    Attributes:
+        name (str): Nazwa scenariusza.
+        description (str | None): Opis scenariusza.
+        priority (int | None): Priorytet (mniejsza wartość = ważniejszy).
+        cooldown (int | None): Cooldown w sekundach między uruchomieniami.
+        trigger (TriggerModel): Wyzwalacz scenariusza.
+        actions (List[ActionModel]): Lista akcji do wykonania.
+        metadata (Dict[str, Any] | None): Dodatkowe metadane.
+    """
 
     name: str = Field(..., description="Nazwa scenariusza")
     description: Optional[str] = Field(None, description="Opis scenariusza")
@@ -182,7 +204,9 @@ class ScenarioModel(BaseModel):
 
 
 class ScenarioCollection(BaseModel):
-    """Model dla kolekcji scenariuszy (jeśli potrzebna)."""
+    """
+    Model kolekcji scenariuszy (np. przy wczytywaniu wielu na raz).
+    """
 
     scenarios: List[ScenarioModel] = Field(..., description="Lista scenariuszy")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Metadane kolekcji")
@@ -197,7 +221,9 @@ class ScenarioCollection(BaseModel):
 
 
 class ScenarioExecutionContext(BaseModel):
-    """Model dla kontekstu wykonania scenariusza."""
+    """
+    Model kontekstu wykonania scenariusza.
+    """
 
     scenario_name: str = Field(..., description="Nazwa wykonywanego scenariusza")
     trigger_data: Optional[Dict[str, Any]] = Field(None, description="Dane z triggera")
@@ -207,7 +233,9 @@ class ScenarioExecutionContext(BaseModel):
 
 
 class ScenarioExecutionResult(BaseModel):
-    """Model dla wyniku wykonania scenariusza."""
+    """
+    Model wyniku wykonania scenariusza.
+    """
 
     success: bool = Field(..., description="Czy scenariusz wykonał się pomyślnie")
     scenario_name: str = Field(..., description="Nazwa scenariusza")

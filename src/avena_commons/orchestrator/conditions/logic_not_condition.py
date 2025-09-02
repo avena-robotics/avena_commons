@@ -7,6 +7,15 @@ class LogicNotCondition(BaseCondition):
     """Warunek logiczny NOT - neguje wynik warunku."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Zwraca negację wyniku zagnieżdżonego warunku.
+
+        Args:
+            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunku.
+
+        Returns:
+            bool: Zanegowany wynik warunku.
+        """
         condition_config = self.config.get("condition")
         if not condition_config:
             if self.message_logger:

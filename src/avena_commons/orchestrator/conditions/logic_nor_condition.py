@@ -7,6 +7,15 @@ class LogicNorCondition(BaseCondition):
     """Warunek logiczny NOR - żaden warunek nie może być spełniony."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Zwraca True, jeśli żaden zagnieżdżony warunek nie jest spełniony.
+
+        Args:
+            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunków.
+
+        Returns:
+            bool: Wynik NOR warunków.
+        """
         conditions_config = self.config.get("conditions", [])
         if not conditions_config:
             if self.message_logger:

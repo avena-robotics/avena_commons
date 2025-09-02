@@ -7,6 +7,15 @@ class LogicAndCondition(BaseCondition):
     """Warunek logiczny AND - wszystkie warunki muszą być spełnione."""
 
     async def evaluate(self, context: Dict[str, Any]) -> bool:
+        """
+        Zwraca True, jeśli wszystkie zagnieżdżone warunki są spełnione.
+
+        Args:
+            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunków.
+
+        Returns:
+            bool: Wynik koniunkcji warunków (AND).
+        """
         conditions_config = self.config.get("conditions", [])
         if not conditions_config:
             if self.message_logger:

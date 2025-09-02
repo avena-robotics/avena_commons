@@ -27,6 +27,26 @@ class DatabaseUpdateAction(BaseAction):
     async def execute(
         self, action_config: Dict[str, Any], context: ActionContext
     ) -> Dict[str, Any]:
+        """
+        Aktualizuje dane w bazie: SET stałej wartości lub kopia kolumna→kolumna.
+
+        Args:
+            action_config (Dict[str, Any]): Konfiguracja akcji z polami:
+                - component (str): Nazwa komponentu DB w orchestratorze.
+                - table (str): Tabela do aktualizacji.
+                - where (Dict[str, Any]): Warunek WHERE.
+                - column (str): Kolumna do ustawienia wartości (wariant 1).
+                - value (Any): Wartość do ustawienia (wariant 1).
+                - to_column (str): Kolumna docelowa (wariant 2).
+                - from_column (str): Kolumna źródłowa (wariant 2).
+            context (ActionContext): Kontekst wykonania z dostępem do komponentów DB.
+
+        Returns:
+            Dict[str, Any]: Podsumowanie liczby zaktualizowanych rekordów i parametrów.
+
+        Raises:
+            ActionExecutionError: W przypadku braków konfiguracji lub błędów bazy.
+        """
         try:
             component_name = action_config.get("component")
             table = action_config.get("table")

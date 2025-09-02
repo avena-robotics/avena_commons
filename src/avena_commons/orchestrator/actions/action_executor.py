@@ -62,7 +62,7 @@ class ActionExecutor:
         self, action_config: Dict[str, Any], context: ActionContext
     ) -> Any:
         """
-        Wykonuje akcję na podstawie konfiguracji.
+        Wykonuje akcję na podstawie konfiguracji (deleguje do zarejestrowanej akcji).
 
         Args:
             action_config: Konfiguracja akcji z pliku YAML (musi zawierać klucz 'type')

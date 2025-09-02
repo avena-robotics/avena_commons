@@ -12,7 +12,8 @@ plugins:
             docstring_style: google     # albo: numpy
             show_source: true
 nav:
-  - Wprowadzenie: docs/index.md
+  - Wprowadzenie: index.md
   - API:
-      - avena_commons: docs/api/avena_commons.md
-      - io_event_listener: docs/api/io/io_event_listener.md
+      - avena_commons: api/avena_commons.md
+      - io_event_listener: api/io/io_event_listener.md
+      - orchestrator: api/orchestrator/orchestrator.md

@@ -37,6 +37,21 @@ class SendEmailAction(BaseAction):
     async def execute(
         self, action_config: Dict[str, Any], context: ActionContext
     ) -> None:
+        """
+        Wysyła wiadomość e-mail na podstawie konfiguracji akcji i kontekstu.
+
+        Args:
+            action_config (Dict[str, Any]): Konfiguracja z polami:
+                - to (str|List[str]): Adres(y) odbiorców.
+                - subject (str): Temat wiadomości (wspiera {{ }} szablony).
+                - body (str): Treść wiadomości (wspiera {{ }} szablony).
+                - smtp (Dict[str, Any]): Konfiguracja SMTP (opcjonalnie, nadpisuje globalną).
+            context (ActionContext): Kontekst wykonania z dostępem do orchestratora i triggera.
+
+        Raises:
+            ActionExecutionError: W przypadku braków konfiguracji lub błędu wysyłki.
+
+        """
         orch = context.orchestrator
         pre_smtp_cfg = action_config.get("smtp", {}) or {}
         if not pre_smtp_cfg:
