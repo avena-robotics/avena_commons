@@ -480,7 +480,8 @@ class GeneralCameraWorker(Worker):
                                     self._message_logger,
                                 )
                                 self.detector = data[1] # ustawienie detectora
-                                self.postprocess_configuration = data[2] # ustawienie konfiguracji
+                                self.pipeline_configuration = data[2]["configuration"] # ustawienie konfiguracji pipeline
+                                self.postprocess_configuration = data[2]["postprocessors"] # ustawienie konfiguracji postprocess
                                 # debug(f"{self.device_name} - Detector: {self.detector} Postprocess configuration: {len(self.postprocess_configuration)}", message_logger=self._message_logger)
                                 await self._setup_image_processing_workers()
 

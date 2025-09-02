@@ -78,7 +78,8 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         self.align_filter = None
         self.spatial_filter = None
         self.temporal_filter = None
-
+        self.frame_number = 0
+    
     def set_int_property(self, device: Device, property_id: OBPropertyID, value: int):
         """Ustaw właściwość całkowitoliczbową urządzenia.
 
@@ -507,20 +508,18 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             frames = self.camera_pipeline.wait_for_frames(3)
             if frames is None:
                 return None
-
-            debug(f"Pobrano ramki: {type(frames)}", self._message_logger)
+    
 
             # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
             frame_color = frames.get_color_frame()
             frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
 
-            if frame_color is None:
-                debug("Brak ramki kolorowej", self._message_logger)
+            if frame_color is None or frame_depth is None:
+                debug("Brak jednej z ramek. Skip...", self._message_logger)
                 return None
 
-            if frame_depth is None:
-                debug("Brak ramki głębi", self._message_logger)
-                return None
+            self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
+            debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
 
             # Zastosuj filtry na kopii
             if self.align_filter:
@@ -542,13 +541,13 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 debug("Jedna z ramek jest None po filtrach", self._message_logger)
                 return None
 
-            debug(
-                f"Ramka kolorowa: format {frame_color.get_format()}",
-                self._message_logger,
-            )
-            debug(
-                f"Ramka głębi: format {frame_depth.get_format()}", self._message_logger
-            )
+            # debug(
+            #     f"Ramka kolorowa: format {frame_color.get_format()}",
+            #     self._message_logger,
+            # )
+            # debug(
+            #     f"Ramka głębi: format {frame_depth.get_format()}", self._message_logger
+            # )
 
             # Process color frame
             color_image = None
@@ -604,7 +603,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 self._message_logger,
             )
 
-            return {"color": color_image, "depth": depth_image}
+            return {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
 
         except Exception as e:
             error(f"Błąd przetwarzania ramek: {e}", self._message_logger)

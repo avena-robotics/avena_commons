@@ -7,18 +7,18 @@
             "format": "MJPG",
             "fps": 30,
             "gain": 10,
-            "height": 800,
+            "height": 400,
             "white_balance": 4000,
-            "width": 1280
+            "width": 640
         },
         "depth": {
             "exposure": 500,
             "format": "Y16",
             "fps": 30,
             "gain": 10,
-            "height": 800,
+            "height": 400,
             "laser_power": 5,
-            "width": 1280
+            "width": 640
         },
         "disparity_to_depth": true,
         "filters": {
@@ -33,7 +33,7 @@
                 "skip_first_n_frames": 20
             },
             "postprocessors": {
-                "a":{
+                "a": {
                     "center_point": [
                         1050,
                         550
@@ -104,7 +104,7 @@
                         "expected_width": 1150
                     }
                 },
-                "b":{
+                "b": {
                     "center_point": [
                         1050,
                         550
@@ -175,7 +175,7 @@
                         "expected_width": 1150
                     }
                 },
-                "c":{
+                "c": {
                     "center_point": [
                         1050,
                         550
@@ -246,14 +246,14 @@
                         "expected_width": 1150
                     }
                 }
-            }                   
+            }
         },
         "qr_detection": {
             "configuration": {
                 "skip_first_n_frames": 20
             },
             "postprocessors": {
-                "a":{
+                "a": {
                     "clahe": {
                         "clip_limit": 4.0,
                         "grid_size": 8
@@ -265,7 +265,7 @@
                     "mode": "gray",
                     "qr_size": 0.026
                 },
-                "b":{
+                "b": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -290,7 +290,7 @@
                     "mode": "gray_with_binarization",
                     "qr_size": 0.026
                 },
-                "c":{
+                "c": {
                     "clahe": {
                         "clip_limit": 1.0,
                         "grid_size": 1
@@ -302,7 +302,7 @@
                     "mode": "gray",
                     "qr_size": 0.026
                 },
-                "d":{
+                "d": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -327,7 +327,7 @@
                     "mode": "gray_with_binarization",
                     "qr_size": 0.026
                 },
-                "e":{
+                "e": {
                     "clahe": {
                         "clip_limit": 4.0,
                         "grid_size": 8
@@ -339,7 +339,7 @@
                     "mode": "saturation",
                     "qr_size": 0.026
                 },
-                "f":{
+                "f": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -364,7 +364,7 @@
                     "mode": "saturation_with_binarization",
                     "qr_size": 0.026
                 },
-                "g":{
+                "g": {
                     "clahe": {
                         "clip_limit": 1.0,
                         "grid_size": 1
@@ -376,7 +376,7 @@
                     "mode": "saturation",
                     "qr_size": 0.026
                 },
-                "h":{
+                "h": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -401,7 +401,7 @@
                     "mode": "saturation_with_binarization",
                     "qr_size": 0.026
                 },
-                "i":{
+                "i": {
                     "middle_area": {
                         "max_x": 1.44,
                         "min_x": 0.56

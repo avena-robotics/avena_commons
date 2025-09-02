@@ -117,7 +117,7 @@ class Camera(EventListener):
     async def on_starting(self):
         """Metoda wywoływana podczas przejścia w stan STARTING.
         Tu komponent przygotowuje się do uruchomienia głównych operacji."""
-        self.camera.set_postprocess_configuration(detector="qr_detector", configuration=self.__postprocess_config["qr_detection"])
+        # self.camera.set_postprocess_configuration(detector="qr_detector", configuration=self.__postprocess_config["qr_detection"])
         self.camera.start()
 
     async def on_stopping(self):

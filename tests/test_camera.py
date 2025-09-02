@@ -55,10 +55,10 @@ class CameraServer(Camera):
             Exception: If an error occurs during data processing.
         """
         camera_state = self.camera.get_state()
-        debug(
-            f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state} {type(camera_state)}",
-            self._message_logger,
-        )
+        # debug(
+        #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state} {type(camera_state)}",
+        #     self._message_logger,
+        # )
         match camera_state:
             case CameraState.ERROR:
                 self.set_state(EventListenerState.ON_ERROR)
