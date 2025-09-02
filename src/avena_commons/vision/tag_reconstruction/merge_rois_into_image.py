@@ -1,27 +1,3 @@
-"""
-Moduł do łączenia przetworzonych ROI z powrotem na obraz bazowy.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm inteligentnego łączenia przetworzonych regionów
-zainteresowania (ROI) z powrotem na obraz bazowy. Proces wykorzystuje maski
-tagów jako szablony do precyzyjnego wklejania zrekonstruowanych tagów.
-
-Strategia łączenia:
-------------------
-1. **Walidacja ROI**: Sprawdzenie czy ROI zawiera przetworzony tag
-2. **Filtrowanie rozmiaru**: Odrzucenie ROI z maską mniejszą niż 10000 pikseli
-3. **Przycinanie do granic**: Dostosowanie ROI do wymiarów obrazu bazowego
-4. **Kopiowanie z maską**: Precyzyjne wklejanie używając maski tagu
-5. **Aktualizacja canvas**: Modyfikacja obrazu bazowego w miejscu
-
-Zastosowania:
-- Integracja przetworzonych tagów wizyjnych z obrazem oryginalnym
-- Zachowanie jakości obrazu w obszarach bez tagów
-- Precyzyjne mapowanie zrekonstruowanych elementów
-- Finalizacja procesu rekonstrukcji tagów
-"""
-
 from typing import Dict, List
 
 import cv2

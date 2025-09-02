@@ -11,28 +11,29 @@ def calculate_pose_pnp(
     z: float,
     camera_matrix: np.ndarray,
 ) -> tuple:
-    """
-    Calculate object pose using PnP algorithm.
+    """Oblicza pozycję obiektu używając algorytmu PnP (Perspective-n-Point).
+
+    Funkcja wykorzystuje algorytm solvePnP z OpenCV do wyznaczenia pozycji i orientacji
+    obiektu na podstawie znanych punktów 3D i ich projekcji na obrazie 2D.
 
     Args:
-        corners: List of 4 corner points in image coordinates
-        a: Object width
-        b: Object height
-        camera_params: Camera intrinsic parameters [fx, fy, cx, cy]
-        z: Depth value
+        corners: Lista 4 punktów narożnych w współrzędnych obrazu (x, y)
+        a: Szerokość obiektu w jednostkach rzeczywistych
+        b: Wysokość obiektu w jednostkach rzeczywistych  
+        z: Wartość głębi (odległość) obiektu
+        camera_matrix: Macierz parametrów wewnętrznych kamery (3x3)
 
     Returns:
-        tuple: (tx, ty, tz, rx, ry, rz) containing translation and rotation
-        If test=True: also returns reprojection error
+        tuple: Krotka zawierająca (tx, ty, tz, rx, ry, rz) - translację i rotację obiektu
+            - tx, ty, tz: współrzędne translacji w mm
+            - rx, ry, rz: kąty rotacji w stopniach (tylko rz jest używany)
+
+    Example:
+        >>> corners = [[100, 200], [300, 200], [300, 400], [100, 400]]
+        >>> camera_matrix = np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]])
+        >>> pose = calculate_pose_pnp(corners, a=50.0, b=30.0, z=1000.0, camera_matrix=camera_matrix)
+        >>> print(f"Pozycja: {pose[:3]}, Rotacja: {pose[3:]}")
     """
-    # camera_matrix = np.array(
-    #     [
-    #         [camera_params[0], 0, camera_params[2]],
-    #         [0, camera_params[1], camera_params[3]],
-    #         [0, 0, 1],
-    #     ],
-    #     dtype=np.float32,
-    # )
     fake_camera_distortion = np.array(
         [0, 0, 0, 0, 0], dtype=np.float32
     )  # zdjecie jest juz undistorted

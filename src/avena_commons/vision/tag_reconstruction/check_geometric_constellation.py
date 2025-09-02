@@ -1,27 +1,3 @@
-"""
-Moduł do walidacji geometrycznych konstelacji tagów wizyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm walidacji poprawności geometrycznej konstelacji
-tagów wizyjnych poprzez porównanie cech geometrycznych między układem
-referencyjnym a układem wykrytym w scenie.
-
-Algorytm walidacji:
-------------------
-1. **Porównanie liczby punktów**: Sprawdzenie czy liczba centroidów się zgadza
-2. **Analiza odległości**: Porównanie względnych odległości między punktami
-3. **Walidacja kątów**: Sprawdzenie kątów między trójkami punktów
-4. **Normalizacja**: Standaryzacja cech geometrycznych dla porównania
-5. **Tolerancja**: Uwzględnienie dopuszczalnych różnic w parametrach
-
-Zastosowania:
-- Walidacja poprawności wykrytych tagów wizyjnych
-- Filtrowanie fałszywych detekcji
-- Zapewnienie jakości rekonstrukcji tagów
-- Kontrola poprawności mapowania perspektywicznego
-"""
-
 import numpy as np
 
 import avena_commons.vision.tag_reconstruction as tag_reconstruction

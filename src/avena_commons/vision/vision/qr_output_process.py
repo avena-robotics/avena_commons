@@ -9,6 +9,29 @@ from avena_commons.util.utils import (
 
 
 def qr_output_process(detection_list: list, middle_point_y: int = 540) -> dict:
+    """Przetwarza listę detekcji QR i organizuje je w siatce 2x2.
+
+    Funkcja przyjmuje listę detekcji kodów QR i organizuje je w siatce 2x2
+    na podstawie pozycji Y i kąta rotacji Z. Obecnie funkcja jest w fazie rozwoju
+    i większość logiki jest zakomentowana.
+
+    Args:
+        detection_list: Lista obiektów detekcji QR
+        middle_point_y: Punkt podziału Y dla górnego i dolnego rzędu (domyślnie 540)
+
+    Returns:
+        dict: Słownik z kluczami 1-4 reprezentującymi pozycje w siatce:
+            - 1: Górny lewy
+            - 2: Dolny lewy  
+            - 3: Górny prawy
+            - 4: Dolny prawy
+            Wartości to None jeśli brak detekcji w danej pozycji
+
+    Example:
+        >>> detections = [qr_detection1, qr_detection2]
+        >>> result = qr_output_process(detections, middle_point_y=500)
+        >>> print(f"Górny lewy: {result[1]}")
+    """
     if detection_list is None or len(detection_list) == 0:
         return {1: None, 2: None, 3: None, 4: None}
 

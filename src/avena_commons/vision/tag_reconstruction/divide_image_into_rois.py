@@ -1,30 +1,13 @@
-"""
-Moduł do podziału obrazu na regiony zainteresowania (ROI).
-
-Zasady działania:
---------------
-Moduł implementuje algorytm inteligentnego podziału obrazu na 4 nakładające się
-regiony zainteresowania (ROI) z konfigurowalnymi parametrami. Każdy ROI jest
-optymalizowany pod kątem wykrywania tagów wizyjnych w różnych częściach obrazu.
-
-Strategia podziału:
-------------------
-1. **Główna sekcja**: Wycięcie centralnej części obrazu zgodnie z konfiguracją
-2. **4 kwadranty**: Podział na TL (Top-Left), TR (Top-Right), BL (Bottom-Left), BR (Bottom-Right)
-3. **Nakładanie się**: ROI nachodzą na siebie o konfigurowalną frakcję
-4. **Optymalizacja wysokości**: Wysokość ROI jest zmniejszana do 2/3 dla lepszej detekcji
-5. **Rotacja korekcyjna**: Każdy ROI ma przypisaną rotację korekcyjną
-
-Zastosowania:
-- Segmentacja obrazów dla algorytmów wykrywania tagów
-- Optymalizacja przetwarzania dużych obrazów
-- Zapewnienie pokrycia całego obszaru zainteresowania
-- Wsparcie dla algorytmów mapowania perspektywicznego
-"""
-
 from typing import Any, Dict
 
 import numpy as np
+
+# Domyślna konfiguracja ROI
+DEFAULT_ROI_CONFIG = {
+    "horizontal_slice": (0.33, 0.66),
+    "vertical_slice": (0.0, 1.0),
+    "overlap_fraction": 0.2,
+}
 
 
 def divide_image_into_rois(

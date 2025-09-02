@@ -1,29 +1,3 @@
-"""
-Moduł do rekonstrukcji i przetwarzania tagów wizyjnych w obrazach.
-
-Zasady działania:
---------------
-Moduł implementuje pipeline do rekonstrukcji tagów wizyjnych (QR, AR) z obrazów
-z wykorzystaniem technik przetwarzania obrazu i analizy ROI (Region of Interest).
-
-Główne etapy przetwarzania:
-1. Preprocessing obrazu tagu referencyjnego (konwersja do skali szarości)
-2. Tworzenie wzorców referencyjnych tagów
-3. Podział obrazu na regiony zainteresowania (ROI)
-4. Mapowanie tagów referencyjnych na ROI z uwzględnieniem perspektywy
-5. Łączenie przetworzonych ROI w końcowy obraz
-
-Strategie ROI:
-- Podział na 4 kwadranty z nakładaniem się (overlap)
-- Tryb centralny - pojedynczy ROI w centrum obrazu
-- Konfigurowalne parametry slice'owania i nakładania
-
-Zastosowania:
-- Rekonstrukcja tagów QR/AR z obrazów zniekształconych perspektywą
-- Poprawa jakości tagów wizyjnych dla lepszego dekodowania
-- Przetwarzanie obrazów z kamer przemysłowych i robotycznych
-"""
-
 import numpy as np
 
 import avena_commons.vision.preprocess as preprocess

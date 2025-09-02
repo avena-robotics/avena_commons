@@ -1,29 +1,3 @@
-"""
-Moduł do znajdowania konturów podobnych do referencyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm dopasowywania konturów w scenie do konturów
-referencyjnych na podstawie podobieństwa kształtu. Używa funkcji OpenCV
-matchShapes do obliczenia miary podobieństwa i klasyfikuje kontury
-sceny według najlepszego dopasowania.
-
-Algorytm dopasowywania:
-----------------------
-1. **Inicjalizacja**: Utworzenie list dla każdego konturu referencyjnego
-2. **Iteracja po scenie**: Analiza każdego konturu w scenie
-3. **Porównanie kształtów**: Obliczenie miary podobieństwa dla każdej pary
-4. **Wybór najlepszego**: Identyfikacja konturu referencyjnego z najniższym wynikiem
-5. **Walidacja progu**: Sprawdzenie czy wynik jest poniżej progu podobieństwa
-6. **Klasyfikacja**: Przypisanie konturu sceny do odpowiedniej kategorii
-
-Zastosowania:
-- Identyfikacja tagów wizyjnych w obrazach
-- Kategoryzacja konturów według wzorców referencyjnych
-- Filtrowanie konturów według podobieństwa kształtu
-- Przygotowanie danych do mapowania perspektywicznego
-"""
-
 import cv2
 import numpy as np
 

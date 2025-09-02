@@ -1,26 +1,3 @@
-"""
-Moduł do kanonizacji konturów wizyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm kanonizacji konturów, który zapewnia
-spójną reprezentację geometryczną poprzez resampling, normalizację
-kierunku i standaryzację punktu startowego.
-
-Algorytm kanonizacji:
---------------------
-1. **Resampling**: Próbkowanie konturu na N równomiernie rozłożonych punktów
-2. **Normalizacja kierunku**: Upewnienie się, że kontur jest zgodny z ruchem wskazówek zegara
-3. **Standaryzacja startu**: Ustawienie punktu startowego na określonym narożniku
-4. **Spójność**: Zapewnienie deterministycznej reprezentacji konturu
-
-Zastosowania:
-- Standaryzacja konturów przed porównaniem geometrycznym
-- Przygotowanie konturów do transformacji afinowych
-- Zapewnienie spójności w algorytmach mapowania perspektywicznego
-- Normalizacja danych wejściowych dla algorytmów wizyjnych
-"""
-
 import cv2
 import numpy as np
 
@@ -77,7 +54,7 @@ def canonicalise(cnt, N=180, *, corner="TL"):
     """
 
     def resample_contour(cnt, N=180):
-        """Return N equally-spaced samples around a closed contour."""
+        """Zwraca N równomiernie rozłożonych próbek wokół zamkniętego konturu."""
         p = cnt.reshape(-1, 2).astype(np.float32)
         seg = np.linalg.norm(np.diff(p, axis=0, append=p[:1]), axis=1)
         s = np.concatenate(([0], np.cumsum(seg)))

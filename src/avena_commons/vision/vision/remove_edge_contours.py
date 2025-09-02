@@ -2,7 +2,24 @@ import cv2
 
 
 def remove_edge_contours(contours, image_shape, config):
-    """Remove contours that touch the edge of the image within a certain margin"""
+    """Usuwa kontury znajdujące się zbyt blisko krawędzi obrazu.
+
+    Funkcja filtruje kontury, usuwając te, które znajdują się zbyt blisko
+    krawędzi obrazu w określonym marginesie.
+
+    Args:
+        contours: Lista konturów do przefiltrowania
+        image_shape: Kształt obrazu (height, width)
+        config: Słownik zawierający parametry konfiguracji:
+            - edge_margin: Margines od krawędzi w pikselach (domyślnie 5)
+
+    Returns:
+        list: Lista przefiltrowanych konturów
+
+    Example:
+        >>> config = {"edge_margin": 10}
+        >>> filtered_contours = remove_edge_contours(contours, (480, 640), config)
+    """
     margin = config.get("edge_margin", 5)  # Default margin of 5 pixels from edge
     height, width = image_shape
 

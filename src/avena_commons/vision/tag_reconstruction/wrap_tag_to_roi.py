@@ -1,38 +1,3 @@
-"""
-Moduł do mapowania perspektywicznego tagów referencyjnych na ROI.
-
-Zasady działania:
---------------
-Moduł implementuje zaawansowany algorytm mapowania perspektywicznego tagów
-wizyjnych z obrazu referencyjnego na regiony zainteresowania (ROI) w obrazie
-docelowym. Proces obejmuje wykrywanie konturów, dopasowywanie geometryczne
-i transformację afinową z walidacją orientacji.
-
-Pipeline mapowania:
-------------------
-1. **Preprocessing ROI**: Przygotowanie obrazu ROI do analizy konturów
-2. **Wykrycie konturów**: Znalezienie konturów w scenie
-3. **Dopasowanie**: Identyfikacja konturów podobnych do referencyjnych
-4. **Grupowanie**: Walidacja konstelacji konturów
-5. **Kanonizacja**: Normalizacja punktów kontrolnych
-6. **Transformacja**: Obliczenie macierzy afinowej
-7. **Walidacja orientacji**: Sprawdzenie poprawności układu geometrycznego
-8. **Mapowanie**: Aplikacja transformacji i tworzenie maski
-
-Algorytm walidacji:
-------------------
-- Analiza pozycji centroidów konturów
-- Sprawdzenie względnych różnic współrzędnych
-- Walidacja zgodnie z oczekiwaną rotacją (90° lub -90°)
-- Odrzucenie nieprawidłowych konstelacji
-
-Zastosowania:
-- Rekonstrukcja tagów QR/AR z perspektywy
-- Mapowanie wzorców referencyjnych na sceny
-- Poprawa jakości tagów wizyjnych
-- Automatyczna korekcja zniekształceń perspektywicznych
-"""
-
 import cv2
 import numpy as np
 

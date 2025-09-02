@@ -1,26 +1,3 @@
-"""
-Moduł do obliczania cech geometrycznych dla tagów wizyjnych.
-
-Zasady działania:
---------------
-Moduł ten implementuje algorytmy do analizy geometrycznej zbiorów punktów (centroidów)
-wykrytych w obrazach wizyjnych. Główne funkcjonalności obejmują:
-
-1. Obliczanie macierzy odległości między wszystkimi parami punktów
-2. Analizę kątów między trójkami punktów (trójkąty)
-3. Określanie cech opisowych jak centroid, bounding box i rozpiętość
-
-Algorytm kątów:
-- Dla każdej trójki punktów (i, j, k) obliczany jest kąt w wierzchołku j
-- Używany jest iloczyn skalarny i normy wektorów do obliczenia kąta
-- Kąty są konwertowane na stopnie dla lepszej interpretacji
-
-Zastosowania:
-- Analiza wzorców geometrycznych tagów QR/AR
-- Walidacja poprawności wykrytych punktów
-- Klasyfikacja kształtów i układów wizyjnych
-"""
-
 import numpy as np
 
 

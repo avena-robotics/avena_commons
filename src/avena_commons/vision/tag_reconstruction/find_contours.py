@@ -1,28 +1,3 @@
-"""
-Moduł do wykrywania konturów w obrazach binarnych.
-
-Zasady działania:
---------------
-Moduł implementuje zaawansowany algorytm wykrywania konturów, który
-łączy binaryzację Otsu z analizą komponentów połączonych. Proces
-zapewnia wysoką jakość wykrytych konturów poprzez eliminację
-szumu i identyfikację spójnych regionów.
-
-Algorytm wykrywania:
--------------------
-1. **Walidacja wejścia**: Sprawdzenie czy obraz jest jednokanałowy
-2. **Binaryzacja Otsu**: Automatyczne progowanie z optymalnym progiem
-3. **Analiza komponentów**: Identyfikacja spójnych regionów połączonych
-4. **Ekstrakcja konturów**: Wykrycie konturów dla każdego komponentu
-5. **Filtrowanie tła**: Pominięcie komponentu tła (etykieta 0)
-
-Zastosowania:
-- Wykrywanie konturów w obrazach wizyjnych
-- Analiza kształtów i obiektów w obrazach
-- Preprocessing dla algorytmów rozpoznawania wzorców
-- Identyfikacja tagów wizyjnych i elementów geometrycznych
-"""
-
 import cv2
 import numpy as np
 

@@ -1,27 +1,3 @@
-"""
-Moduł do grupowania konturów według typów.
-
-Zasady działania:
---------------
-Moduł implementuje funkcję pomocniczą do reorganizacji konturów
-z formatu słownikowego na format listowy, grupując je według
-indeksów typów. Jest to kluczowy element w przygotowaniu danych
-dla algorytmów mapowania perspektywicznego.
-
-Algorytm grupowania:
--------------------
-1. **Inicjalizacja**: Utworzenie pustych list dla każdego typu
-2. **Iteracja po słowniku**: Analiza każdego wpisu w słowniku konturów
-3. **Grupowanie według typu**: Przypisanie konturu do odpowiedniej listy
-4. **Struktura wyjściowa**: Lista list konturów pogrupowanych według typu
-
-Zastosowania:
-- Reorganizacja danych konturów dla algorytmów wizyjnych
-- Przygotowanie danych do mapowania perspektywicznego
-- Standaryzacja formatu danych w pipeline'ie przetwarzania
-- Grupowanie konturów według podobieństwa kształtu
-"""
-
 import numpy as np
 
 

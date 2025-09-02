@@ -2,9 +2,31 @@ import numpy as np
 
 
 def propagate(depth, mask, direction):
+    """Propaguje wartości głębi w określonym kierunku w obszarach dziur.
+
+    Funkcja wypełnia obszary dziur (oznaczone maską) wartościami głębi propagowanymi
+    z sąsiednich pikseli w określonym kierunku.
+
+    Args:
+        depth: Obraz głębi z dziurami do wypełnienia
+        mask: Maska binarna określająca obszary dziur (255 = dziura)
+        direction: Kierunek propagacji ("horizontal", "vertical", "square")
+
+    Returns:
+        np.ndarray: Obraz głębi z wypełnionymi dziurami
+
+    Raises:
+        ValueError: Jeśli kierunek nie jest "horizontal", "vertical" lub "square"
+
+    Example:
+        >>> depth = np.array([[100, 0, 200], [0, 0, 0], [300, 0, 400]])
+        >>> mask = np.array([[0, 255, 0], [255, 255, 255], [0, 255, 0]])
+        >>> filled = propagate(depth, mask, "horizontal")
+    """
     def propagate_logic(
         depth: np.ndarray, mask: np.ndarray, direction: str = "left"
     ) -> np.ndarray:
+        """Wewnętrzna funkcja propagacji w jednym kierunku."""
         if direction not in {"left", "right", "up", "down"}:
             raise ValueError("direction must be 'left', 'right', 'up', or 'down'")
 

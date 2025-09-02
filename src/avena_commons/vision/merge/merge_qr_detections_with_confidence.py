@@ -2,16 +2,23 @@ from typing import Any, Dict, List
 
 
 def get_confidence_score(detection: Any) -> float:
-    """
-    Pobiera wartość confidence z detekcji AprilTag.
+    """Pobiera wartość confidence z detekcji AprilTag.
 
-    Próbuje różne możliwe nazwy atrybutów confidence.
+    Funkcja próbuje różne możliwe nazwy atrybutów confidence w obiekcie
+    detekcji AprilTag, aby zapewnić kompatybilność z różnymi wersjami
+    biblioteki. Sprawdza atrybuty: confidence, confidence_score, score, quality.
 
     Args:
-        detection: Obiekt detekcji AprilTag
+        detection: Obiekt detekcji AprilTag z potencjalnym atrybutem confidence
 
     Returns:
-        Wartość confidence jako float, 0.0 jeśli nie można określić
+        float: Wartość confidence jako liczba zmiennoprzecinkowa.
+            Zwraca 0.0 jeśli nie można określić confidence.
+
+    Example:
+        >>> detection = april_tag_detection  # Obiekt z atrybutem confidence
+        >>> score = get_confidence_score(detection)
+        >>> print(f"Confidence: {score}")
     """
     confidence_attrs = ["confidence", "confidence_score", "score", "quality"]
 
@@ -30,19 +37,29 @@ def merge_qr_detections_with_confidence(
     new_detections: Dict[int, Any],
     expected_count: int = 4,
 ) -> Dict[int, Any]:
-    """
-    Łączy aktualny stan detekcji QR z nowymi detekcjami, używając funkcji confidence.
+    """Łączy aktualny stan detekcji QR z nowymi detekcjami, używając confidence.
 
     Funkcja merguje nowe detekcje (już posortowane według pozycji) z aktualnym stanem,
-    wybierając bardziej pewne wyniki na podstawie confidence.
+    wybierając bardziej pewne wyniki na podstawie wartości confidence. Proces
+    zapewnia stabilność detekcji między klatkami obrazu, preferując detekcje
+    o wyższym poziomie pewności.
 
     Args:
         current_state: Aktualny stan detekcji {1: detection1, 2: detection2, ...}
         new_detections: Słownik nowych detekcji AprilTag {1: detection1, 2: detection2, ...}
-        expected_count: Maksymalna liczba spodziewanych QR kodów (domyślnie 4)
+        expected_count: Maksymalna liczba spodziewanych kodów QR (domyślnie 4)
 
     Returns:
-        Zaktualizowany słownik stanu z połączonymi detekcjami
+        Dict[int, Any]: Zaktualizowany słownik stanu z połączonymi detekcjami
+
+    Raises:
+        ValueError: Jeśli expected_count nie jest w zakresie 1-4
+
+    Example:
+        >>> current = {1: old_detection, 2: None, 3: None, 4: None}
+        >>> new_detections = {1: new_detection1, 2: new_detection2}
+        >>> merged = merge_qr_detections_with_confidence(current, new_detections, 4)
+        >>> print(f"Zaktualizowane pozycje: {len([v for v in merged.values() if v is not None])}")
     """
     if expected_count < 1 or expected_count > 4:
         raise ValueError("expected_count must be between 1 and 4")

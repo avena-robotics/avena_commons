@@ -1,24 +1,3 @@
-"""
-Moduł do tworzenia wzorców referencyjnych tagów wizyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje proces tworzenia wzorców referencyjnych z obrazu tagu,
-które są następnie używane do mapowania i rekonstrukcji tagów w obrazach
-docelowych. Proces obejmuje wykrywanie konturów, filtrowanie i kategoryzację.
-
-Pipeline przetwarzania:
-1. Wykrycie konturów w obrazie tagu referencyjnego
-2. Filtrowanie konturów według kryteriów jakościowych
-3. Kategoryzacja konturów według typów geometrycznych
-4. Tworzenie słownika z wszystkimi potrzebnymi danymi referencyjnymi
-
-Zastosowania:
-- Tworzenie wzorców do mapowania perspektywicznego
-- Referencja dla algorytmów rekonstrukcji tagów
-- Standaryzacja procesu analizy tagów wizyjnych
-"""
-
 import numpy as np
 
 import avena_commons.vision.tag_reconstruction as tag_reconstruction

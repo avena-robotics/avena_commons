@@ -79,8 +79,6 @@ class Camera(EventListener):
         self.__camera_config = self._configuration.get("camera_configuration", {})
         self.__postprocess_config = self._configuration.get("postprocessors", {})
 
-        print(self.__postprocess_config)
-
         if self.__camera_config.get("camera_ip", None) is None:
             error(
                 f"EVENT_LISTENER_INIT: Brak konfiguracji CAMERA_IP dla kamery",
@@ -119,7 +117,7 @@ class Camera(EventListener):
     async def on_starting(self):
         """Metoda wywoływana podczas przejścia w stan STARTING.
         Tu komponent przygotowuje się do uruchomienia głównych operacji."""
-        self.camera.set_postprocess_configuration(configuration=self.__postprocess_config["qr_detection"])
+        self.camera.set_postprocess_configuration(detector="qr_detector", configuration=self.__postprocess_config["qr_detection"])
         self.camera.start()
 
     async def on_stopping(self):

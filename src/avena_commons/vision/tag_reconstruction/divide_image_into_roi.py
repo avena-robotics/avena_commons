@@ -1,27 +1,3 @@
-"""
-Moduł do wyodrębniania pojedynczego centralnego regionu zainteresowania (ROI).
-
-Zasady działania:
---------------
-Moduł implementuje prostą strategię segmentacji obrazu polegającą na
-wyodrębnieniu jednego centralnego regionu zainteresowania. Jest to alternatywa
-dla złożonego podziału na wiele ROI, stosowana gdy potrzebne jest skupienie
-na centralnej części obrazu.
-
-Strategia centralnego ROI:
--------------------------
-1. **Centralne 50%**: Wycięcie środkowego obszaru w obu osiach (X i Y)
-2. **Przesunięcie poziome**: Dodatkowe przesunięcie o 300 pikseli w prawo
-3. **Pojedynczy ROI**: Utworzenie jednego regionu zamiast 4 kwadrantów
-4. **Rotacja domyślna**: Przypisanie rotacji korekcyjnej 90 stopni
-
-Zastosowania:
-- Szybka analiza centralnej części obrazu
-- Alternatywa dla złożonej segmentacji kwadrantowej
-- Optymalizacja dla scen z tagami w centrum
-- Uproszczone przetwarzanie obrazów
-"""
-
 import numpy as np
 
 

@@ -1,26 +1,3 @@
-"""
-Moduł do obliczania centroidów konturów wizyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm obliczania centroidów (środków ciężkości)
-konturów wizyjnych używając momentów geometrycznych. Funkcja zapewnia
-bezpieczne obliczenia z obsługą przypadków brzegowych.
-
-Algorytm obliczania:
--------------------
-1. **Obliczenie momentów**: Użycie OpenCV moments do wyznaczenia momentów geometrycznych
-2. **Walidacja obszaru**: Sprawdzenie czy kontur ma niezerowy obszar
-3. **Obliczenie centroidu**: Podział momentów pierwszego rzędu przez moment zerowego rzędu
-4. **Konwersja typów**: Przekształcenie wyników na liczby całkowite
-
-Zastosowania:
-- Obliczanie środków geometrycznych obiektów wizyjnych
-- Analiza pozycji tagów i elementów w obrazach
-- Przygotowanie danych dla algorytmów mapowania perspektywicznego
-- Walidacja geometryczna konstelacji konturów
-"""
-
 import cv2
 import numpy as np
 

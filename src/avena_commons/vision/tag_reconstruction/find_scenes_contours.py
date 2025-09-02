@@ -1,27 +1,3 @@
-"""
-Moduł do wykrywania konturów w obrazach sceny.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm wykrywania konturów w obrazach sceny
-używając analizy komponentów połączonych. Proces obejmuje
-identyfikację spójnych regionów i ekstrakcję ich konturów.
-
-Algorytm wykrywania:
--------------------
-1. **Analiza komponentów**: Użycie cv2.connectedComponents do identyfikacji regionów
-2. **Filtrowanie tła**: Pominięcie komponentu tła (etykieta 0)
-3. **Tworzenie masek**: Generowanie masek binarnych dla każdego komponentu
-4. **Ekstrakcja konturów**: Wykrycie konturów z każdej maski
-5. **Agregacja wyników**: Połączenie wszystkich wykrytych konturów
-
-Zastosowania:
-- Wykrywanie konturów w obrazach sceny
-- Analiza regionów zainteresowania (ROI)
-- Identyfikacja obiektów w obrazach wizyjnych
-- Preprocessing dla algorytmów rozpoznawania wzorców
-"""
-
 import cv2
 import numpy as np
 

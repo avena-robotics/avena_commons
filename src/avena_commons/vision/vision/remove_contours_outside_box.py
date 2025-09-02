@@ -4,7 +4,31 @@ import cv2
 def remove_contours_outside_box(
     contours, config
 ):  # MARK: REMOVE CONTOURS OUTSIDE EXPECTED BOX
+    """Usuwa kontury znajdujące się poza oczekiwanym obszarem pudełka.
+
+    Funkcja filtruje kontury, pozostawiając tylko te, które znajdują się
+    w określonym obszarze wokół punktu centralnego, i sortuje je według odległości od centrum.
+
+    Args:
+        contours: Lista konturów do przefiltrowania
+        config: Słownik zawierający parametry konfiguracji:
+            - center_point: Punkt centralny (x, y) oczekiwanego obszaru
+            - expected_width: Oczekiwana szerokość obszaru
+            - expected_height: Oczekiwana wysokość obszaru
+
+    Returns:
+        list: Lista przefiltrowanych konturów posortowanych według odległości od centrum
+
+    Example:
+        >>> config = {
+        ...     "center_point": [320, 240],
+        ...     "expected_width": 200,
+        ...     "expected_height": 150
+        ... }
+        >>> filtered_contours = remove_contours_outside_box(contours, config)
+    """
     def distance_from_center(cnt, center_point):
+        """Oblicza odległość konturu od punktu centralnego."""
         x, y, w, h = cv2.boundingRect(cnt)
         return (
             (x + w / 2 - center_point[0]) ** 2 + (y + h / 2 - center_point[1]) ** 2

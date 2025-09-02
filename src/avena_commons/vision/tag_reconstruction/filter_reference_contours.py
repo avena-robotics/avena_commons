@@ -1,28 +1,3 @@
-"""
-Moduł do filtrowania i grupowania konturów referencyjnych.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm filtrowania i grupowania konturów
-referencyjnych na podstawie podobieństwa kształtu. Proces obejmuje
-sortowanie według obszaru, filtrowanie największych konturów i
-grupowanie według podobieństwa geometrycznego.
-
-Algorytm filtrowania:
---------------------
-1. **Sortowanie według obszaru**: Kontury są sortowane malejąco według powierzchni
-2. **Filtrowanie największych**: Usunięcie 2 największych konturów (prawdopodobnie tło)
-3. **Grupowanie według podobieństwa**: Użycie cv2.matchShapes z progiem 0.05
-4. **Przypisanie typów**: Każda grupa otrzymuje unikalny indeks typu
-5. **Struktura wyjściowa**: Lista słowników z konturem i typem
-
-Zastosowania:
-- Filtrowanie konturów referencyjnych dla tagów wizyjnych
-- Grupowanie podobnych kształtów w algorytmach wizyjnych
-- Przygotowanie danych do mapowania perspektywicznego
-- Standaryzacja konturów referencyjnych
-"""
-
 import cv2
 import numpy as np
 

@@ -5,16 +5,29 @@ def sort_qr_by_center_position(
     expected_count: int,
     detections: List[Any],  # Lista detekcji AprilTag
 ) -> Dict[int, Any]:
-    """
-    Sortuje QR kody według pozycji center i zwraca słownik z kluczami 1,2,3,4.
+    """Sortuje kody QR według pozycji centrum i zwraca słownik z kluczami 1-4.
+
+    Funkcja sortuje detekcje kodów QR według ich pozycji centrum, używając
+    współrzędnych Y (wysokość) jako głównego kryterium sortowania, a następnie
+    X (szerokość) jako kryterium pomocniczego. Wynik jest mapowany na pozycje
+    numeryczne 1-4 zgodnie z kolejnością sortowania.
 
     Args:
-        expected_count: Liczba spodziewanych QR kodów (1-4)
+        expected_count: Liczba spodziewanych kodów QR (1-4)
         detections: Lista detekcji AprilTag (musi mieć atrybut .center)
 
     Returns:
-        Słownik {1: detection1, 2: detection2, 3: detection3, 4: detection4}
-        Brakujące pozycje mają wartość None
+        Dict[int, Any]: Słownik z kluczami 1-4 zawierający posortowane detekcje.
+            Brakujące pozycje mają wartość None.
+
+    Raises:
+        ValueError: Jeśli expected_count nie jest w zakresie 1-4
+
+    Example:
+        >>> detections = [detection1, detection2, detection3]
+        >>> result = sort_qr_by_center_position(3, detections)
+        >>> print(f"Pozycja 1: {result[1]}")
+        >>> print(f"Pozycja 2: {result[2]}")
     """
     if expected_count < 1 or expected_count > 4:
         raise ValueError("expected_count must be between 1 and 4")
@@ -48,20 +61,29 @@ def merge_qr_detections(
     new_detections: List[Any],
     expected_count: int = 4,
 ) -> Dict[int, Any]:
-    """
-    Łączy aktualny stan detekcji QR z nowymi detekcjami, wybierając bardziej pewne wyniki.
+    """Łączy aktualny stan detekcji QR z nowymi detekcjami, wybierając bardziej pewne wyniki.
 
-    Funkcja merguje nowe detekcje z aktualnym stanem, aktualizując pozycje QR kodów
+    Funkcja merguje nowe detekcje z aktualnym stanem, aktualizując pozycje kodów QR
     i wybierając detekcje o wyższym confidence (jeśli dostępne) lub zachowując
-    istniejące detekcje jeśli są lepsze.
+    istniejące detekcje jeśli są lepsze. Proces zapewnia stabilność detekcji
+    między klatkami obrazu.
 
     Args:
         current_state: Aktualny stan detekcji {1: detection1, 2: detection2, ...}
         new_detections: Lista nowych detekcji AprilTag
-        expected_count: Maksymalna liczba spodziewanych QR kodów (domyślnie 4)
+        expected_count: Maksymalna liczba spodziewanych kodów QR (domyślnie 4)
 
     Returns:
-        Zaktualizowany słownik stanu z połączonymi detekcjami
+        Dict[int, Any]: Zaktualizowany słownik stanu z połączonymi detekcjami
+
+    Raises:
+        ValueError: Jeśli expected_count nie jest w zakresie 1-4
+
+    Example:
+        >>> current = {1: old_detection, 2: None, 3: None, 4: None}
+        >>> new_detections = [new_detection1, new_detection2]
+        >>> merged = merge_qr_detections(current, new_detections, 4)
+        >>> print(f"Zaktualizowane pozycje: {len([v for v in merged.values() if v is not None])}")
     """
     if expected_count < 1 or expected_count > 4:
         raise ValueError("expected_count must be between 1 and 4")

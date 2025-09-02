@@ -40,6 +40,7 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                 clip_limit=config["clahe"]["clip_limit"],
                 grid_size=config["clahe"]["grid_size"],
             )
+            debug_data["image_clahe"] = image_clahe
 
             detections = detector.detect(  # apriltag detect
                 image_clahe, True, camera_params, config["qr_size"]
@@ -53,19 +54,22 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                 clip_limit=config["clahe"]["clip_limit"],
                 grid_size=config["clahe"]["grid_size"],
             )
+            debug_data["image_clahe"] = image_clahe
 
             binary_image = preprocess.binarize_and_clean(
                 gray_image, config["binarization"]
             )
+            debug_data["binary_image"] = binary_image
 
-            preprocessed_image = preprocess.blend(
+            blended_image = preprocess.blend(
                 image1=binary_image,
                 image2=image_clahe,
                 merge_image_weight=config["merge_image_weight"],
             )
+            debug_data["blended_image"] = blended_image
 
             detections = detector.detect(  # apriltag detect
-                preprocessed_image, True, camera_params, config["qr_size"]
+                blended_image, True, camera_params, config["qr_size"]
             )
 
         case "saturation":
@@ -78,6 +82,7 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                 clip_limit=config["clahe"]["clip_limit"],
                 grid_size=config["clahe"]["grid_size"],
             )
+            debug_data["image_clahe"] = image_clahe
 
             detections = detector.detect(  # apriltag detect
                 image_clahe, True, camera_params, config["qr_size"]
@@ -93,17 +98,20 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                 clip_limit=config["clahe"]["clip_limit"],
                 grid_size=config["clahe"]["grid_size"],
             )
+            debug_data["image_clahe"] = image_clahe
 
             binary_image = preprocess.binarize_and_clean(
                 gray_image, config["binarization"]
             )
-
+            debug_data["binary_image"] = binary_image
+            
             preprocessed_image = preprocess.blend(
                 image1=binary_image,
                 image2=image_clahe,
                 merge_image_weight=config["merge_image_weight"],
             )
-
+            debug_data["preprocessed_image"] = preprocessed_image
+            
             detections = detector.detect(  # apriltag detect
                 preprocessed_image, True, camera_params, config["qr_size"]
             )
@@ -119,6 +127,8 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                     tag_image,
                     config["tag_reconstruction"],
                 )
+                debug_data["merged_image"] = merged_image
+                
                 gray_image = preprocess.to_gray(merged_image)
                 detections = detector.detect(
                     gray_image, True, camera_params, config["qr_size"]

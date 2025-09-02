@@ -1,29 +1,3 @@
-"""
-Moduł do znajdowania grup konturów spełniających relacje geometryczne.
-
-Zasady działania:
---------------
-Moduł implementuje algorytm identyfikacji grup konturów, które tworzą
-prawidłowe konstelacje geometryczne zgodne z układem referencyjnym.
-Proces obejmuje analizę wszystkich możliwych kombinacji konturów
-i walidację ich zgodności geometrycznej.
-
-Algorytm grupowania:
--------------------
-1. **Ekstrakcja centroidów**: Obliczenie centroidów konturów referencyjnych
-2. **Walidacja dostępności**: Sprawdzenie czy każdy typ konturu jest dostępny
-3. **Generowanie kombinacji**: Utworzenie wszystkich możliwych kombinacji konturów
-4. **Analiza odległości**: Sprawdzenie maksymalnych odległości między centroidami
-5. **Walidacja geometryczna**: Sprawdzenie zgodności z układem referencyjnym
-6. **Ranking jakości**: Sortowanie grup według jakości dopasowania
-
-Zastosowania:
-- Identyfikacja prawidłowych konstelacji tagów wizyjnych
-- Filtrowanie fałszywych detekcji w algorytmach wizyjnych
-- Walidacja poprawności mapowania perspektywicznego
-- Zapewnienie jakości rekonstrukcji tagów
-"""
-
 from itertools import product
 
 import numpy as np

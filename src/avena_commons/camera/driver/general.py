@@ -111,11 +111,11 @@ class GeneralCameraWorker(Worker):
             # Submit funkcji do procesów (NIE tworzenie nowych workerów!)
             futures = {}
             for i, config in enumerate(self.postprocess_configuration):
-                # ✅ POPRAWNE - submit funkcji, nie tworzenie workerów
                 future = self.executor.submit(
+                    self.detector,
                     self._process_single_config,  # Funkcja do wykonania
                     frames,                       # Dane
-                    config,                       # Konfiguracja
+                    self.postprocess_configuration[i],                       # Konfiguracja
                     i                             # ID
                 )
                 futures[future] = i
@@ -136,7 +136,7 @@ class GeneralCameraWorker(Worker):
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
             return None
             
-    async def _setup_image_processing_workers(self, configs: list):
+    async def _setup_image_processing_workers(self):
         """Utwórz workery raz przy konfiguracji."""
         try:
             # Zamknij poprzedni executor jeśli istnieje
@@ -144,21 +144,19 @@ class GeneralCameraWorker(Worker):
                 self.executor.shutdown(wait=True)
             
             # Utwórz nowy executor
-            self.executor = ProcessPoolExecutor(max_workers=len(configs))
-            self.postprocess_configuration = configs
-            
+            self.executor = ProcessPoolExecutor(max_workers=len(self.postprocess_configuration))
+
             # Przygotuj workery (ale nie uruchamiaj jeszcze!)
             self.image_processing_workers = []
-            for i, config in enumerate(configs):
+            for i, config in enumerate(self.postprocess_configuration):
                 worker_info = {
-                    "worker_id": i,
-                    "config": config,
-                    "config_name": config["mode"],
-                    "status": "READY"  # READY, RUNNING, COMPLETED, ERROR
+                    "detector": self.detector,
+                    "config": self.postprocess_configuration[i],
+                    "config_name": self.postprocess_configuration[i]["mode"],
                 }
                 self.image_processing_workers.append(worker_info)
             
-            debug(f"Utworzono {len(self.image_processing_workers)} workerów do przetwarzania obrazów", 
+            debug(f"Utworzono {len(self.image_processing_workers)} workerów do przetwarzania obrazów: detector: '{self.detector}' postprocess configuration: {', '.join(config['mode'] for config in self.postprocess_configuration)}", 
                   self._message_logger)
             
             return True
@@ -240,10 +238,6 @@ class GeneralCameraWorker(Worker):
                         case "GET_STATE":
                             try:
                                 state = self.state
-                                # debug(
-                                #     f"{self.device_name} - Getting state: {state.name}",
-                                #     message_logger=self._message_logger,
-                                # )
                                 pipe_in.send(state)
                             except Exception as e:
                                 error(
@@ -262,11 +256,13 @@ class GeneralCameraWorker(Worker):
                         case "SET_POSTPROCESS_CONFIGURATION":
                             try:
                                 debug(
-                                    f"{self.device_name} - Received SET_POSTPROCESS_CONFIGURATION: {data[1]}",
+                                    f"{self.device_name} - Received SET_POSTPROCESS_CONFIGURATION: detector: '{data[1]}' postprocess configuration: {len(data[2])}",
                                     self._message_logger,
                                 )
-                                self.postprocess_configuration = data[1]
-                                await self._setup_image_processing_workers(self.postprocess_configuration)
+                                self.detector = data[1] # ustawienie detectora
+                                self.postprocess_configuration = data[2] # ustawienie konfiguracji
+                                # debug(f"{self.device_name} - Detector: {self.detector} Postprocess configuration: {len(self.postprocess_configuration)}", message_logger=self._message_logger)
+                                await self._setup_image_processing_workers()
 
                                 pipe_in.send(True)
                             except Exception as e:
@@ -293,7 +289,7 @@ class GeneralCameraWorker(Worker):
                     )
                     # przetwarzanie wizyjne
                     if self.postprocess_configuration:
-                        print(f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}")
+                        debug(f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}", message_logger=self._message_logger)
 
         except asyncio.CancelledError:
             info(
@@ -361,8 +357,8 @@ class GeneralCameraConnector(Connector):
             value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAMES"])
             return value
 
-    def set_postprocess_configuration(self, *, configuration: list = None):
+    def set_postprocess_configuration(self, *, detector: str = None, configuration: list = None):
         """Set postprocess configuration"""
         with self.__lock:
-            value = super()._send_thru_pipe(self._pipe_out, ["SET_POSTPROCESS_CONFIGURATION", configuration])
+            value = super()._send_thru_pipe(self._pipe_out, ["SET_POSTPROCESS_CONFIGURATION", detector, configuration])
             return value
