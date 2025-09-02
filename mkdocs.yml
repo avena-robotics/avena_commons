@@ -10,6 +10,7 @@ plugins:
         python:
           paths:
             - src
+            - /home/norbert/git/event_driven_proof_of_concept/lib
           options:
             docstring_style: google     # albo: numpy
             show_source: true
@@ -18,3 +19,5 @@ nav:
   - API:
       - io_event_listener: io_event_listener.md
       - orchestrator: orchestrator.md
+      - munchies: munchies.md
+      - warehouse: warehouse.md
