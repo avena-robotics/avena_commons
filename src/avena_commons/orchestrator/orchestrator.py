@@ -1,3 +1,14 @@
+"""Moduł Orchestrator.
+
+Odpowiedzialność:
+- Ładowanie, rejestracja i sortowanie scenariuszy, akcji, warunków
+- Harmonogram i współbieżne wykonywanie scenariuszy z limitami
+- Integracja z komponentami zewnętrznymi i klientami (monitoring stanu)
+
+Eksponuje:
+- Klasa `Orchestrator`
+"""
+
 import asyncio
 import importlib
 import inspect

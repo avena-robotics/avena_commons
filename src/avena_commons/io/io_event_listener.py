@@ -1,3 +1,14 @@
+"""Moduł IO Event Listener.
+
+Odpowiedzialność:
+- Serwer IO dla urządzeń wirtualnych i rzeczywistych
+- Routing zdarzeń, selekcja urządzeń, ładowanie konfiguracji, utrzymanie FSM
+- Monitorowanie zdrowia magistrali i zarządzanie cyklem życia urządzeń
+
+Eksponuje:
+- Klasa `IO_server`
+"""
+
 import importlib
 import json
 import traceback
