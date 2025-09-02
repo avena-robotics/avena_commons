@@ -1,9 +1,4 @@
 # Przegląd Orchestratora
-::: avena_commons.orchestrator.orchestrator
-    options:
-      members_order: source
-      show_root_heading: true
-      show_source: true
 
 ## Wprowadzenie
 
@@ -370,4 +365,9 @@ orch = Orchestrator(name="orch", port=5000, address="127.0.0.1")
 # ... integracja z pętlą asynchroniczną oraz cyklem życia FSM
 ```
 
-
+## Kod
+::: avena_commons.orchestrator.orchestrator
+    options:
+      members_order: source
+      show_root_heading: true
+      show_source: true

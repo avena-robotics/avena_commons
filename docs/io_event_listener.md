@@ -1,9 +1,4 @@
 # Przegląd Systemu IO Event Listener
-::: avena_commons.io.io_event_listener
-    options:
-      members_order: source
-      show_root_heading: true
-      show_source: true
 
 ## Wprowadzenie
 
@@ -714,3 +709,10 @@ Ta konfiguracja pokazuje, jak system umożliwia abstrakcję złożoności sprzę
 ## Podsumowanie
 
 System Event Listener, a w szczególności jego implementacja IO_server, zapewnia elastyczne i rozszerzalne środowisko do zarządzania komunikacją z urządzeniami sprzętowymi. Dzięki dynamicznemu ładowaniu konfiguracji, obsłudze zdarzeń i warstwom abstrakcji, umożliwia on tworzenie skalowalnych i łatwych w utrzymaniu systemów sterowania.
+
+## Kod
+::: avena_commons.io.io_event_listener
+    options:
+      members_order: source
+      show_root_heading: true
+      show_source: true
