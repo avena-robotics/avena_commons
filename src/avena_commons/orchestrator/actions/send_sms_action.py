@@ -139,7 +139,7 @@ class SendSmsAction(BaseAction):
                 clients_in_fault = []
                 for client_name, st in orch._state.items():
                     fsm = st.get("fsm_state")
-                    if fsm in {"ON_FAULT", "FAULT"}:
+                    if fsm in {"FAULT"}:
                         clients_in_fault.append(client_name)
                 clients_in_fault_str = (
                     ", ".join(sorted(clients_in_fault))
@@ -148,28 +148,41 @@ class SendSmsAction(BaseAction):
                 )
                 text = text.replace("{{ clients_in_fault }}", clients_in_fault_str)
 
-                # Nowe: {{ clients_error_messages }} - zbuduj listę klientów z błędami i ich komunikaty
+                # Nowe: {{ clients_error_messages }} - format jak w e-mailu, ale bez details_line
                 if "{{ clients_error_messages }}" in text:
-                    clients_with_errors = []
+                    formatted_entries: List[str] = []
                     try:
-                        for client_name, st in orch._state.items():
+                        for client_name, st in sorted(
+                            orch._state.items(), key=lambda x: x[0]
+                        ):
                             try:
                                 if (
                                     st.get("error")
                                     and st.get("error_message") is not None
                                 ):
-                                    msg = st.get("error_message")
-                                    if isinstance(msg, (list, tuple)):
-                                        msg = ", ".join(str(m) for m in msg)
-                                    clients_with_errors.append(f"{client_name}: {msg}")
+                                    raw_msg = st.get("error_message")
+                                    if isinstance(raw_msg, (list, tuple)):
+                                        raw_msg = ", ".join(str(m) for m in raw_msg)
+                                    msg = str(raw_msg)
+
+                                    # Heurystyka: jeśli występuje ", {", odetnij część słownikową, zostaw pierwszą linię
+                                    first_line = msg.strip()
+                                    if ", {" in msg:
+                                        pre, _rest = msg.split(", {", 1)
+                                        first_line = pre.strip()
+
+                                    entry_lines = [
+                                        f"- {client_name}:",
+                                        f"  --> {first_line}",
+                                    ]
+                                    formatted_entries.append("\n".join(entry_lines))
                             except Exception:
                                 continue
                     except Exception:
-                        clients_with_errors = []
+                        formatted_entries = []
+
                     clients_error_messages_str = (
-                        "; ".join(sorted(clients_with_errors))
-                        if clients_with_errors
-                        else "(brak)"
+                        "\n".join(formatted_entries) if formatted_entries else "(brak)"
                     )
                     text = text.replace(
                         "{{ clients_error_messages }}", clients_error_messages_str

@@ -87,25 +87,68 @@ async def _run_send_email_action(monkeypatch):  # type: ignore[override]
                 }
             }
             self._state = {
-                "io": {"fsm_state": "FAULT"},
-                "supervisor_1": {"fsm_state": "FAULT"},
-                "supervisor_2": {"fsm_state": "FAULT"},
-                "munchies_algo": {"fsm_state": "FAULT"},
+                "io": {
+                    "fsm_state": "FAULT",
+                    "error": True,
+                    "error_message": "oven1 - Timeout: Roleta 1 nie otworzyła się, {'device': 'oven1', 'roleta': 1, 'action': 'open'}",
+                },
+                "supervisor_1": {
+                    "fsm_state": "FAULT",
+                    "error": True,
+                    "error_message": "test",
+                },
+                "supervisor_2": {
+                    "fsm_state": "FAULT",
+                    "error": True,
+                    "error_message": "test",
+                },
+                "munchies_algo": {
+                    "fsm_state": "FAULT",
+                    "error": True,
+                    "error_message": "test",
+                },
             }
+            # Liczniki błędów akcji używane przez SendEmailAction
+            self._action_error_counts = {}
+
+        def get_action_error_count(self, action_type: str) -> int:
+            return int(self._action_error_counts.get(action_type, 0))
+
+        def increment_action_error_count(self, action_type: str) -> int:
+            current = int(self._action_error_counts.get(action_type, 0)) + 1
+            self._action_error_counts[action_type] = current
+            return current
+
+        def reset_action_error_count(self, action_type: str) -> None:
+            if action_type in self._action_error_counts:
+                del self._action_error_counts[action_type]
+
+        def should_skip_action_due_to_errors(
+            self, action_type: str, max_attempts: int
+        ) -> bool:
+            if max_attempts is None:
+                return False
+            try:
+                max_attempts_int = int(max_attempts)
+            except Exception:
+                max_attempts_int = 0
+            if max_attempts_int <= 0:
+                return False
+            return self.get_action_error_count(action_type) >= max_attempts_int
 
     orch = MockOrchestrator()
     context = ActionContext(
         orchestrator=orch,
-        message_logger=logger,
+        message_logger=None,
         scenario_name="test_email",
         # trigger_data={"source": "test_source"},
     )
 
     action_cfg = {
         "type": "send_email",
-        "to": ["ops@test", "ops@test2", "ops@test3"],
+        "to": ["norbert.niemc@pomagier.info"],
         "subject": "[TEST] Fault in {{ trigger.source }}",
-        "body": "List: {{ clients_in_fault }}",
+        "body": "Lista klientów w błędzie: {{ clients_in_fault }},\nbłędy:\n{{ clients_error_messages }}",
     }
 
     use_real = os.getenv("USE_REAL_SMTP", "0") == "1"
@@ -116,12 +159,13 @@ async def _run_send_email_action(monkeypatch):  # type: ignore[override]
             assert len(_DummySMTP.sent_messages) == 1
             sent = _DummySMTP.sent_messages[0]
             assert sent["from"]
-            assert "ops@test" in sent["to"]
+            assert "norbert.niemc@pomagier.info" in sent["to"]
             assert sent["subject"].startswith("[TEST]")
             # W treści powinna być lista klientów w błędzie
             assert "supervisor_1" in sent["body"]
     else:
         # W trybie realnym po prostu oczekujemy braku wyjątków podczas wysyłki
+        print("W trybie realnym")
         await executor.execute_action(action_cfg, context)
 
 

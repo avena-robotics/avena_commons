@@ -127,7 +127,7 @@ class SendEmailAction(BaseAction):
                 clients_in_fault = []
                 for client_name, st in orch._state.items():
                     fsm = st.get("fsm_state")
-                    if fsm in {"ON_FAULT", "FAULT"}:
+                    if fsm in {"FAULT"}:
                         clients_in_fault.append(client_name)
                 clients_in_fault_str = (
                     ", ".join(sorted(clients_in_fault))
@@ -145,26 +145,65 @@ class SendEmailAction(BaseAction):
                     "{{ clients_error_messages }}" in subject
                     or "{{ clients_error_messages }}" in body
                 ):
-                    clients_with_errors = []
+                    formatted_entries: List[str] = []
                     try:
-                        for client_name, st in orch._state.items():
+                        # deterministyczna kolejność według nazwy klienta
+                        for client_name, st in sorted(
+                            orch._state.items(), key=lambda x: x[0]
+                        ):
                             try:
                                 if (
                                     st.get("error")
                                     and st.get("error_message") is not None
                                 ):
-                                    msg = st.get("error_message")
-                                    if isinstance(msg, (list, tuple)):
-                                        msg = ", ".join(str(m) for m in msg)
-                                    clients_with_errors.append(f"{client_name}: {msg}")
+                                    raw_msg = st.get("error_message")
+                                    if isinstance(raw_msg, (list, tuple)):
+                                        raw_msg = ", ".join(str(m) for m in raw_msg)
+                                    msg = str(raw_msg)
+
+                                    # Podziel komunikat na część opisową i szczegóły słownika (jeśli występują)
+                                    first_line = msg.strip()
+                                    details_line = None
+                                    if ", {" in msg:
+                                        pre, rest = msg.split(", {", 1)
+                                        first_line = pre.strip()
+                                        details_line = "{" + rest.strip()
+
+                                    entry_lines = [
+                                        f"- {client_name}:",
+                                        f"  --> {first_line}",
+                                    ]
+                                    if details_line:
+                                        # Sformatuj szczegóły słownika do: key: value => key: value
+                                        def _format_details_line(details: str) -> str:
+                                            s = (details or "").strip()
+                                            if s.startswith("{") and s.endswith("}"):
+                                                s = s[1:-1]
+                                            parts: List[str] = []
+                                            for chunk in s.split(","):
+                                                if ":" not in chunk:
+                                                    continue
+                                                key, val = chunk.split(":", 1)
+                                                key = key.strip().strip("'\"")
+                                                val = val.strip().strip("'\"")
+                                                parts.append(f"{key}: {val}")
+                                            return (
+                                                " => ".join(parts) if parts else details
+                                            )
+
+                                        formatted_details = _format_details_line(
+                                            details_line
+                                        )
+                                        entry_lines.append(f"      {formatted_details}")
+
+                                    formatted_entries.append("\n".join(entry_lines))
                             except Exception:
                                 continue
                     except Exception:
-                        clients_with_errors = []
+                        formatted_entries = []
+
                     clients_error_messages_str = (
-                        "; ".join(sorted(clients_with_errors))
-                        if clients_with_errors
-                        else "(brak)"
+                        "\n".join(formatted_entries) if formatted_entries else "(brak)"
                     )
                     subject = subject.replace(
                         "{{ clients_error_messages }}", clients_error_messages_str
