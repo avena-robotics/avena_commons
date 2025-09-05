@@ -161,6 +161,26 @@ class IO_server(EventListener):
         """
         if self._debug:
             debug("FSM: Acknowledging fault (IO)", message_logger=self._message_logger)
+            debug(
+                f"Previous error state: _error={self._error}, _error_message={self._error_message}",
+                message_logger=self._message_logger,
+            )
+
+        # Update self._state for error recovery
+        if hasattr(self, "_state") and isinstance(self._state, dict):
+            # Update FSM device states from ERROR to IDLE
+            virtual_devices = self._state.get("virtual_devices", {})
+            for vname, vdata in virtual_devices.items():
+                # FSM state recovery for virtual devices
+                if isinstance(vdata, dict):
+                    # If device has 'state_name' and is in ERROR, set to UNINITIALIZED
+                    if vdata.get("state_name") == "ERROR":
+                        vdata["state_name"] = "UNINITIALIZED"
+                    # If device has '__fsm' and is in ERROR, set to IDLE
+                    if vdata.get("__fsm") == "ERROR":
+                        vdata["__fsm"] = "IDLE"
+        self.update_state()
+
         # Resetuj lokalny stan błędu IO
         self._error = False
         self._error_message = None

@@ -1272,8 +1272,8 @@ class EventListener:
                         await self.on_error()
                         self._change_fsm_state(EventListenerState.FAULT)
                     case EventListenerState.ACK:
-                        self.__save_state()
                         await self.on_ack()
+                        self.__save_state()
                         self._change_fsm_state(EventListenerState.STOPPED)
                     case _:
                         error(
