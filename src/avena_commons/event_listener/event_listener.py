@@ -1857,7 +1857,7 @@ class EventListener:
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                event_timestamp = event.timestamp.isoformat()
+                event_timestamp = event.timestamp.isoformat(sep=" ")
 
                 self._processing_events_dict[event_timestamp] = event
 
@@ -1876,12 +1876,12 @@ class EventListener:
     def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
             # Obsługa zarówno datetime jak i string timestamp
-            timestamp_key = event.timestamp.isoformat()
-            if not event.is_system_event:
-                debug(
-                    f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
-                    message_logger=self._message_logger,
-                )
+            timestamp_key = event.timestamp.isoformat(sep=" ")
+
+            debug(
+                f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
+                message_logger=self._message_logger,
+            )
 
             with self.__atomic_operation_for_processing_events():
                 event = self._processing_events_dict[timestamp_key]
