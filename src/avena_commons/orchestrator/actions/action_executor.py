@@ -7,8 +7,6 @@ from typing import Any, Dict
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
-from .pause_scenario_action import PauseScenarioAction
-from .resume_scenario_action import ResumeScenarioAction
 from .send_command_action import SendCommandAction
 from .send_email_action import SendEmailAction
 from .systemctl_action import SystemctlAction
@@ -44,9 +42,7 @@ class ActionExecutor:
         
         # NOWE: Akcje kontroli przepływu scenariuszy
         self._actions["execute_scenario"] = ExecuteScenarioAction()
-        self._actions["pause_scenario"] = PauseScenarioAction()
-        self._actions["resume_scenario"] = ResumeScenarioAction()
-
+        
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
         Rejestruje nową akcję lub nadpisuje istniejącą.

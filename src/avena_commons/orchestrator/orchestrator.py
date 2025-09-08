@@ -17,7 +17,7 @@ import traceback
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from avena_commons.event_listener.event import Event
 from avena_commons.event_listener.event_listener import (
@@ -33,13 +33,6 @@ from .base.base_condition import BaseCondition
 
 # Import komponentów
 from .components import DatabaseComponent
-
-# Import nowego systemu zarządzania wykonaniem scenariuszy
-from .execution_manager import (
-    ExecutionContext,
-    ExecutionState,
-    ScenarioExecutionManager,
-)
 
 # Import nowego systemu warunków
 from .factories.condition_factory import ConditionFactory
@@ -148,11 +141,6 @@ class Orchestrator(EventListener):
             register_default_actions=False
         )  # Nowy system akcji - akcje będą ładowane dynamicznie
         
-        # NOWY: System zarządzania wykonaniem scenariuszy z kontrolą przepływu
-        self._execution_manager = ScenarioExecutionManager(
-            orchestrator=self,
-            message_logger=self._message_logger
-        )
         
         # self._autonomous_manager = AutonomousManager(
         #     self, self._message_logger
@@ -1837,208 +1825,3 @@ class Orchestrator(EventListener):
                 "🧹 Cleanup aktywnych scenariuszy zakończony",
                 message_logger=self._message_logger,
             )
-
-    # ==== NOWE API kontroli scenariuszy z zaawansowanym zarządzaniem wykonaniem ====
-
-    async def execute_scenario_with_control(
-        self,
-        scenario_name: str,
-        trigger_data: Optional[Dict[str, Any]] = None,
-        parent_execution_id: Optional[str] = None
-    ) -> str:
-        """
-        Rozszerzona wersja execute_scenario z kontrolą przepływu.
-        
-        Zachowuje pełną kompatybilność z execute_scenario, ale dodatkowo
-        umożliwia kontrolę przepływu (pause/resume/nesting).
-
-        Args:
-            scenario_name: Nazwa scenariusza do wykonania
-            trigger_data: Opcjonalne dane z triggera
-            parent_execution_id: ID rodzica dla zagnieżdżonych scenariuszy
-
-        Returns:
-            str: ID wykonania scenariusza
-
-        Raises:
-            Exception: W przypadku błędu uruchomienia scenariusza
-        """
-        if scenario_name not in self._scenarios:
-            raise ValueError(f"Scenariusz '{scenario_name}' nie został znaleziony")
-
-        scenario = self._scenarios[scenario_name]
-        
-        info(
-            f"🎬 Rozpoczynam wykonywanie scenariusza z kontrolą: {scenario_name}",
-            message_logger=self._message_logger,
-        )
-
-        # Przygotuj podstawowy kontekst akcji
-        base_context = ActionContext(
-            orchestrator=self,
-            message_logger=self._message_logger,
-            trigger_data=trigger_data,
-            scenario_name=scenario_name,
-        )
-
-        # Utwórz kontekst wykonania z kontrolą przepływu
-        execution_context = await self._execution_manager.create_execution_context(
-            scenario_name=scenario_name,
-            base_context=base_context,
-            parent_execution_id=parent_execution_id
-        )
-
-        # Dodaj execution_id do kontekstu akcji
-        base_context.execution_id = execution_context.execution_id
-
-        try:
-            actions = scenario.get("actions", [])
-            
-            for action_index, action_config in enumerate(actions):
-                # Aktualizuj indeks bieżącej akcji
-                execution_context.current_action_index = action_index
-                
-                # Sprawdź czy wykonanie jest zatrzymane
-                await self._execution_manager.wait_for_resume(execution_context.execution_id)
-                
-                # Sprawdź czy wykonanie zostało anulowane
-                if execution_context.state == ExecutionState.CANCELLED:
-                    info(
-                        f"🚫 Wykonanie scenariusza anulowane: {execution_context.execution_id}",
-                        message_logger=self._message_logger,
-                    )
-                    break
-
-                # Wykonaj akcję
-                await self._action_executor.execute_action(action_config, base_context)
-
-            # Oznacz jako zakończone pomyślnie
-            await self._execution_manager.complete_execution(
-                execution_context.execution_id, 
-                success=True
-            )
-
-            info(
-                f"✅ Scenariusz z kontrolą '{scenario_name}' zakończony pomyślnie: {execution_context.execution_id}",
-                message_logger=self._message_logger,
-            )
-            
-            return execution_context.execution_id
-
-        except ActionExecutionError as e:
-            error(
-                f"❌ Błąd wykonywania scenariusza z kontrolą '{scenario_name}': {e}",
-                message_logger=self._message_logger,
-            )
-            
-            # Oznacz jako zakończone błędem
-            await self._execution_manager.complete_execution(
-                execution_context.execution_id, 
-                success=False, 
-                error_message=str(e)
-            )
-            
-            raise
-            
-        except Exception as e:
-            error(
-                f"💥 Nieoczekiwany błąd w scenariuszu z kontrolą '{scenario_name}': {e}",
-                message_logger=self._message_logger,
-            )
-            
-            # Oznacz jako zakończone błędem
-            await self._execution_manager.complete_execution(
-                execution_context.execution_id, 
-                success=False, 
-                error_message=str(e)
-            )
-            
-            raise
-
-    async def pause_scenario_execution(self, execution_id: str) -> bool:
-        """
-        Zatrzymuje wykonanie scenariusza.
-        
-        Analogiczna do send_command - wysyła sygnał pause do scenariusza.
-
-        Args:
-            execution_id: ID wykonania scenariusza do zatrzymania
-
-        Returns:
-            bool: True jeśli zatrzymano pomyślnie, False w przeciwnym razie
-        """
-        return await self._execution_manager.pause_execution(execution_id)
-
-    async def resume_scenario_execution(self, execution_id: str) -> bool:
-        """
-        Wznawia wykonanie scenariusza.
-        
-        Analogiczna do send_command - wysyła sygnał resume do scenariusza.
-
-        Args:
-            execution_id: ID wykonania scenariusza do wznowienia
-
-        Returns:
-            bool: True jeśli wznowiono pomyślnie, False w przeciwnym razie
-        """
-        return await self._execution_manager.resume_execution(execution_id)
-
-    def get_execution_status(self, execution_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Zwraca status wykonania scenariusza.
-
-        Args:
-            execution_id: ID wykonania
-
-        Returns:
-            Dict[str, Any] | None: Status wykonania lub None jeśli nie znaleziono
-        """
-        return self._execution_manager.get_execution_status(execution_id)
-
-    def list_active_executions(self) -> List[Dict[str, Any]]:
-        """
-        Zwraca listę wszystkich aktywnych wykonań scenariuszy.
-
-        Returns:
-            List[Dict[str, Any]]: Lista statusów aktywnych wykonań
-        """
-        return self._execution_manager.list_active_executions()
-
-    def get_execution_stack(self) -> List[str]:
-        """
-        Zwraca aktualny stos zagnieżdżonych scenariuszy.
-
-        Returns:
-            List[str]: Lista ID wykonań w kolejności zagnieżdżenia
-        """
-        return self._execution_manager.get_execution_stack()
-
-    def get_execution_manager_status(self) -> Dict[str, Any]:
-        """
-        Zwraca pełny status systemu zarządzania wykonaniem scenariuszy.
-
-        Returns:
-            Dict[str, Any]: Status execution managera z wszystkimi wykonaniami
-        """
-        active_executions = self.list_active_executions()
-        execution_stack = self.get_execution_stack()
-        
-        return {
-            "active_executions_count": len(active_executions),
-            "active_executions": active_executions,
-            "execution_stack": execution_stack,
-            "execution_stack_depth": len(execution_stack),
-            "has_nested_executions": len(execution_stack) > 0,
-            "paused_executions": [
-                exec for exec in active_executions 
-                if exec.get("state") == "PAUSED"
-            ],
-            "running_executions": [
-                exec for exec in active_executions 
-                if exec.get("state") == "RUNNING"
-            ],
-            "waiting_executions": [
-                exec for exec in active_executions 
-                if exec.get("state") == "WAITING_FOR_NESTED"
-            ]
-        }

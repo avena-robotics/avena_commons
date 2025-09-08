@@ -6,8 +6,28 @@
   "priority": 50,
   "cooldown": 30,
   "trigger": {
-    "type": "manual",
-    "description": "Scenariusz uruchamiany manualnie dla demonstracji"
+    "type": "automatic",
+    "description": "Scenariusz uruchamiany automatycznie dla demonstracji. W state = RUN",
+    "conditions": {
+      "and": {
+        "conditions": [
+          {
+            "client_state": {
+              "all_services_in_state": [
+                "RUN"
+              ]
+            }
+          },
+          {
+            "client_state": {
+              "no_service_in_state": [
+                "PAUSE, FAULT"
+              ]
+            }
+          }
+        ]
+      }
+    }
   },
   "actions": [
     {
@@ -24,11 +44,10 @@
     },
     {
       "type": "execute_scenario",
-      "scenario": "Diagnostyka systemu",
+      "scenario": "diagnostyka_systemu",
       "wait_for_completion": true,
-      "timeout": "120s",
-      "on_nested_failure": "continue",
-      "description": "Uruchomienie scenariusza diagnostycznego"
+      "timeout": 120,
+      "description": "Uruchomienie scenariusza diagnostycznego - czekam na zakończenie"
     },
     {
       "type": "log_event",
