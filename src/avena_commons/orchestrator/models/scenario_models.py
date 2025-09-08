@@ -4,7 +4,7 @@ Modele Pydantic dla scenariuszy orkiestratora.
 
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class TriggerModel(BaseModel):
@@ -24,7 +24,7 @@ class TriggerModel(BaseModel):
     description: Optional[str] = Field(None, description="Opis wyzwalacza")
     conditions: Optional[Dict[str, Any]] = Field(None, description="Warunki wyzwalania")
 
-    @validator("type")
+    @field_validator("type")
     def validate_trigger_type(cls, v):
         """Waliduje typ wyzwalacza."""
         valid_types = {"manual", "automatic", "scheduled", "event"}
@@ -115,7 +115,7 @@ class ActionModel(BaseModel):
     )
 
 
-    @validator("type")
+    @field_validator("type")
     def validate_action_type(cls, v):
         """Waliduje czy typ akcji jest znany."""
         known_types = {
@@ -134,7 +134,7 @@ class ActionModel(BaseModel):
             pass
         return v
 
-    @validator("level")
+    @field_validator("level")
     def validate_log_level(cls, v):
         """Waliduje poziom logowania."""
         if v is not None:
@@ -145,7 +145,7 @@ class ActionModel(BaseModel):
                 )
         return v
 
-    @validator("timeout")
+    @field_validator("timeout")
     def validate_timeout_format(cls, v):
         """Waliduje format timeout."""
         if v is not None:
@@ -202,14 +202,14 @@ class ScenarioModel(BaseModel):
     # Metadane
     metadata: Optional[Dict[str, Any]] = Field(None, description="Dodatkowe metadane")
 
-    @validator("name")
+    @field_validator("name")
     def validate_name_not_empty(cls, v):
         """Waliduje czy nazwa nie jest pusta."""
         if not v.strip():
             raise ValueError("Nazwa scenariusza nie może być pusta")
         return v.strip()
 
-    @validator("actions")
+    @field_validator("actions")
     def validate_actions_not_empty(cls, v):
         """Waliduje czy lista akcji nie jest pusta."""
         if not v:
@@ -225,7 +225,7 @@ class ScenarioCollection(BaseModel):
     scenarios: List[ScenarioModel] = Field(..., description="Lista scenariuszy")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Metadane kolekcji")
 
-    @validator("scenarios")
+    @field_validator("scenarios")
     def validate_unique_scenario_names(cls, v):
         """Waliduje czy nazwy scenariuszy są unikalne."""
         names = [scenario.name for scenario in v]
