@@ -82,79 +82,51 @@ class ExecuteScenarioAction(BaseAction):
             )
 
         try:
-            # Pobierz execution_manager z orchestratora
-            execution_manager = getattr(orchestrator, '_execution_manager', None)
-            if not execution_manager:
-                raise ActionExecutionError(
-                    "execute_scenario",
-                    "ScenarioExecutionManager nie jest dostępny w orchestratorze"
-                )
-
-            # Pobierz ID bieżącego wykonania z kontekstu
-            current_execution_id = getattr(context, 'execution_id', None)
-
             # Przygotuj dane triggera dla zagnieżdżonego scenariusza
             nested_trigger_data = {
                 "source": "nested_scenario",
                 "event_type": "NESTED_EXECUTION",
                 "parent_scenario": context.scenario_name,
-                "parent_execution_id": current_execution_id,
                 "timestamp": asyncio.get_event_loop().time()
             }
 
-            # Uruchom scenariusz zagnieżdżony
-            nested_execution_id = await orchestrator.execute_scenario_with_control(
-                scenario_name=scenario_name,
-                trigger_data=nested_trigger_data,
-                parent_execution_id=current_execution_id
-            )
-
-            info(
-                f"🚀 Uruchomiono scenariusz zagnieżdżony: {nested_execution_id}",
-                message_logger=context.message_logger
-            )
-
-            # Jeśli nie czekamy na zakończenie, zwróć ID i zakończ
+            # Jeśli nie czekamy na zakończenie, uruchom asynchronicznie
             if not wait_for_completion:
+                # Uruchom scenariusz w tle bez czekania
+                asyncio.create_task(
+                    orchestrator.execute_scenario(scenario_name, nested_trigger_data)
+                )
                 info(
-                    f"⏭️ Nie czekam na zakończenie scenariusza: {nested_execution_id}",
+                    f"🚀 Uruchomiono scenariusz zagnieżdżony w tle: '{scenario_name}'",
                     message_logger=context.message_logger
                 )
-                return nested_execution_id
+                return f"async_{scenario_name}"
 
-            # Czekaj na zakończenie z timeout
+            # Uruchom scenariusz synchronicznie z timeout
             timeout_seconds = self._parse_timeout(timeout_str)
             
             info(
-                f"⏳ Oczekuję na zakończenie scenariusza: {nested_execution_id} (timeout: {timeout_seconds}s)",
+                f"🚀 Uruchamiam scenariusz zagnieżdżony synchronicznie: '{scenario_name}' (timeout: {timeout_seconds}s)",
                 message_logger=context.message_logger
             )
 
             try:
-                # Czekaj na zakończenie zagnieżdżonego scenariusza
-                await asyncio.wait_for(
-                    self._wait_for_scenario_completion(execution_manager, nested_execution_id),
+                # Uruchom scenariusz z timeout
+                result = await asyncio.wait_for(
+                    orchestrator.execute_scenario(scenario_name, nested_trigger_data),
                     timeout=timeout_seconds
                 )
 
-                # Sprawdź wynik
-                status = execution_manager.get_execution_status(nested_execution_id)
-                if not status:
-                    raise ActionExecutionError(
-                        "execute_scenario",
-                        f"Nie można pobrać statusu scenariusza: {nested_execution_id}"
-                    )
-
-                if status["state"] == "COMPLETED":
+                # result jest bool - True oznacza sukces, False błąd
+                if result:
                     info(
-                        f"✅ Scenariusz zagnieżdżony zakończony pomyślnie: {nested_execution_id}",
+                        f"✅ Scenariusz zagnieżdżony zakończony pomyślnie: '{scenario_name}'",
                         message_logger=context.message_logger
                     )
-                    return nested_execution_id
-                elif status["state"] == "FAILED":
-                    error_msg = status.get("error_message", "Nieznany błąd")
+                    return scenario_name
+                else:
                     error(
-                        f"❌ Scenariusz zagnieżdżony zakończony błędem: {nested_execution_id} - {error_msg}",
+                        f"❌ Scenariusz zagnieżdżony zakończony błędem: '{scenario_name}'",
                         message_logger=context.message_logger
                     )
                     
@@ -163,21 +135,16 @@ class ExecuteScenarioAction(BaseAction):
                             f"⚠️ Kontynuuję mimo błędu zagnieżdżonego scenariusza (on_failure=continue)",
                             message_logger=context.message_logger
                         )
-                        return nested_execution_id
+                        return scenario_name
                     else:
                         raise ActionExecutionError(
                             "execute_scenario",
-                            f"Scenariusz zagnieżdżony '{scenario_name}' zakończony błędem: {error_msg}"
+                            f"Scenariusz zagnieżdżony '{scenario_name}' zakończony błędem"
                         )
-                else:
-                    raise ActionExecutionError(
-                        "execute_scenario",
-                        f"Scenariusz zagnieżdżony w nieoczekiwanym stanie: {status['state']}"
-                    )
 
             except asyncio.TimeoutError:
                 error(
-                    f"⏰ Timeout oczekiwania na scenariusz: {nested_execution_id} ({timeout_seconds}s)",
+                    f"⏰ Timeout oczekiwania na scenariusz: '{scenario_name}' ({timeout_seconds}s)",
                     message_logger=context.message_logger
                 )
                 
@@ -186,7 +153,7 @@ class ExecuteScenarioAction(BaseAction):
                         f"⚠️ Kontynuuję mimo timeout (on_failure=continue)",
                         message_logger=context.message_logger
                     )
-                    return nested_execution_id
+                    return scenario_name
                 else:
                     raise ActionExecutionError(
                         "execute_scenario",
@@ -205,30 +172,3 @@ class ExecuteScenarioAction(BaseAction):
                 "execute_scenario",
                 f"Nieoczekiwany błąd podczas uruchamiania scenariusza '{scenario_name}': {str(e)}"
             )
-
-    async def _wait_for_scenario_completion(self, execution_manager, execution_id: str) -> None:
-        """
-        Oczekuje na zakończenie scenariusza.
-
-        Args:
-            execution_manager: ScenarioExecutionManager
-            execution_id: ID wykonania do oczekiwania
-
-        Raises:
-            ActionExecutionError: Jeśli scenariusz nie istnieje
-        """
-        while True:
-            status = execution_manager.get_execution_status(execution_id)
-            
-            if not status:
-                raise ActionExecutionError(
-                    "execute_scenario",
-                    f"Scenariusz {execution_id} nie istnieje lub został usunięty"
-                )
-
-            state = status["state"]
-            if state in ["COMPLETED", "FAILED", "CANCELLED"]:
-                break
-
-            # Czekaj krótko przed kolejnym sprawdzeniem
-            await asyncio.sleep(0.5)
