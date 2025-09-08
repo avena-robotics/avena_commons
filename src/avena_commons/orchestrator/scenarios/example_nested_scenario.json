@@ -46,7 +46,7 @@
       "type": "execute_scenario",
       "scenario": "diagnostyka_systemu",
       "wait_for_completion": true,
-      "timeout": 120,
+      "timeout": "20s",
       "description": "Uruchomienie scenariusza diagnostycznego - czekam na zakończenie"
     },
     {
