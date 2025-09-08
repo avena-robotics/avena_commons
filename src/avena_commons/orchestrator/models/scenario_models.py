@@ -40,9 +40,10 @@ class ActionModel(BaseModel):
     Model pojedynczej akcji scenariusza.
 
     Zawiera parametry wspólne i specyficzne dla wybranych typów akcji.
+    Rozszerzony o kontrolę przepływu scenariuszy (pause/resume/nesting).
     """
 
-    type: str = Field(..., description="Typ akcji (np. 'log_event', 'send_command')")
+    type: str = Field(..., description="Typ akcji (np. 'log_event', 'send_command', 'execute_scenario')")
 
     # Parametry wspólne
     description: Optional[str] = Field(None, description="Opis akcji")
@@ -103,6 +104,29 @@ class ActionModel(BaseModel):
         None, description="Konfiguracja SMS per-akcja (opcjonalne, nadpisuje globalną)"
     )
 
+    # NOWE: Parametry kontroli przepływu scenariuszy
+    # Parametry akcji execute_scenario
+    scenario: Optional[str] = Field(None, description="Nazwa scenariusza do uruchomienia")
+    wait_for_completion: Optional[bool] = Field(
+        True, description="Czy czekać na zakończenie zagnieżdżonego scenariusza"
+    )
+    on_nested_failure: Optional[str] = Field(
+        "fail", description="Akcja przy błędzie zagnieżdżonego ('continue' lub 'fail')"
+    )
+
+    # Parametry akcji pause_scenario i resume_scenario
+    execution_id: Optional[str] = Field(
+        None, description="ID wykonania scenariusza do kontroli ('current' dla bieżącego)"
+    )
+
+    # Checkpoint/resume system
+    checkpoint_before: Optional[bool] = Field(
+        False, description="Zapisz checkpoint przed wykonaniem akcji"
+    )
+    resume_point: Optional[str] = Field(
+        None, description="Punkt wznowienia scenariusza"
+    )
+
     @validator("type")
     def validate_action_type(cls, v):
         """Waliduje czy typ akcji jest znany."""
@@ -113,7 +137,11 @@ class ActionModel(BaseModel):
             "send_email",
             "send_sms",
             "test",
-            "custom_process",  # Dodaj inne znane typy
+            "custom_process",
+            # NOWE: Typy kontroli przepływu scenariuszy
+            "execute_scenario",
+            "pause_scenario", 
+            "resume_scenario",
         }
         if v not in known_types:
             # Nie blokujemy nieznanych typów - mogą być dynamicznie ładowane

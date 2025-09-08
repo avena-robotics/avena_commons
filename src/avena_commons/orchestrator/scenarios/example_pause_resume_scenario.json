@@ -1,0 +1,49 @@
+{
+  "name": "Przykład scenariusza z zatrzymaniem",
+  "description": "Demonstracja zatrzymywania i wznawiania scenariusza",
+  "version": "1.0",
+  "author": "System",
+  "priority": 60,
+  "cooldown": 30,
+  "trigger": {
+    "type": "manual",
+    "description": "Scenariusz uruchamiany manualnie dla demonstracji pause/resume"
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🎬 Rozpoczynam scenariusz z możliwością zatrzymania",
+      "description": "Informacja o rozpoczęciu scenariusza"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📋 Wykonuję pierwszą fazę operacji",
+      "description": "Pierwsza faza"
+    },
+    {
+      "type": "pause_scenario",
+      "execution_id": "current",
+      "description": "Zatrzymanie scenariusza dla zatwierdzenia użytkownika"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "✅ Scenariusz wznowiony - kontynuuję drugą fazę",
+      "description": "Informacja o wznowieniu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔧 Wykonuję drugą fazę operacji",
+      "description": "Druga faza"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "🎯 Scenariusz z zatrzymaniem zakończony pomyślnie",
+      "description": "Zakończenie scenariusza"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "Przykład scenariusza z zagnieżdżonym",
+  "description": "Demonstracja uruchamiania scenariusza zagnieżdżonego z kontrolą przepływu",
+  "version": "1.0",
+  "author": "System",
+  "priority": 50,
+  "cooldown": 30,
+  "trigger": {
+    "type": "manual",
+    "description": "Scenariusz uruchamiany manualnie dla demonstracji"
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🎬 Rozpoczynam scenariusz główny z zagnieżdżonym",
+      "description": "Informacja o rozpoczęciu scenariusza głównego"
+    },
+    {
+      "type": "log_event",
+      "level": "info", 
+      "message": "📋 Przygotowuję system przed uruchomieniem diagnostyki",
+      "description": "Przygotowanie systemu"
+    },
+    {
+      "type": "execute_scenario",
+      "scenario": "Diagnostyka systemu",
+      "wait_for_completion": true,
+      "timeout": "120s",
+      "on_nested_failure": "continue",
+      "description": "Uruchomienie scenariusza diagnostycznego"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "✅ Diagnostyka zakończona - kontynuuję główny scenariusz",
+      "description": "Potwierdzenie zakończenia diagnostyki"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "🎯 Scenariusz główny zakończony pomyślnie",
+      "description": "Zakończenie scenariusza głównego"
+    }
+  ]
+}
