@@ -83,6 +83,12 @@ class BaseAction(ABC):
         if "{{ trigger.source }}" in result and trigger.get("source"):
             result = result.replace("{{ trigger.source }}", str(trigger["source"]))
 
+        if "{{ trigger.transaction_id }}" in result and trigger.get("transaction_id") is not None:
+            result = result.replace("{{ trigger.transaction_id }}", str(trigger["transaction_id"]))
+
+        if "{{ trigger.admin_email }}" in result and trigger.get("admin_email"):
+            result = result.replace("{{ trigger.admin_email }}", str(trigger["admin_email"]))
+
         if "{{ trigger.payload.error_code }}" in result:
             payload = trigger.get("payload", {})
             if payload.get("error_code") is not None:

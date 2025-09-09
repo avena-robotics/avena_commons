@@ -32,7 +32,7 @@ from .actions.base_action import BaseAction
 from .base.base_condition import BaseCondition
 
 # Import komponentów
-from .components import DatabaseComponent
+from .components import DatabaseComponent, LynxAPIComponent
 
 # Import nowego systemu warunków
 from .factories.condition_factory import ConditionFactory
@@ -134,8 +134,8 @@ class Orchestrator(EventListener):
         self._running_scenarios: Dict[str, asyncio.Task] = {}
         self._scenario_execution_count: Dict[str, int] = {}
 
-        # Komponenty zewnętrzne (bazy danych)
-        self._components: Dict[str, DatabaseComponent] = {}
+        # Komponenty zewnętrzne (bazy danych, API)
+        self._components: Dict[str, Any] = {}
 
         self._action_executor = ActionExecutor(
             register_default_actions=False
@@ -370,6 +370,28 @@ class Orchestrator(EventListener):
                             f"✅ Komponent bazodanowy '{component_name}' załadowany",
                             message_logger=self._message_logger,
                         )
+
+                    elif component_type == "lynx_api":
+                        info(
+                            f"🔧 Ładowanie komponentu Lynx API: {component_name}",
+                            message_logger=self._message_logger,
+                        )
+
+                        # Utwórz komponent Lynx API
+                        component = LynxAPIComponent(
+                            name=component_name,
+                            config=component_config,
+                            message_logger=self._message_logger,
+                        )
+
+                        # Zapisz komponent
+                        self._components[component_name] = component
+
+                        info(
+                            f"✅ Komponent Lynx API '{component_name}' załadowany",
+                            message_logger=self._message_logger,
+                        )
+
                     else:
                         warning(
                             f"⚠️ Nieznany typ komponentu '{component_type}' dla '{component_name}' - pomijam",
@@ -922,6 +944,7 @@ class Orchestrator(EventListener):
             "log": "log_event",
             "send_command": "send_command",
             "wait_for_state": "wait_for_state",
+            "lynx_refund": "lynx_refund",
         }
 
         return action_type_mapping.get(result, result)

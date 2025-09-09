@@ -1,0 +1,33 @@
+{
+  "name": "lynx_refund_example",
+  "description": "Przykładowy scenariusz wysyłający żądanie refund do Lynx API",
+  "version": "1.0.0",
+  "priority": 100,
+  "manual_run": true,
+  "conditions": [
+    {
+      "type": "time",
+      "always_true": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "log",
+      "message": "Rozpoczynam wysyłanie żądania refund do Lynx API",
+      "level": "info"
+    },
+    {
+      "type": "lynx_refund",
+      "component": "lynx_api",
+      "transaction_id": 123456,
+      "refund_amount": 0,
+      "refund_reason": "Test refund from orchestrator",
+      "refund_email_list": "test@example.com"
+    },
+    {
+      "type": "log",
+      "message": "Żądanie refund zostało wysłane",
+      "level": "info"
+    }
+  ]
+}

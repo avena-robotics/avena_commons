@@ -9,6 +9,7 @@ from .action_executor import ActionExecutor
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .database_update_action_base import DatabaseUpdateAction
 from .log_action import LogAction
+from .lynx_refund_action import LynxRefundAction
 from .send_command_action import SendCommandAction
 from .send_email_action import SendEmailAction
 from .send_sms_action import SendSmsAction
@@ -20,6 +21,7 @@ __all__ = [
     "ActionContext",
     "ActionExecutionError",
     "LogAction",
+    "LynxRefundAction",
     "SendCommandAction",
     "WaitForStateAction",
     "SystemctlAction",
