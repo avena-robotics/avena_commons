@@ -134,6 +134,11 @@ class Orchestrator(EventListener):
         self._running_scenarios: Dict[str, asyncio.Task] = {}
         self._scenario_execution_count: Dict[str, int] = {}
 
+        # NOWE: Liczniki wykonań scenariuszy dla systemu blokowania po przekroczeniu limitu
+        self._scenario_execution_counters: Dict[str, int] = {}
+        # Flagi scenariuszy zablokowanych do ACK
+        self._blocked_scenarios: Dict[str, bool] = {}
+
         # Komponenty zewnętrzne (bazy danych, API)
         self._components: Dict[str, Any] = {}
 
@@ -193,6 +198,95 @@ class Orchestrator(EventListener):
         if max_attempts_int <= 0:
             return False
         return self.get_action_error_count(action_type) >= max_attempts_int
+
+    # ==== Liczniki wykonań scenariuszy ====
+    def get_scenario_execution_count(self, scenario_name: str) -> int:
+        """Zwraca liczbę wykonań scenariusza od ostatniego ACK."""
+        return self._scenario_execution_counters.get(scenario_name, 0)
+
+    def increment_scenario_execution_count(self, scenario_name: str) -> int:
+        """Zwiększa licznik wykonań scenariusza i zwraca aktualną wartość."""
+        current = self._scenario_execution_counters.get(scenario_name, 0) + 1
+        self._scenario_execution_counters[scenario_name] = current
+        return current
+
+    def reset_scenario_execution_count(self, scenario_name: str) -> None:
+        """Resetuje licznik wykonań scenariusza po ACK."""
+        if scenario_name in self._scenario_execution_counters:
+            del self._scenario_execution_counters[scenario_name]
+        if scenario_name in self._blocked_scenarios:
+            del self._blocked_scenarios[scenario_name]
+        info(
+            f"🔁 Reset licznika wykonań dla scenariusza: {scenario_name}",
+            message_logger=self._message_logger,
+        )
+
+    def reset_all_scenario_execution_counters(self) -> None:
+        """Resetuje wszystkie liczniki wykonań scenariuszy po ACK."""
+        reset_count = len(self._scenario_execution_counters) + len(self._blocked_scenarios)
+        self._scenario_execution_counters.clear()
+        self._blocked_scenarios.clear()
+        if reset_count > 0:
+            info(
+                f"🔁 Reset wszystkich liczników scenariuszy ({reset_count} scenariuszy)",
+                message_logger=self._message_logger,
+            )
+
+    def is_scenario_blocked(self, scenario_name: str) -> bool:
+        """Sprawdza czy scenariusz jest zablokowany z powodu przekroczenia limitu."""
+        return self._blocked_scenarios.get(scenario_name, False)
+
+    def should_block_scenario_due_to_limit(self, scenario_name: str, max_executions: Optional[int]) -> bool:
+        """
+        Sprawdza czy scenariusz powinien być zablokowany z powodu przekroczenia limitu wykonań.
+        
+        Args:
+            scenario_name: Nazwa scenariusza
+            max_executions: Limit wykonań (None = bez limitu)
+            
+        Returns:
+            True jeśli scenariusz powinien być zablokowany, False w przeciwnym razie
+        """
+        if max_executions is None or max_executions <= 0:
+            return False
+            
+        current_count = self.get_scenario_execution_count(scenario_name)
+        should_block = current_count >= max_executions
+        
+        if should_block and not self.is_scenario_blocked(scenario_name):
+            # Pierwszy raz przekraczamy limit - zablokuj scenariusz
+            self._blocked_scenarios[scenario_name] = True
+            warning(
+                f"🚫 BLOKADA scenariusza '{scenario_name}' - przekroczono limit {max_executions} wykonań "
+                f"(aktualnie: {current_count}). Wymagane ACK do odblokowania.",
+                message_logger=self._message_logger,
+            )
+            
+        return should_block
+
+    def get_scenarios_execution_status(self) -> Dict[str, Any]:
+        """
+        Zwraca status wykonań scenariuszy z informacjami o licznikach i blokadach.
+        
+        Returns:
+            Słownik ze statusem wykonań wszystkich scenariuszy
+        """
+        status = {}
+        
+        for scenario_name, scenario in self._scenarios.items():
+            # Pobierz limit z modelu scenariusza
+            max_executions = scenario.get("max_executions")
+            current_count = self.get_scenario_execution_count(scenario_name)
+            is_blocked = self.is_scenario_blocked(scenario_name)
+            
+            status[scenario_name] = {
+                "max_executions": max_executions,
+                "current_executions": current_count,
+                "is_blocked": is_blocked,
+                "can_execute": not is_blocked and (max_executions is None or current_count < max_executions),
+            }
+            
+        return status
 
     def _load_scenarios(self):
         """
@@ -1035,6 +1129,8 @@ class Orchestrator(EventListener):
             },
             "execution_history_count": len(self._autonomous_execution_history),
             "scenarios_list": list(self._scenarios.keys()),
+            # NOWE: Informacje o licznikach wykonań i blokadach
+            "execution_counters": self.get_scenarios_execution_status(),
         }
 
     def set_manual_scenario_run_requested(
@@ -1279,10 +1375,23 @@ class Orchestrator(EventListener):
             return False
 
         scenario = self._scenarios[scenario_name]
-        info(
-            f"Rozpoczynam wykonywanie scenariusza: {scenario_name}",
-            message_logger=self._message_logger,
-        )
+        
+        # ZWIĘKSZ LICZNIK WYKONAŃ PRZED ROZPOCZĘCIEM
+        execution_count = self.increment_scenario_execution_count(scenario_name)
+        max_executions = scenario.get("max_executions")
+        
+        if max_executions is not None:
+            info(
+                f"Rozpoczynam wykonywanie scenariusza: {scenario_name} "
+                f"(wykonanie {execution_count}/{max_executions})",
+                message_logger=self._message_logger,
+            )
+        else:
+            info(
+                f"Rozpoczynam wykonywanie scenariusza: {scenario_name} "
+                f"(wykonanie #{execution_count}, bez limitu)",
+                message_logger=self._message_logger,
+            )
 
         # Przygotuj kontekst wykonania
         context = ActionContext(
@@ -1504,10 +1613,17 @@ class Orchestrator(EventListener):
         pass
 
     async def on_ack(self):
-        """Metoda wywoływana po otrzymaniu ACK operatora ze stanu FAULT.
-        Tu komponent wykonuje operacje czyszczenia i przygotowania do stanu STOPPED.
         """
-        pass
+        Metoda wywoływana po otrzymaniu ACK operatora ze stanu FAULT.
+        
+        Tu komponent wykonuje operacje czyszczenia i przygotowania do stanu STOPPED.
+        Resetuje również wszystkie liczniki wykonań scenariuszy i odblokowuje je.
+        """
+        info(
+            "🔧 ACK otrzymany - resetuję liczniki wykonań scenariuszy",
+            message_logger=self._message_logger,
+        )
+        self.reset_all_scenario_execution_counters()
 
     async def on_error(self):
         """Metoda wywoływana podczas przejścia w stan ON_ERROR.
@@ -1520,7 +1636,26 @@ class Orchestrator(EventListener):
         pass
 
     async def _should_execute_scenario(self, scenario: dict) -> bool:
-        """Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu."""
+        """
+        Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu.
+        
+        Uwzględnia:
+        - Warunki triggera
+        - Limit wykonań scenariusza (max_executions)
+        - Status blokady scenariusza
+        """
+        scenario_name = scenario.get("name", "unknown")
+        
+        # KROK 1: Sprawdź blokadę z powodu przekroczenia limitu wykonań
+        max_executions = scenario.get("max_executions")
+        if self.should_block_scenario_due_to_limit(scenario_name, max_executions):
+            debug(
+                f"🚫 Scenariusz '{scenario_name}' zablokowany - przekroczono limit wykonań",
+                message_logger=self._message_logger,
+            )
+            return False
+            
+        # KROK 2: Sprawdź warunki triggera
         trigger = scenario.get("trigger", {})
         conditions = trigger.get("conditions", {})
 
@@ -1550,7 +1685,7 @@ class Orchestrator(EventListener):
 
         except Exception as e:
             error(
-                f"❌ Błąd ewaluacji warunków dla scenariusza {scenario.get('name', 'unknown')}: {e}",
+                f"❌ Błąd ewaluacji warunków dla scenariusza {scenario_name}: {e}",
                 message_logger=self._message_logger,
             )
             return False
@@ -1845,6 +1980,10 @@ class Orchestrator(EventListener):
             # Wyczyść tracking
             self._running_scenarios.clear()
             self._scenario_execution_count.clear()
+
+            # Wyczyść liczniki wykonań scenariuszy
+            self._scenario_execution_counters.clear()
+            self._blocked_scenarios.clear()
 
             info(
                 "🧹 Cleanup aktywnych scenariuszy zakończony",

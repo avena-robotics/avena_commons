@@ -192,6 +192,9 @@ class ScenarioModel(BaseModel):
     cooldown: Optional[int] = Field(
         60, description="Okres cooldown w sekundach między wykonaniami"
     )
+    max_executions: Optional[int] = Field(
+        None, description="Maksymalna liczba wykonań przed zablokowaniem do ACK (None = bez limitu)"
+    )
 
     # Trigger i akcje
     trigger: TriggerModel = Field(..., description="Wyzwalacz scenariusza")
