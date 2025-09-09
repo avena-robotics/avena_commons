@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from ..base.base_condition import BaseCondition
 from ..conditions.client_state_condition import ClientStateCondition
+from ..conditions.error_message_condition import ErrorMessageCondition
 from ..conditions.logic_and_condition import LogicAndCondition
 from ..conditions.logic_nand_condition import LogicNandCondition
 from ..conditions.logic_nor_condition import LogicNorCondition
@@ -29,6 +30,7 @@ class ConditionFactory:
         "nor": LogicNorCondition,
         "client_state": ClientStateCondition,
         "time": TimeCondition,
+        "error_message": ErrorMessageCondition,
     }
 
     @classmethod

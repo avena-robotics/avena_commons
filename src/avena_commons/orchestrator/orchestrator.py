@@ -17,7 +17,7 @@ import traceback
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from avena_commons.event_listener.event import Event
 from avena_commons.event_listener.event_listener import (
@@ -140,8 +140,6 @@ class Orchestrator(EventListener):
         self._action_executor = ActionExecutor(
             register_default_actions=False
         )  # Nowy system akcji - akcje będą ładowane dynamicznie
-        
-        
         # self._autonomous_manager = AutonomousManager(
         #     self, self._message_logger
         # )  # System autonomiczny
@@ -1681,7 +1679,11 @@ class Orchestrator(EventListener):
                 # KROK 4: Sprawdź limity wykonań (opcjonalne)
                 max_concurrent = scenario.get("max_concurrent_executions", 1)
                 if (
-                    self._scenario_execution_count.get(scenario_name, 0)
+                    len([
+                        task
+                        for task in self._running_scenarios.values()
+                        if not task.done()
+                    ])
                     >= max_concurrent
                 ):
                     debug(

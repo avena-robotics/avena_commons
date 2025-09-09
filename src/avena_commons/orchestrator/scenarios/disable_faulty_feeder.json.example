@@ -1,0 +1,103 @@
+{
+  "name": "Wyłączenie wadliwej wydawki",
+  "description": "Scenariusz wyłączający konkretną wydawkę gdy wykryty zostanie błąd związany z tym urządzeniem",
+  "priority": 5,
+  "cooldown": 30,
+  "trigger": {
+    "type": "automatic",
+    "conditions": {
+      "and": {
+        "conditions": [
+          {
+            "client_state": {
+              "any_service_in_state": [
+                "FAULT"
+              ]
+            }
+          },
+          {
+            "error_message": {
+              "mode": "contains",
+              "pattern": "feeder1",
+              "case_sensitive": false,
+              "fault_clients_only": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "warning",
+      "message": "🚨 BŁĄD WYDAWKI: Wykryto problem z feeder1 - uruchamiam procedurę wyłączenia",
+      "description": "Alert o wykryciu błędu wydawki feeder1"
+    },
+    {
+      "type": "send_sms",
+      "description": "Powiadomienie SMS o błędzie wydawki",
+      "to": [
+        "48517383507"
+      ],
+      "text": "[WYDAWKA] Błąd feeder1: {{ clients_error_messages }}. Wydawka zostanie wyłączona."
+    },
+    {
+      "type": "send_email",
+      "description": "Powiadomienie email o błędzie wydawki",
+      "to": [
+        "norbert.niemc@pomagier.info"
+      ],
+      "subject": "[WYDAWKA] Błąd feeder1 - wyłączenie urządzenia",
+      "body": "Wykryto błąd wydawki feeder1.\n\nSzczegóły błędu:\n{{ clients_error_messages }}\n\nWydawka zostanie automatycznie wyłączona aby zapobiec dalszym problemom.\n\nWymagana interwencja serwisowa."
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "⚙️ Wyłączam wydawkę feeder1 z powodu błędu: {{ error_message }}",
+      "description": "Informacja o wyłączeniu wydawki"
+    },
+    {
+      "type": "send_command",
+      "client": "io",
+      "command": "CMD_ACK",
+      "description": "Wyłączenie wydawki feeder1"
+    },
+    {
+      "type": "wait_for_state",
+      "client": "io",
+      "target_state": "STOPPED",
+      "timeout": "10s",
+      "description": "Oczekiwanie na potwierdzenie wyłączenia wydawki"
+    },
+    {
+      "type": "log_event",
+      "level": "warning",
+      "message": "🔧 WYDAWKA WYŁĄCZONA: feeder1 została wyłączona z powodu błędu",
+      "description": "Potwierdzenie wyłączenia wydawki"
+    },
+    {
+      "type": "send_sms",
+      "description": "Potwierdzenie wyłączenia wydawki (SMS)",
+      "to": [
+        "48517383507"
+      ],
+      "text": "Wydawka feeder1 została wyłączona. System kontynuuje pracę bez tej wydawki."
+    },
+    {
+      "type": "send_email",
+      "description": "Raport o wyłączeniu wydawki",
+      "to": [
+        "norbert.niemc@pomagier.info"
+      ],
+      "subject": "[INFO] Wydawka feeder1 wyłączona",
+      "body": "Wydawka feeder1 została pomyślnie wyłączona z powodu wykrytego błędu.\n\nSystem kontynuuje pracę z pozostałymi wydawkami.\n\nAby ponownie włączyć wydawkę:\n1. Usuń przyczynę błędu\n2. Uruchom procedurę testową\n3. Włącz wydawkę ręcznie lub zrestartuj system"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "💡 INSTRUKCJA: Aby ponownie włączyć feeder1, usuń przyczynę błędu i uruchom procedurę testową",
+      "description": "Instrukcja dla operatora"
+    }
+  ]
+}
