@@ -8,6 +8,7 @@ from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
 from .send_command_action import SendCommandAction
+from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
 from .systemctl_action import SystemctlAction
 from .wait_for_state_action import WaitForStateAction
@@ -36,6 +37,7 @@ class ActionExecutor:
         """Rejestruje wszystkie domyślne akcje scenariuszy."""
         self._actions["log_event"] = LogAction()
         self._actions["send_command"] = SendCommandAction()
+        self._actions["send_custom_command"] = SendCustomCommandAction()
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
         self._actions["send_email"] = SendEmailAction()

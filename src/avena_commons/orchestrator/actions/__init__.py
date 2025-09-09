@@ -11,6 +11,7 @@ from .database_update_action_base import DatabaseUpdateAction
 from .log_action import LogAction
 from .lynx_refund_action import LynxRefundAction
 from .send_command_action import SendCommandAction
+from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
 from .send_sms_action import SendSmsAction
 from .wait_for_state_action import WaitForStateAction
@@ -23,6 +24,7 @@ __all__ = [
     "LogAction",
     "LynxRefundAction",
     "SendCommandAction",
+    "SendCustomCommandAction",
     "WaitForStateAction",
     "SystemctlAction",
     "SendEmailAction",

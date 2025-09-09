@@ -1,0 +1,86 @@
+{
+  "name": "send_custom_command_example",
+  "description": "Przykład użycia nowej akcji send_custom_command z różnymi selektorami i danymi niestandardowymi",
+  "version": "1.0.0",
+  "priority": 50,
+  "manual_run": true,
+  "conditions": [
+    {
+      "type": "time",
+      "always_true": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🚀 Rozpoczynam demonstrację send_custom_command",
+      "description": "Początek demonstracji"
+    },
+    {
+      "type": "send_custom_command",
+      "client": "supervisor_1",
+      "command": "SET_POSITION",
+      "data": {
+        "x": 100.5,
+        "y": 200.3,
+        "z": 15.0,
+        "speed": 0.8,
+        "coordinate_system": "world"
+      },
+      "timeout": "15s",
+      "description": "Ustawienie pozycji dla pojedynczego supervisora"
+    },
+    {
+      "type": "send_custom_command",
+      "group": "sensors",
+      "command": "CONFIGURE_THRESHOLDS",
+      "data": {
+        "min_value": 0.1,
+        "max_value": 95.0,
+        "alert_enabled": true,
+        "email_notifications": [
+          "admin@example.com",
+          "operator@example.com"
+        ],
+        "sampling_rate": 1000
+      },
+      "description": "Konfiguracja progów alarmowych dla grupy sensorów"
+    },
+    {
+      "type": "send_custom_command",
+      "groups": ["supervisors", "base_io"],
+      "command": "UPDATE_PARAMETERS",
+      "data": {
+        "firmware_version": "2.1.4",
+        "config_timestamp": "2025-09-09T10:30:00Z",
+        "parameters": {
+          "timeout": 5000,
+          "retry_count": 3,
+          "debug_mode": false
+        }
+      },
+      "description": "Aktualizacja parametrów dla wielu grup"
+    },
+    {
+      "type": "send_custom_command",
+      "target": "@all",
+      "command": "SYSTEM_HEALTH_CHECK",
+      "data": {
+        "check_type": "comprehensive",
+        "include_diagnostics": true,
+        "report_format": "json",
+        "trigger_source": "{{ trigger.source }}",
+        "admin_email": "{{ trigger.admin_email }}"
+      },
+      "timeout": "30s",
+      "description": "Sprawdzenie stanu systemu dla wszystkich komponentów z użyciem zmiennych szablonowych"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "✅ Demonstracja send_custom_command zakończona pomyślnie",
+      "description": "Koniec demonstracji"
+    }
+  ]
+}
