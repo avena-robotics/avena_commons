@@ -1,0 +1,68 @@
+{
+  "name": "Uruchomienie wszystkich serwisów - tryb manualny",
+  "description": "Scenariusz manualny doprowadzający wszystkie klienty systemu do stanu RUN z różnych stanów początkowych (STOPPED, PAUSE, INITIALIZED). Obsługuje inteligentne przejścia stanów FSM.",
+  "priority": 98,
+  "cooldown": 5,
+  "trigger": {
+    "type": "manual",
+    "conditions": {}
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "🚀 ROZPOCZYNAM MANUALNY START SYSTEMU - doprowadzanie wszystkich klientów do stanu RUN",
+      "description": "Rozpoczęcie manualnego procesu startu systemu"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "🔄 FAZA 1: Inicjalizacja klientów w stanie STOPPED → INITIALIZED",
+      "description": "Rozpoczęcie fazy inicjalizacji"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_INITIALIZED",
+      "description": "Wysłanie CMD_INITIALIZED do wszystkich klientów (STOPPED→INITIALIZED, inne stany bez efektu)"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_states": ["INITIALIZED", "PAUSE", "RUN"],
+      "timeout": "30s",
+      "description": "Oczekiwanie na przejście klientów STOPPED do INITIALIZED lub pozostanie w PAUSE/RUN"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "✅ FAZA 1 ZAKOŃCZONA: Wszyscy klienci przeszli ze stanu STOPPED do INITIALIZED",
+      "description": "Potwierdzenie zakończenia fazy inicjalizacji"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "🚀 FAZA 2: Uruchomienie wszystkich klientów → RUN",
+      "description": "Rozpoczęcie fazy uruchomienia"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_RUN",
+      "description": "Wysłanie CMD_RUN do wszystkich klientów (INITIALIZED→RUN, PAUSE→RUN)"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "RUN",
+      "timeout": "20s",
+      "description": "Oczekiwanie na przejście wszystkich klientów do stanu RUN"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "✨ Manualny start systemu zakończony - wszystkie klienty przygotowane do operacji",
+      "description": "Ostateczne potwierdzenie zakończenia procedury"
+    }
+  ]
+}
