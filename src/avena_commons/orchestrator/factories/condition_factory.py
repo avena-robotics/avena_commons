@@ -2,6 +2,8 @@ from typing import Any, Dict, List
 
 from ..base.base_condition import BaseCondition
 from ..conditions.client_state_condition import ClientStateCondition
+from ..conditions.database_condition_base import DatabaseCondition
+from ..conditions.database_list_condition import DatabaseListCondition
 from ..conditions.error_message_condition import ErrorMessageCondition
 from ..conditions.logic_and_condition import LogicAndCondition
 from ..conditions.logic_nand_condition import LogicNandCondition
@@ -31,6 +33,8 @@ class ConditionFactory:
         "client_state": ClientStateCondition,
         "time": TimeCondition,
         "error_message": ErrorMessageCondition,
+        "database": DatabaseCondition,
+        "database_list": DatabaseListCondition,
     }
 
     @classmethod

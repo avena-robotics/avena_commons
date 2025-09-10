@@ -1,0 +1,51 @@
+{
+  "name": "Sprawdzenie aktywnych klientów", 
+  "description": "Przykładowy scenariusz pobierający listę aktywnych klientów z bazy danych",
+  "version": "1.0",
+  "author": "System",
+  "priority": 90,
+  "cooldown": 60,
+  "trigger": {
+    "type": "manual",
+    "description": "Ręczne uruchomienie sprawdzenia aktywnych klientów",
+    "conditions": {
+      "database_list": {
+        "component": "main_database", 
+        "table": "klienci",
+        "columns": [
+          "id",
+          "nazwa",
+          "email", 
+          "status",
+          "data_ostatniej_aktywnosci"
+        ],
+        "where": {
+          "status": "active"
+        },
+        "result_key": "aktywni_klienci",
+        "limit": 10,
+        "order_by": "data_ostatniej_aktywnosci DESC"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📊 Sprawdzam aktywnych klientów...",
+      "description": "Rozpoczęcie sprawdzania"
+    },
+    {
+      "type": "log_event", 
+      "level": "info",
+      "message": "✅ Znaleziono {{ trigger.aktywni_klienci|length }} aktywnych klientów",
+      "description": "Wynik sprawdzenia"
+    },
+    {
+      "type": "log_event",
+      "level": "info", 
+      "message": "👥 Lista klientów: {% for klient in trigger.aktywni_klienci %}{{ klient.nazwa }}{% if not loop.last %}, {% endif %}{% endfor %}",
+      "description": "Szczegółowa lista klientów"
+    }
+  ]
+}

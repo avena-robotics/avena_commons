@@ -1635,7 +1635,7 @@ class Orchestrator(EventListener):
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
         pass
 
-    async def _should_execute_scenario(self, scenario: dict) -> bool:
+    async def _should_execute_scenario(self, scenario: dict) -> tuple[bool, Dict[str, Any]]:
         """
         Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu.
         
@@ -1643,6 +1643,9 @@ class Orchestrator(EventListener):
         - Warunki triggera
         - Limit wykonań scenariusza (max_executions)
         - Status blokady scenariusza
+        
+        Returns:
+            Tuple (should_execute: bool, trigger_data: Dict[str, Any])
         """
         scenario_name = scenario.get("name", "unknown")
         
@@ -1653,14 +1656,14 @@ class Orchestrator(EventListener):
                 f"🚫 Scenariusz '{scenario_name}' zablokowany - przekroczono limit wykonań",
                 message_logger=self._message_logger,
             )
-            return False
+            return False, {}
             
         # KROK 2: Sprawdź warunki triggera
         trigger = scenario.get("trigger", {})
         conditions = trigger.get("conditions", {})
 
         if not conditions:
-            return True  # Brak warunków = zawsze wykonuj
+            return True, {}  # Brak warunków = zawsze wykonuj
 
         try:
             # Użyj nowego systemu warunków
@@ -1678,17 +1681,23 @@ class Orchestrator(EventListener):
             context = {
                 "clients": filtered_clients_state,
                 "components": self._components,  # Dodaj komponenty do kontekstu
+                "trigger_data": {},  # Dane z warunków będą tu zapisywane
             }
 
             # Ewaluuj warunek
-            return await condition.evaluate(context)
+            should_trigger = await condition.evaluate(context)
+            
+            # Pobierz dane z warunków (jeśli zostały zapisane)
+            trigger_data = context.get("trigger_data", {})
+
+            return should_trigger, trigger_data
 
         except Exception as e:
             error(
                 f"❌ Błąd ewaluacji warunków dla scenariusza {scenario_name}: {e}",
                 message_logger=self._message_logger,
             )
-            return False
+            return False, {}
 
     def _is_scenario_in_cooldown(self, scenario_name: str, scenario: dict) -> bool:
         """
@@ -1831,7 +1840,8 @@ class Orchestrator(EventListener):
                     continue
 
                 # KROK 3: Sprawdź warunki
-                if not await self._should_execute_scenario(scenario):
+                should_execute, trigger_data = await self._should_execute_scenario(scenario)
+                if not should_execute:
                     continue
 
                 # KROK 4: Sprawdź limity wykonań (opcjonalne)
@@ -1868,15 +1878,20 @@ class Orchestrator(EventListener):
                     message_logger=self._message_logger,
                 )
 
-                # Utwórz task dla scenariusza
+                # Utwórz task dla scenariusza - połącz dane z warunków z danymi systemowymi
+                combined_trigger_data = {
+                    "source": "autonomous_mode",
+                    "event_type": "AUTONOMOUS_TRIGGER", 
+                    "timestamp": datetime.now().isoformat(),
+                }
+                
+                # Dodaj dane z warunków (np. z database_list)
+                combined_trigger_data.update(trigger_data)
+                
                 task = asyncio.create_task(
                     self._execute_scenario_with_tracking(
                         scenario_name,
-                        {
-                            "source": "autonomous_mode",
-                            "event_type": "AUTONOMOUS_TRIGGER",
-                            "timestamp": datetime.now().isoformat(),
-                        },
+                        combined_trigger_data,
                     )
                 )
 

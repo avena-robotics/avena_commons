@@ -354,6 +354,98 @@ class DatabaseComponent:
             )
             raise
 
+    async def fetch_records(
+        self,
+        table: str,
+        columns: list[str],
+        where_conditions: Dict[str, Any],
+        limit: Optional[int] = None,
+        order_by: Optional[str] = None,
+    ) -> list[Dict[str, Any]]:
+        """
+        Pobiera wiele rekordów z tabeli na podstawie warunków WHERE.
+
+        Args:
+            table: Nazwa tabeli
+            columns: Lista nazw kolumn do pobrania
+            where_conditions: Słownik z warunkami WHERE {kolumna: wartość}
+            limit: Opcjonalny limit liczby rekordów (domyślnie brak limitu)
+            order_by: Opcjonalne sortowanie (np. "id DESC", "created_at ASC")
+
+        Returns:
+            Lista słowników reprezentujących rekordy z bazy danych
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+            ValueError: Jeśli where_conditions lub columns są puste
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        if not columns:
+            raise ValueError("Lista columns nie może być pusta")
+
+        # Konwertuj wartości WHERE (obsługa enumów)
+        converted_where = self._convert_where_conditions(where_conditions)
+
+        # Buduj zapytanie WHERE
+        where_parts = []
+        values = []
+        param_index = 1
+
+        for col, val in converted_where.items():
+            where_parts.append(f"{col} = ${param_index}")
+            values.append(val)
+            param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        
+        # Buduj listę kolumn
+        columns_str = ", ".join(columns)
+        
+        # Buduj zapytanie
+        query = f"SELECT {columns_str} FROM {table} WHERE {where_clause}"
+        
+        # Dodaj sortowanie jeśli określone
+        if order_by:
+            query += f" ORDER BY {order_by}"
+            
+        # Dodaj limit jeśli określony
+        if limit is not None:
+            query += f" LIMIT {limit}"
+
+        try:
+            debug(
+                f"📋 Pobieranie rekordów z bazy '{self.name}': {query[:150]}{'...' if len(query) > 150 else ''}",
+                message_logger=self._message_logger,
+            )
+
+            async with self._conn_lock:
+                rows = await self._connection.fetch(query, *values)
+
+            # Konwertuj wyniki na listę słowników
+            results = []
+            for row in rows:
+                record = dict(row)
+                results.append(record)
+
+            debug(
+                f"✅ Pobrano {len(results)} rekordów z tabeli '{table}'",
+                message_logger=self._message_logger,
+            )
+
+            return results
+
+        except Exception as e:
+            error(
+                f"❌ Błąd pobierania rekordów z bazy '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
     async def update_table_value(
         self,
         table: str,
