@@ -1,0 +1,67 @@
+{
+  "name": "Restart zamówień z wydawki 1",
+  "description": "Restart zamówień z niesprawnej wydawki pickup_number=1 do działających wydawek",
+  "version": "1.0",
+  "author": "System APS",
+  "priority": 70,
+  "cooldown": 300,
+  "trigger": {
+    "type": "manual",
+    "description": "Ręczne uruchomienie restartu zamówień z wydawki 1",
+    "conditions": {
+      "database_list": {
+        "component": "main_database",
+        "table": "aps_order",
+        "columns": [
+          "id", "aps_id", "origin", "status", "pickup_number",
+          "kds_order_number", "client_phone_number", "estimated_time", 
+          "transaction_id", "marketing_consent", "terms_accepted", 
+          "privacy_accepted", "promo_consent"
+        ],
+        "where": {
+          "pickup_number": "1",
+          "status": "pending"
+        },
+        "result_key": "zamowienia_pickup_1",
+        "limit": 50,
+        "order_by": "created_at ASC"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔄 Rozpoczynam restart {{ trigger.zamowienia_pickup_1|length }} zamówień z wydawki pickup_number=1",
+      "description": "Rozpoczęcie procesu restartu zamówień"
+    },
+    {
+      "type": "restart_orders",
+      "component": "main_database",
+      "orders_source": "{{ trigger.zamowienia_pickup_1 }}",
+      "clone_config": {
+        "copy_fields": [
+          "aps_id", "origin", "kds_order_number", "client_phone_number",
+          "estimated_time", "transaction_id", "marketing_consent", 
+          "terms_accepted", "privacy_accepted", "promo_consent"
+        ],
+        "skip_fields": ["pickup_number"],
+        "default_values": {}
+      },
+      "description": "Restart zamówień z weryfikacją dostępności produktów"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "✅ Restart zamówień zakończony. Sklonowanych: {{ action_result.success_count }}, Refund: {{ action_result.refund_count }}, Błędy: {{ action_result.error_count }}",
+      "description": "Podsumowanie restartu zamówień"
+    },
+    {
+      "type": "send_email",
+      "to": "{{ trigger.admin_email }}",
+      "subject": "🔄 Restart zamówień z wydawki 1 - raport",
+      "body": "Restart zamówień z wydawki pickup_number=1 został zakończony.\n\n📊 Podsumowanie:\n- Łącznie przetworzonych: {{ action_result.total_count }}\n- Pomyślnie sklonowanych: {{ action_result.success_count }}\n- Ustawiono na refund_pending: {{ action_result.refund_count }}\n- Błędy: {{ action_result.error_count }}\n\n{% if action_result.refund_count > 0 %}🚨 Uwaga: {{ action_result.refund_count }} zamówień wymaga interwencji (brak produktów w magazynie).{% endif %}\n\nSystem automatycznie przypisze nowe zamówienia do działających wydawek.",
+      "description": "Powiadomienie email o wyniku restartu"
+    }
+  ]
+}

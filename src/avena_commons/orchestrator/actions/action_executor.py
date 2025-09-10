@@ -7,6 +7,7 @@ from typing import Any, Dict
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
+from .restart_orders_action import RestartOrdersAction
 from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
@@ -44,6 +45,9 @@ class ActionExecutor:
         
         # NOWE: Akcje kontroli przepływu scenariuszy
         self._actions["execute_scenario"] = ExecuteScenarioAction()
+        
+        # NOWE: Akcje biznesowe APS
+        self._actions["restart_orders"] = RestartOrdersAction()
         
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
