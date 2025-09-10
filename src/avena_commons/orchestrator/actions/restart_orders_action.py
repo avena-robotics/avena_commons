@@ -13,9 +13,12 @@ Wykorzystanie: restart zamówień z niesprawnych wydawek do działających.
 from collections import defaultdict
 from typing import Any, Dict, List
 
+from avena_commons.orchestrator.actions.base_action import (
+    ActionContext,
+    ActionExecutionError,
+    BaseAction,
+)
 from avena_commons.util.logger import debug, error, info, warning
-
-from .base_action import ActionContext, ActionExecutionError, BaseAction
 
 
 class RestartOrdersAction(BaseAction):
