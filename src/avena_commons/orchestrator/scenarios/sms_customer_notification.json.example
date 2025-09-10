@@ -1,0 +1,68 @@
+{
+  "name": "Powiadomienia SMS dla klientów",
+  "description": "Automatyczny scenariusz wysyłający SMS-y do klientów z powiadomieniami o zamówieniach",
+  "version": "1.0",
+  "author": "System",
+  "priority": 70,
+  "cooldown": 600,
+  "trigger": {
+    "type": "automatic",
+    "description": "Uruchomienie gdy istnieją zamówienia wymagające powiadomienia SMS",
+    "conditions": {
+      "database_list": {
+        "component": "main_database",
+        "table": "aps_orders",
+        "columns": [
+          "id",
+          "aps_id",
+          "origin",
+          "status",
+          "pickup_number",
+          "kds_order_number",
+          "client_phone_number",
+          "estimated_time",
+          "created_at",
+          "updated_at"
+        ],
+        "where": {
+          "status": "order_processing_has_started",
+          "client_phone_number": "IS NOT NULL"
+        },
+        "result_key": "klienci_do_powiadomienia",
+        "limit": 100,
+        "order_by": "created_at ASC"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📱 Rozpoczynam wysyłkę powiadomień SMS - znaleziono {{ trigger.klienci_do_powiadomienia|length }} klientów",
+      "description": "Informacja o rozpoczęciu procesu wysyłki SMS"
+    },
+    {
+      "type": "send_sms_to_customer",
+      "description": "Wysyłka powiadomień SMS do klientów",
+      "phone_field": "client_phone_number",
+      "text": "Twoje zamówienie nr {{ pickup_number }} jest gotowe do odbioru (APS ID: {{ aps_id }}). Pozdrawiamy, Zespół Avena.",
+      "ignore_errors": false
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "✅ Zakończono wysyłkę powiadomień SMS do klientów",
+      "description": "Potwierdzenie wysłania powiadomień SMS"
+    },
+    {
+      "type": "aps_database_update",
+      "description": "Oznaczenie zamówień jako powiadomione",
+      "component": "main_database",
+      "table": "orders",
+      "update_column": "status",
+      "update_value": "sms_sent",
+      "where_column": "status",
+      "where_value": "order_processing_has_started"
+    }
+  ]
+}

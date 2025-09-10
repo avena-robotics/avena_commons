@@ -11,6 +11,8 @@ from .restart_orders_action import RestartOrdersAction
 from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
+from .send_sms_action import SendSmsAction
+from .send_sms_to_customer_action import SendSmsToCustomerAction
 from .systemctl_action import SystemctlAction
 from .wait_for_state_action import WaitForStateAction
 
@@ -42,13 +44,15 @@ class ActionExecutor:
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
         self._actions["send_email"] = SendEmailAction()
-        
+        self._actions["send_sms"] = SendSmsAction()
+        self._actions["send_sms_to_customer"] = SendSmsToCustomerAction()
+
         # NOWE: Akcje kontroli przepływu scenariuszy
         self._actions["execute_scenario"] = ExecuteScenarioAction()
-        
+
         # NOWE: Akcje biznesowe APS
         self._actions["restart_orders"] = RestartOrdersAction()
-        
+
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
         Rejestruje nową akcję lub nadpisuje istniejącą.
