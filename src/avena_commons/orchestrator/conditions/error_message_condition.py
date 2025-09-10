@@ -9,7 +9,7 @@ Ograniczenia: Wymaga dostępu do orchestrator._state z error_message klientów
 """
 
 import re
-from typing import Any, Dict, List, Union
+from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
 

@@ -47,8 +47,10 @@ class DatabaseListCondition(DatabaseCondition):
         """
         # Wywołaj konstruktor rodzica, ale bez walidacji expected_value
         # (nie jest potrzebne dla list condition)
-        super(DatabaseCondition, self).__init__(config, message_logger, condition_factory)
-        
+        super(DatabaseCondition, self).__init__(
+            config, message_logger, condition_factory
+        )
+
         # Walidacja konfiguracji specyficznej dla list condition
         self._validate_list_config()
 
@@ -88,7 +90,9 @@ class DatabaseListCondition(DatabaseCondition):
         if "limit" in self.config:
             limit_val = self.config["limit"]
             if not isinstance(limit_val, int) or limit_val <= 0:
-                raise ValueError("Pole 'limit' musi być liczbą całkowitą większą od zera")
+                raise ValueError(
+                    "Pole 'limit' musi być liczbą całkowitą większą od zera"
+                )
 
         # Waliduj result_key jeśli podany
         if "result_key" in self.config:

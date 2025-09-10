@@ -217,7 +217,9 @@ class BaseTestService(EventListener):
                     message_logger=self._message_logger,
                 )
                 self._change_fsm_state(EventListenerState.ON_ERROR)
-                event.result = Result(result="success", data={"message": "Forced fault"})
+                event.result = Result(
+                    result="success", data={"message": "Forced fault"}
+                )
                 await self._reply(event)
                 return
 

@@ -39,7 +39,7 @@ class SendCustomCommandAction(BaseAction):
 
     {
         "type": "send_custom_command",
-        "group": "sensors", 
+        "group": "sensors",
         "command": "CONFIGURE_THRESHOLDS",
         "data": {
             "min_value": 0.1,
@@ -78,12 +78,14 @@ class SendCustomCommandAction(BaseAction):
             command_data = action_config.get("data", {})
             if not isinstance(command_data, dict):
                 raise ActionExecutionError(
-                    "send_custom_command", 
-                    f"Pole 'data' musi być słownikiem, otrzymano: {type(command_data).__name__}"
+                    "send_custom_command",
+                    f"Pole 'data' musi być słownikiem, otrzymano: {type(command_data).__name__}",
                 )
 
             # Rozwiąż zmienne szablonowe w danych
-            resolved_data = self._resolve_template_variables_in_data(command_data, context)
+            resolved_data = self._resolve_template_variables_in_data(
+                command_data, context
+            )
 
             # Określ komponenty docelowe
             target_clients = self._resolve_target_clients(action_config, context)
@@ -112,7 +114,9 @@ class SendCustomCommandAction(BaseAction):
             # Przepuść błędy ActionExecutionError
             raise
         except Exception as e:
-            raise ActionExecutionError("send_custom_command", f"Nieoczekiwany błąd: {str(e)}")
+            raise ActionExecutionError(
+                "send_custom_command", f"Nieoczekiwany błąd: {str(e)}"
+            )
 
     def _resolve_target_clients(
         self, action_config: Dict[str, Any], context: ActionContext
@@ -208,33 +212,37 @@ class SendCustomCommandAction(BaseAction):
             Słownik z podstawionymi zmiennymi
         """
         resolved_data = {}
-        
+
         for key, value in data.items():
             if isinstance(value, str):
                 # Rozwiąż zmienne szablonowe w wartościach tekstowych
                 resolved_data[key] = self._resolve_template_variables(value, context)
             elif isinstance(value, dict):
                 # Rekurencyjnie rozwiąż zagnieżdżone słowniki
-                resolved_data[key] = self._resolve_template_variables_in_data(value, context)
+                resolved_data[key] = self._resolve_template_variables_in_data(
+                    value, context
+                )
             elif isinstance(value, list):
                 # Rozwiąż zmienne w listach
                 resolved_data[key] = [
-                    self._resolve_template_variables(item, context) if isinstance(item, str) else item
+                    self._resolve_template_variables(item, context)
+                    if isinstance(item, str)
+                    else item
                     for item in value
                 ]
             else:
                 # Pozostaw inne typy bez zmian
                 resolved_data[key] = value
-                
+
         return resolved_data
 
     async def _send_custom_command_to_client(
-        self, 
-        client_name: str, 
-        command: str, 
+        self,
+        client_name: str,
+        command: str,
         command_data: Dict[str, Any],
         action_config: Dict[str, Any],
-        context: ActionContext
+        context: ActionContext,
     ) -> None:
         """
         Wysyła polecenie niestandardowe z danymi do konkretnego komponentu.

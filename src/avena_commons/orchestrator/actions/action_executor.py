@@ -50,11 +50,11 @@ class ActionExecutor:
 
         # NOWE: Akcje kontroli przepływu scenariuszy
         self._actions["execute_scenario"] = ExecuteScenarioAction()
-        
+
         # NOWE: Akcje Lynx API
         self._actions["lynx_refund"] = LynxRefundAction()
         self._actions["lynx_refund_approve"] = LynxRefundApproveAction()
-        
+
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
         Rejestruje nową akcję lub nadpisuje istniejącą.

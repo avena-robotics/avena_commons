@@ -5,7 +5,6 @@ from enum import Enum
 
 import pysoem
 
-from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import debug, error, info, warning
 from avena_commons.util.measure_time import MeasureTime
 from avena_commons.util.worker import Connector, Worker

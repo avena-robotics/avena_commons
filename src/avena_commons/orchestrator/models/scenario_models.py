@@ -43,7 +43,10 @@ class ActionModel(BaseModel):
     Rozszerzony o kontrolę przepływu scenariuszy (execute_scenario).
     """
 
-    type: str = Field(..., description="Typ akcji (np. 'log_event', 'send_command', 'execute_scenario')")
+    type: str = Field(
+        ...,
+        description="Typ akcji (np. 'log_event', 'send_command', 'execute_scenario')",
+    )
 
     # Parametry wspólne
     description: Optional[str] = Field(None, description="Opis akcji")
@@ -106,14 +109,15 @@ class ActionModel(BaseModel):
 
     # NOWE: Parametry kontroli przepływu scenariuszy
     # Parametry akcji execute_scenario
-    scenario: Optional[str] = Field(None, description="Nazwa scenariusza do uruchomienia")
+    scenario: Optional[str] = Field(
+        None, description="Nazwa scenariusza do uruchomienia"
+    )
     wait_for_completion: Optional[bool] = Field(
         True, description="Czy czekać na zakończenie zagnieżdżonego scenariusza"
     )
     on_nested_failure: Optional[str] = Field(
         "fail", description="Akcja przy błędzie zagnieżdżonego ('continue' lub 'fail')"
     )
-
 
     @field_validator("type")
     def validate_action_type(cls, v):
@@ -193,7 +197,8 @@ class ScenarioModel(BaseModel):
         60, description="Okres cooldown w sekundach między wykonaniami"
     )
     max_executions: Optional[int] = Field(
-        None, description="Maksymalna liczba wykonań przed zablokowaniem do ACK (None = bez limitu)"
+        None,
+        description="Maksymalna liczba wykonań przed zablokowaniem do ACK (None = bez limitu)",
     )
 
     # Trigger i akcje

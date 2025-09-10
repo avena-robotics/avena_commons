@@ -402,17 +402,17 @@ class DatabaseComponent:
             param_index += 1
 
         where_clause = " AND ".join(where_parts)
-        
+
         # Buduj listę kolumn
         columns_str = ", ".join(columns)
-        
+
         # Buduj zapytanie
         query = f"SELECT {columns_str} FROM {table} WHERE {where_clause}"
-        
+
         # Dodaj sortowanie jeśli określone
         if order_by:
             query += f" ORDER BY {order_by}"
-            
+
         # Dodaj limit jeśli określony
         if limit is not None:
             query += f" LIMIT {limit}"

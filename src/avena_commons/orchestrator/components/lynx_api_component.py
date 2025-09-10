@@ -22,7 +22,7 @@ class LynxAPIComponent:
 
     Wymagane parametry w konfiguracji lub zmiennych środowiskowych:
     - ACCESS_TOKEN: Token dostępu do API
-    
+
     Opcjonalne parametry:
     - SITE_ID: Identyfikator miejsca/situ (domyślnie 0)
     """
@@ -43,7 +43,7 @@ class LynxAPIComponent:
         self._site_id: Optional[int] = None
         self._access_token: Optional[str] = None
         self._base_url: str = "https://qa-lynx.nayax.com"
-        
+
         # Session do reuseowania połączeń HTTP
         self._session: Optional[requests.Session] = None
 
@@ -60,6 +60,7 @@ class LynxAPIComponent:
         """
         try:
             import importlib.util
+
             if importlib.util.find_spec("requests") is None:
                 raise ImportError(
                     "Biblioteka 'requests' jest wymagana dla komponentu Lynx API. "
@@ -89,9 +90,7 @@ class LynxAPIComponent:
         try:
             self._site_id = int(site_id)
         except (ValueError, TypeError):
-            raise ValueError(
-                f"SITE_ID musi być liczbą całkowitą, otrzymano: {site_id}"
-            )
+            raise ValueError(f"SITE_ID musi być liczbą całkowitą, otrzymano: {site_id}")
 
         if missing_params:
             raise ValueError(
@@ -128,7 +127,7 @@ class LynxAPIComponent:
             self._session.headers.update({
                 "accept": "application/json",
                 "content-type": "application/json",
-                "Authorization": f"Bearer {self._access_token}"
+                "Authorization": f"Bearer {self._access_token}",
             })
 
             self._is_initialized = True
@@ -240,11 +239,11 @@ class LynxAPIComponent:
         return self._base_url
 
     async def send_refund_request(
-        self, 
+        self,
         transaction_id: int,
         refund_amount: float = 0,
         refund_email_list: str = "",
-        refund_reason: str = ""
+        refund_reason: str = "",
     ) -> Dict[str, Any]:
         """
         Wysyła żądanie refund do Lynx API.
@@ -262,17 +261,19 @@ class LynxAPIComponent:
             Exception: W przypadku błędu komunikacji z API
         """
         if not self._is_initialized or not self._session:
-            raise Exception(f"Komponent Lynx API '{self.name}' nie jest zainicjalizowany")
+            raise Exception(
+                f"Komponent Lynx API '{self.name}' nie jest zainicjalizowany"
+            )
 
         url = f"{self._base_url}/operational/v1/payment/refund-request"
-        
+
         payload = {
             "RefundAmount": refund_amount,
             "RefundEmailList": refund_email_list,
             "RefundReason": refund_reason,
             "TransactionId": transaction_id,
             "SiteId": self._site_id,  # Użyj site_id z konfiguracji komponentu
-            "MachineAuTime": datetime.utcnow().isoformat() + "Z"
+            "MachineAuTime": datetime.utcnow().isoformat() + "Z",
         }
 
         try:
@@ -280,22 +281,22 @@ class LynxAPIComponent:
                 f"🚀 Wysyłanie żądania refund do Lynx API dla transakcji {transaction_id}",
                 message_logger=self._message_logger,
             )
-            
+
             response = self._session.post(url, json=payload)
             response.raise_for_status()  # Rzuci wyjątek dla kodów błędów HTTP
-            
+
             result = response.json() if response.content else {}
-            
+
             info(
                 f"✅ Żądanie refund wysłane pomyślnie dla transakcji {transaction_id}",
                 message_logger=self._message_logger,
             )
-            
+
             return {
                 "success": True,
                 "status_code": response.status_code,
                 "response": result,
-                "transaction_id": transaction_id
+                "transaction_id": transaction_id,
             }
 
         except requests.exceptions.RequestException as e:
@@ -303,29 +304,21 @@ class LynxAPIComponent:
                 f"❌ Błąd wysyłania żądania refund dla transakcji {transaction_id}: {e}",
                 message_logger=self._message_logger,
             )
-            return {
-                "success": False,
-                "error": str(e),
-                "transaction_id": transaction_id
-            }
+            return {"success": False, "error": str(e), "transaction_id": transaction_id}
 
         except Exception as e:
             error(
                 f"❌ Nieoczekiwany błąd przy wysyłaniu refund dla transakcji {transaction_id}: {e}",
                 message_logger=self._message_logger,
             )
-            return {
-                "success": False,
-                "error": str(e),
-                "transaction_id": transaction_id
-            }
+            return {"success": False, "error": str(e), "transaction_id": transaction_id}
 
     async def send_refund_approve_request(
         self,
         transaction_id: int,
         is_refunded_externally: bool = False,
         refund_document_url: str = "",
-        machine_au_time: Optional[str] = None
+        machine_au_time: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Wysyła żądanie approve refund do Lynx API.
@@ -343,20 +336,24 @@ class LynxAPIComponent:
             Exception: W przypadku błędu komunikacji z API
         """
         if not self._is_initialized or not self._session:
-            raise Exception(f"Komponent Lynx API '{self.name}' nie jest zainicjalizowany")
+            raise Exception(
+                f"Komponent Lynx API '{self.name}' nie jest zainicjalizowany"
+            )
 
         url = f"{self._base_url}/operational/v1/payment/refund-approve"
-        
+
         # Użyj podanego czasu
         if machine_au_time is None:
-            raise ValueError("machine_au_time musi być pobrany. Dane:  transaction_id: {transaction_id}, is_refunded_externally: {is_refunded_externally}, refund_document_url: {refund_document_url}, machine_au_time: {machine_au_time}")
+            raise ValueError(
+                "machine_au_time musi być pobrany. Dane:  transaction_id: {transaction_id}, is_refunded_externally: {is_refunded_externally}, refund_document_url: {refund_document_url}, machine_au_time: {machine_au_time}"
+            )
 
         payload = {
             "IsRefundedExternally": is_refunded_externally,
             "RefundDocumentUrl": refund_document_url,
             "TransactionId": transaction_id,
             "SiteId": self._site_id,  # Użyj site_id z konfiguracji komponentu
-            "MachineAuTime": machine_au_time
+            "MachineAuTime": machine_au_time,
         }
 
         try:
@@ -364,22 +361,22 @@ class LynxAPIComponent:
                 f"🚀 Wysyłanie żądania approve refund do Lynx API dla transakcji {transaction_id}",
                 message_logger=self._message_logger,
             )
-            
+
             response = self._session.post(url, json=payload)
             response.raise_for_status()  # Rzuci wyjątek dla kodów błędów HTTP
-            
+
             result = response.json() if response.content else {}
-            
+
             info(
                 f"✅ Żądanie approve refund wysłane pomyślnie dla transakcji {transaction_id}",
                 message_logger=self._message_logger,
             )
-            
+
             return {
                 "success": True,
                 "status_code": response.status_code,
                 "response": result,
-                "transaction_id": transaction_id
+                "transaction_id": transaction_id,
             }
 
         except requests.exceptions.RequestException as e:
@@ -387,19 +384,11 @@ class LynxAPIComponent:
                 f"❌ Błąd wysyłania żądania approve refund dla transakcji {transaction_id}: {e}",
                 message_logger=self._message_logger,
             )
-            return {
-                "success": False,
-                "error": str(e),
-                "transaction_id": transaction_id
-            }
+            return {"success": False, "error": str(e), "transaction_id": transaction_id}
 
         except Exception as e:
             error(
                 f"❌ Nieoczekiwany błąd przy wysyłaniu approve refund dla transakcji {transaction_id}: {e}",
                 message_logger=self._message_logger,
             )
-            return {
-                "success": False,
-                "error": str(e),
-                "transaction_id": transaction_id
-            }
+            return {"success": False, "error": str(e), "transaction_id": transaction_id}

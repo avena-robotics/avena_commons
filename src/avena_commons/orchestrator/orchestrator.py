@@ -223,7 +223,9 @@ class Orchestrator(EventListener):
 
     def reset_all_scenario_execution_counters(self) -> None:
         """Resetuje wszystkie liczniki wykonań scenariuszy po ACK."""
-        reset_count = len(self._scenario_execution_counters) + len(self._blocked_scenarios)
+        reset_count = len(self._scenario_execution_counters) + len(
+            self._blocked_scenarios
+        )
         self._scenario_execution_counters.clear()
         self._blocked_scenarios.clear()
         if reset_count > 0:
@@ -236,23 +238,25 @@ class Orchestrator(EventListener):
         """Sprawdza czy scenariusz jest zablokowany z powodu przekroczenia limitu."""
         return self._blocked_scenarios.get(scenario_name, False)
 
-    def should_block_scenario_due_to_limit(self, scenario_name: str, max_executions: Optional[int]) -> bool:
+    def should_block_scenario_due_to_limit(
+        self, scenario_name: str, max_executions: Optional[int]
+    ) -> bool:
         """
         Sprawdza czy scenariusz powinien być zablokowany z powodu przekroczenia limitu wykonań.
-        
+
         Args:
             scenario_name: Nazwa scenariusza
             max_executions: Limit wykonań (None = bez limitu)
-            
+
         Returns:
             True jeśli scenariusz powinien być zablokowany, False w przeciwnym razie
         """
         if max_executions is None or max_executions <= 0:
             return False
-            
+
         current_count = self.get_scenario_execution_count(scenario_name)
         should_block = current_count >= max_executions
-        
+
         if should_block and not self.is_scenario_blocked(scenario_name):
             # Pierwszy raz przekraczamy limit - zablokuj scenariusz
             self._blocked_scenarios[scenario_name] = True
@@ -261,31 +265,32 @@ class Orchestrator(EventListener):
                 f"(aktualnie: {current_count}). Wymagane ACK do odblokowania.",
                 message_logger=self._message_logger,
             )
-            
+
         return should_block
 
     def get_scenarios_execution_status(self) -> Dict[str, Any]:
         """
         Zwraca status wykonań scenariuszy z informacjami o licznikach i blokadach.
-        
+
         Returns:
             Słownik ze statusem wykonań wszystkich scenariuszy
         """
         status = {}
-        
+
         for scenario_name, scenario in self._scenarios.items():
             # Pobierz limit z modelu scenariusza
             max_executions = scenario.get("max_executions")
             current_count = self.get_scenario_execution_count(scenario_name)
             is_blocked = self.is_scenario_blocked(scenario_name)
-            
+
             status[scenario_name] = {
                 "max_executions": max_executions,
                 "current_executions": current_count,
                 "is_blocked": is_blocked,
-                "can_execute": not is_blocked and (max_executions is None or current_count < max_executions),
+                "can_execute": not is_blocked
+                and (max_executions is None or current_count < max_executions),
             }
-            
+
         return status
 
     def _load_scenarios(self):
@@ -1375,11 +1380,11 @@ class Orchestrator(EventListener):
             return False
 
         scenario = self._scenarios[scenario_name]
-        
+
         # ZWIĘKSZ LICZNIK WYKONAŃ PRZED ROZPOCZĘCIEM
         execution_count = self.increment_scenario_execution_count(scenario_name)
         max_executions = scenario.get("max_executions")
-        
+
         if max_executions is not None:
             info(
                 f"Rozpoczynam wykonywanie scenariusza: {scenario_name} "
@@ -1615,7 +1620,7 @@ class Orchestrator(EventListener):
     async def on_ack(self):
         """
         Metoda wywoływana po otrzymaniu ACK operatora ze stanu FAULT.
-        
+
         Tu komponent wykonuje operacje czyszczenia i przygotowania do stanu STOPPED.
         Resetuje również wszystkie liczniki wykonań scenariuszy i odblokowuje je.
         """
@@ -1635,20 +1640,22 @@ class Orchestrator(EventListener):
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
         pass
 
-    async def _should_execute_scenario(self, scenario: dict) -> tuple[bool, Dict[str, Any]]:
+    async def _should_execute_scenario(
+        self, scenario: dict
+    ) -> tuple[bool, Dict[str, Any]]:
         """
         Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu.
-        
+
         Uwzględnia:
         - Warunki triggera
         - Limit wykonań scenariusza (max_executions)
         - Status blokady scenariusza
-        
+
         Returns:
             Tuple (should_execute: bool, trigger_data: Dict[str, Any])
         """
         scenario_name = scenario.get("name", "unknown")
-        
+
         # KROK 1: Sprawdź blokadę z powodu przekroczenia limitu wykonań
         max_executions = scenario.get("max_executions")
         if self.should_block_scenario_due_to_limit(scenario_name, max_executions):
@@ -1657,7 +1664,7 @@ class Orchestrator(EventListener):
                 message_logger=self._message_logger,
             )
             return False, {}
-            
+
         # KROK 2: Sprawdź warunki triggera
         trigger = scenario.get("trigger", {})
         conditions = trigger.get("conditions", {})
@@ -1686,7 +1693,7 @@ class Orchestrator(EventListener):
 
             # Ewaluuj warunek
             should_trigger = await condition.evaluate(context)
-            
+
             # Pobierz dane z warunków (jeśli zostały zapisane)
             trigger_data = context.get("trigger_data", {})
 
@@ -1840,7 +1847,9 @@ class Orchestrator(EventListener):
                     continue
 
                 # KROK 3: Sprawdź warunki
-                should_execute, trigger_data = await self._should_execute_scenario(scenario)
+                should_execute, trigger_data = await self._should_execute_scenario(
+                    scenario
+                )
                 if not should_execute:
                     continue
 
@@ -1881,13 +1890,13 @@ class Orchestrator(EventListener):
                 # Utwórz task dla scenariusza - połącz dane z warunków z danymi systemowymi
                 combined_trigger_data = {
                     "source": "autonomous_mode",
-                    "event_type": "AUTONOMOUS_TRIGGER", 
+                    "event_type": "AUTONOMOUS_TRIGGER",
                     "timestamp": datetime.now().isoformat(),
                 }
-                
+
                 # Dodaj dane z warunków (np. z database_list)
                 combined_trigger_data.update(trigger_data)
-                
+
                 task = asyncio.create_task(
                     self._execute_scenario_with_tracking(
                         scenario_name,

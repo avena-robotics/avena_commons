@@ -23,20 +23,20 @@ class TestRestartOrdersAction(unittest.TestCase):
     def setUp(self):
         """Przygotowanie do testów."""
         self.action = RestartOrdersAction()
-        
+
         # Mock orchestrator
         self.mock_orchestrator = MagicMock()
         self.mock_orchestrator.get_component = MagicMock()
-        
+
         # Mock message logger
         self.mock_logger = MagicMock()
-        
+
         # Mock context
         self.context = ActionContext(
             orchestrator=self.mock_orchestrator,
             message_logger=self.mock_logger,
             trigger_data={"test_orders": self._get_sample_orders()},
-            scenario_name="test_restart_orders"
+            scenario_name="test_restart_orders",
         )
 
     def _get_sample_orders(self):
@@ -57,7 +57,7 @@ class TestRestartOrdersAction(unittest.TestCase):
                 "privacy_accepted": True,
                 "promo_consent": False,
                 "created_at": "2025-09-10 10:00:00",
-                "updated_at": "2025-09-10 10:00:00"
+                "updated_at": "2025-09-10 10:00:00",
             },
             {
                 "id": 102,
@@ -74,22 +74,52 @@ class TestRestartOrdersAction(unittest.TestCase):
                 "privacy_accepted": True,
                 "promo_consent": True,
                 "created_at": "2025-09-10 10:05:00",
-                "updated_at": "2025-09-10 10:05:00"
-            }
+                "updated_at": "2025-09-10 10:05:00",
+            },
         ]
 
     def _get_sample_order_items(self, order_id: int):
         """Zwraca przykładowe pozycje zamówienia."""
         if order_id == 101:
             return [
-                {"id": 1001, "aps_order_id": 101, "item_id": 10, "status": "pending", "aps_id": 1001},
-                {"id": 1002, "aps_order_id": 101, "item_id": 10, "status": "pending", "aps_id": 1001},
-                {"id": 1003, "aps_order_id": 101, "item_id": 20, "status": "pending", "aps_id": 1001}
+                {
+                    "id": 1001,
+                    "aps_order_id": 101,
+                    "item_id": 10,
+                    "status": "pending",
+                    "aps_id": 1001,
+                },
+                {
+                    "id": 1002,
+                    "aps_order_id": 101,
+                    "item_id": 10,
+                    "status": "pending",
+                    "aps_id": 1001,
+                },
+                {
+                    "id": 1003,
+                    "aps_order_id": 101,
+                    "item_id": 20,
+                    "status": "pending",
+                    "aps_id": 1001,
+                },
             ]
         elif order_id == 102:
             return [
-                {"id": 1004, "aps_order_id": 102, "item_id": 30, "status": "pending", "aps_id": 1002},
-                {"id": 1005, "aps_order_id": 102, "item_id": 30, "status": "pending", "aps_id": 1002}
+                {
+                    "id": 1004,
+                    "aps_order_id": 102,
+                    "item_id": 30,
+                    "status": "pending",
+                    "aps_id": 1002,
+                },
+                {
+                    "id": 1005,
+                    "aps_order_id": 102,
+                    "item_id": 30,
+                    "status": "pending",
+                    "aps_id": 1002,
+                },
             ]
         return []
 
@@ -98,21 +128,27 @@ class TestRestartOrdersAction(unittest.TestCase):
         return {
             10: {"current_quantity": 5, "slot_name": "A1"},  # Dostępne (potrzebne: 2)
             20: {"current_quantity": 1, "slot_name": "B1"},  # Dostępne (potrzebne: 1)
-            30: {"current_quantity": 1, "slot_name": "C1"},  # Niedostępne (potrzebne: 2)
+            30: {
+                "current_quantity": 1,
+                "slot_name": "C1",
+            },  # Niedostępne (potrzebne: 2)
         }
 
     async def test_successful_restart_with_available_products(self):
         """Test pomyślnego restartu z dostępnymi produktami."""
-        
+
         # Mock database component
         mock_db = AsyncMock()
         mock_db._connection.transaction = AsyncMock()
         mock_db._connection.transaction.return_value.__aenter__ = AsyncMock()
         mock_db._connection.transaction.return_value.__aexit__ = AsyncMock()
-        
+
         # Mock database queries
         async def mock_select_list(table, columns, where_conditions=None, **kwargs):
-            if table == "aps_order_item" and where_conditions.get("aps_order_id") == 101:
+            if (
+                table == "aps_order_item"
+                and where_conditions.get("aps_order_id") == 101
+            ):
                 return self._get_sample_order_items(101)
             elif table == "storage_item_slot" and where_conditions.get("item_id") == 10:
                 return [{"current_quantity": 5, "slot_name": "A1"}]
@@ -130,9 +166,9 @@ class TestRestartOrdersAction(unittest.TestCase):
         mock_db.select_list = mock_select_list
         mock_db.insert_record = mock_insert_record
         mock_db.update_table_value = AsyncMock()
-        
+
         self.mock_orchestrator.get_component.return_value = mock_db
-        
+
         # Konfiguracja akcji
         action_config = {
             "component": "main_database",
@@ -140,13 +176,13 @@ class TestRestartOrdersAction(unittest.TestCase):
             "clone_config": {
                 "copy_fields": ["aps_id", "origin", "kds_order_number"],
                 "skip_fields": ["pickup_number"],
-                "default_values": {}
-            }
+                "default_values": {},
+            },
         }
-        
+
         # Wykonanie testu
         result = await self.action.execute(action_config, self.context)
-        
+
         # Weryfikacja wyników
         self.assertEqual(result["success_count"], 1)
         self.assertEqual(result["refund_count"], 0)
@@ -155,26 +191,31 @@ class TestRestartOrdersAction(unittest.TestCase):
 
     async def test_restart_with_unavailable_products(self):
         """Test restartu z niedostępnymi produktami (refund)."""
-        
+
         # Mock database component
         mock_db = AsyncMock()
         mock_db._connection.transaction = AsyncMock()
         mock_db._connection.transaction.return_value.__aenter__ = AsyncMock()
         mock_db._connection.transaction.return_value.__aexit__ = AsyncMock()
-        
+
         # Mock database queries - brak produktów w magazynie
         async def mock_select_list(table, columns, where_conditions=None, **kwargs):
-            if table == "aps_order_item" and where_conditions.get("aps_order_id") == 102:
+            if (
+                table == "aps_order_item"
+                and where_conditions.get("aps_order_id") == 102
+            ):
                 return self._get_sample_order_items(102)
             elif table == "storage_item_slot" and where_conditions.get("item_id") == 30:
-                return [{"current_quantity": 1, "slot_name": "C1"}]  # Za mało (potrzebne: 2)
+                return [
+                    {"current_quantity": 1, "slot_name": "C1"}
+                ]  # Za mało (potrzebne: 2)
             return []
 
         mock_db.select_list = mock_select_list
         mock_db.update_table_value = AsyncMock()
-        
+
         self.mock_orchestrator.get_component.return_value = mock_db
-        
+
         # Konfiguracja akcji
         action_config = {
             "component": "main_database",
@@ -182,13 +223,13 @@ class TestRestartOrdersAction(unittest.TestCase):
             "clone_config": {
                 "copy_fields": ["aps_id", "origin"],
                 "skip_fields": [],
-                "default_values": {}
-            }
+                "default_values": {},
+            },
         }
-        
+
         # Wykonanie testu
         result = await self.action.execute(action_config, self.context)
-        
+
         # Weryfikacja wyników
         self.assertEqual(result["success_count"], 0)
         self.assertEqual(result["refund_count"], 1)
@@ -196,41 +237,39 @@ class TestRestartOrdersAction(unittest.TestCase):
 
     async def test_configuration_validation(self):
         """Test walidacji konfiguracji akcji."""
-        
+
         # Test brakującego component
-        action_config = {
-            "orders_source": "test_orders"
-        }
-        
+        action_config = {"orders_source": "test_orders"}
+
         with self.assertRaises(ActionExecutionError) as cm:
             await self.action.execute(action_config, self.context)
-        
+
         self.assertIn("component", str(cm.exception))
 
     async def test_empty_orders_source(self):
         """Test z pustą listą zamówień."""
-        
+
         # Mock database component
         mock_db = AsyncMock()
         self.mock_orchestrator.get_component.return_value = mock_db
-        
+
         # Pusty trigger data
         empty_context = ActionContext(
             orchestrator=self.mock_orchestrator,
             message_logger=self.mock_logger,
             trigger_data={"empty_orders": []},
-            scenario_name="test_empty"
+            scenario_name="test_empty",
         )
-        
+
         action_config = {
             "component": "main_database",
             "orders_source": "empty_orders",
-            "clone_config": {}
+            "clone_config": {},
         }
-        
+
         # Wykonanie testu
         result = await self.action.execute(action_config, empty_context)
-        
+
         # Weryfikacja wyników
         self.assertEqual(result["success_count"], 0)
         self.assertEqual(result["refund_count"], 0)
@@ -238,11 +277,11 @@ class TestRestartOrdersAction(unittest.TestCase):
 
     def test_clone_configuration_parsing(self):
         """Test parsowania konfiguracji klonowania."""
-        
+
         # Test domyślnej konfiguracji
         action_config = {}
         clone_config = self.action._get_clone_configuration(action_config)
-        
+
         self.assertIn("copy_fields", clone_config)
         self.assertIn("default_values", clone_config)
         self.assertIsInstance(clone_config["copy_fields"], list)
@@ -250,9 +289,9 @@ class TestRestartOrdersAction(unittest.TestCase):
 
     def test_product_grouping_logic(self):
         """Test logiki grupowania produktów."""
-        
+
         order_items = self._get_sample_order_items(101)
-        
+
         # Grupowanie powinno dać: item_id 10 -> 2 sztuki, item_id 20 -> 1 sztuka
         items_by_id = {}
         for item in order_items:
@@ -260,7 +299,7 @@ class TestRestartOrdersAction(unittest.TestCase):
             if item_id not in items_by_id:
                 items_by_id[item_id] = []
             items_by_id[item_id].append(item)
-        
+
         self.assertEqual(len(items_by_id[10]), 2)  # 2 pozycje produktu 10
         self.assertEqual(len(items_by_id[20]), 1)  # 1 pozycja produktu 20
 
@@ -276,16 +315,16 @@ async def run_async_test(test_func):
 async def test_integration_basic():
     """Podstawowy test integracyjny."""
     print("🧪 Test podstawowy restart zamówień...")
-    
+
     test_instance = TestRestartOrdersAction()
     test_instance.setUp()
-    
+
     try:
         await test_instance.test_successful_restart_with_available_products()
         print("✅ Test pomyślnego restartu - PASSED")
     except Exception as e:
         print(f"❌ Test pomyślnego restartu - FAILED: {e}")
-    
+
     try:
         await test_instance.test_restart_with_unavailable_products()
         print("✅ Test restartu z refund - PASSED")
@@ -296,10 +335,10 @@ async def test_integration_basic():
 async def test_configuration_validation():
     """Test walidacji konfiguracji."""
     print("🧪 Test walidacji konfiguracji...")
-    
+
     test_instance = TestRestartOrdersAction()
     test_instance.setUp()
-    
+
     try:
         await test_instance.test_configuration_validation()
         print("✅ Test walidacji konfiguracji - PASSED")
@@ -310,9 +349,9 @@ async def test_configuration_validation():
 if __name__ == "__main__":
     """Uruchomienie testów."""
     print("🚀 Uruchamianie testów RestartOrdersAction...")
-    
+
     # Uruchom testy asynchroniczne
     asyncio.run(test_integration_basic())
     asyncio.run(test_configuration_validation())
-    
+
     print("🎯 Testy zakończone!")

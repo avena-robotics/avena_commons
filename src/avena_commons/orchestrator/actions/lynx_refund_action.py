@@ -55,7 +55,7 @@ class LynxRefundAction(BaseAction):
                 )
 
             # Pobierz komponent z orchestratora
-            if not hasattr(context.orchestrator, '_components'):
+            if not hasattr(context.orchestrator, "_components"):
                 raise ActionExecutionError(
                     "lynx_refund", "Orchestrator nie ma zdefiniowanych komponentów"
                 )
@@ -67,9 +67,10 @@ class LynxRefundAction(BaseAction):
                 )
 
             # Sprawdź czy komponent to Lynx API
-            if not hasattr(component, 'send_refund_request'):
+            if not hasattr(component, "send_refund_request"):
                 raise ActionExecutionError(
-                    "lynx_refund", f"Komponent '{component_name}' nie jest komponentem Lynx API"
+                    "lynx_refund",
+                    f"Komponent '{component_name}' nie jest komponentem Lynx API",
                 )
 
             # Sprawdź czy transaction_id jest określone
@@ -81,14 +82,17 @@ class LynxRefundAction(BaseAction):
 
             # Rozwiąż zmienne szablonowe dla transaction_id
             if isinstance(transaction_id, str):
-                transaction_id = self._resolve_template_variables(transaction_id, context)
+                transaction_id = self._resolve_template_variables(
+                    transaction_id, context
+                )
 
             # Spróbuj przekonwertować na int
             try:
                 transaction_id = int(transaction_id)
             except (ValueError, TypeError):
                 raise ActionExecutionError(
-                    "lynx_refund", f"ID transakcji musi być liczbą, otrzymano: {transaction_id}"
+                    "lynx_refund",
+                    f"ID transakcji musi być liczbą, otrzymano: {transaction_id}",
                 )
 
             # Pobierz opcjonalne parametry i rozwiąż zmienne szablonowe
@@ -98,8 +102,10 @@ class LynxRefundAction(BaseAction):
 
             # Rozwiąż zmienne szablonowe
             if isinstance(refund_email_list, str):
-                refund_email_list = self._resolve_template_variables(refund_email_list, context)
-            
+                refund_email_list = self._resolve_template_variables(
+                    refund_email_list, context
+                )
+
             if isinstance(refund_reason, str):
                 refund_reason = self._resolve_template_variables(refund_reason, context)
 
@@ -122,7 +128,7 @@ class LynxRefundAction(BaseAction):
                 transaction_id=transaction_id,
                 refund_amount=refund_amount,
                 refund_email_list=refund_email_list,
-                refund_reason=refund_reason
+                refund_reason=refund_reason,
             )
 
             if result.get("success"):
@@ -132,7 +138,8 @@ class LynxRefundAction(BaseAction):
                 )
             else:
                 raise ActionExecutionError(
-                    "lynx_refund", f"Żądanie refund nie powiodło się: {result.get('error', 'Nieznany błąd')}"
+                    "lynx_refund",
+                    f"Żądanie refund nie powiodło się: {result.get('error', 'Nieznany błąd')}",
                 )
 
             return result

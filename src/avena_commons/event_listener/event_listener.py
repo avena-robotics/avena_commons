@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import signal
@@ -610,7 +611,9 @@ class EventListener:
         """
         # Store the current configuration as baseline before any modifications
         self._configuration = (
-            self._default_configuration.copy() if self._default_configuration else {}
+            copy.deepcopy(self._default_configuration)
+            if self._default_configuration
+            else {}
         )
 
         if not os.path.exists(self.__config_file_path):
@@ -679,7 +682,7 @@ class EventListener:
         Returns:
             dict: Merged dictionary
         """
-        result = default_dict.copy()
+        result = copy.deepcopy(default_dict)
 
         for key, value in config_dict.items():
             if (

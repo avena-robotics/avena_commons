@@ -53,25 +53,29 @@ class LynxRefundApproveAction(BaseAction):
             component_name = action_config.get("component")
             if not component_name:
                 raise ActionExecutionError(
-                    "lynx_refund_approve", "Brak nazwy komponentu Lynx API (pole: component)"
+                    "lynx_refund_approve",
+                    "Brak nazwy komponentu Lynx API (pole: component)",
                 )
 
             # Pobierz komponent z orchestratora
-            if not hasattr(context.orchestrator, '_components'):
+            if not hasattr(context.orchestrator, "_components"):
                 raise ActionExecutionError(
-                    "lynx_refund_approve", "Orchestrator nie ma zdefiniowanych komponentów"
+                    "lynx_refund_approve",
+                    "Orchestrator nie ma zdefiniowanych komponentów",
                 )
 
             component = context.orchestrator._components.get(component_name)
             if not component:
                 raise ActionExecutionError(
-                    "lynx_refund_approve", f"Komponent '{component_name}' nie został znaleziony"
+                    "lynx_refund_approve",
+                    f"Komponent '{component_name}' nie został znaleziony",
                 )
 
             # Sprawdź czy komponent to Lynx API
-            if not hasattr(component, 'send_refund_approve_request'):
+            if not hasattr(component, "send_refund_approve_request"):
                 raise ActionExecutionError(
-                    "lynx_refund_approve", f"Komponent '{component_name}' nie jest komponentem Lynx API"
+                    "lynx_refund_approve",
+                    f"Komponent '{component_name}' nie jest komponentem Lynx API",
                 )
 
             # Sprawdź czy transaction_id jest określone
@@ -83,14 +87,17 @@ class LynxRefundApproveAction(BaseAction):
 
             # Rozwiąż zmienne szablonowe dla transaction_id
             if isinstance(transaction_id, str):
-                transaction_id = self._resolve_template_variables(transaction_id, context)
+                transaction_id = self._resolve_template_variables(
+                    transaction_id, context
+                )
 
             # Spróbuj przekonwertować na int
             try:
                 transaction_id = int(transaction_id)
             except (ValueError, TypeError):
                 raise ActionExecutionError(
-                    "lynx_refund_approve", f"ID transakcji musi być liczbą, otrzymano: {transaction_id}"
+                    "lynx_refund_approve",
+                    f"ID transakcji musi być liczbą, otrzymano: {transaction_id}",
                 )
 
             # Pobierz opcjonalne parametry i rozwiąż zmienne szablonowe
@@ -100,21 +107,31 @@ class LynxRefundApproveAction(BaseAction):
 
             # Rozwiąż zmienne szablonowe
             if isinstance(refund_document_url, str):
-                refund_document_url = self._resolve_template_variables(refund_document_url, context)
-            
+                refund_document_url = self._resolve_template_variables(
+                    refund_document_url, context
+                )
+
             if isinstance(machine_au_time, str) and machine_au_time:
-                machine_au_time = self._resolve_template_variables(machine_au_time, context)
+                machine_au_time = self._resolve_template_variables(
+                    machine_au_time, context
+                )
 
             # Konwersje typów
             try:
                 # is_refunded_externally powinno być boolean
                 if isinstance(is_refunded_externally, str):
-                    is_refunded_externally = is_refunded_externally.lower() in ('true', '1', 'yes', 'on')
+                    is_refunded_externally = is_refunded_externally.lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                    )
                 else:
                     is_refunded_externally = bool(is_refunded_externally)
             except (ValueError, TypeError) as e:
                 raise ActionExecutionError(
-                    "lynx_refund_approve", f"Błąd konwersji parametru is_refunded_externally: {e}"
+                    "lynx_refund_approve",
+                    f"Błąd konwersji parametru is_refunded_externally: {e}",
                 )
 
             debug(
@@ -129,7 +146,7 @@ class LynxRefundApproveAction(BaseAction):
                 transaction_id=transaction_id,
                 is_refunded_externally=is_refunded_externally,
                 refund_document_url=refund_document_url,
-                machine_au_time=machine_au_time
+                machine_au_time=machine_au_time,
             )
 
             if result.get("success"):
@@ -139,7 +156,8 @@ class LynxRefundApproveAction(BaseAction):
                 )
             else:
                 raise ActionExecutionError(
-                    "lynx_refund_approve", f"Żądanie approve refund nie powiodło się: {result.get('error', 'Nieznany błąd')}"
+                    "lynx_refund_approve",
+                    f"Żądanie approve refund nie powiodło się: {result.get('error', 'Nieznany błąd')}",
                 )
 
             return result
@@ -150,5 +168,6 @@ class LynxRefundApproveAction(BaseAction):
 
         except Exception as e:
             raise ActionExecutionError(
-                "lynx_refund_approve", f"Nieoczekiwany błąd podczas wykonywania akcji: {e}"
+                "lynx_refund_approve",
+                f"Nieoczekiwany błąd podczas wykonywania akcji: {e}",
             )

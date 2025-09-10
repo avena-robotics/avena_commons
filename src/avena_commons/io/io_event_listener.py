@@ -9,6 +9,7 @@ Eksponuje:
 - Klasa `IO_server`
 """
 
+import copy
 import importlib
 import json
 import traceback
@@ -1368,7 +1369,7 @@ class IO_server(EventListener):
         Returns:
             dict: Wynik scalania słowników.
         """
-        result = base_dict.copy()
+        result = copy.deepcopy(base_dict)
 
         for key, value in override_dict.items():
             # If both values are dictionaries, recursively merge them

@@ -83,11 +83,18 @@ class BaseAction(ABC):
         if "{{ trigger.source }}" in result and trigger.get("source"):
             result = result.replace("{{ trigger.source }}", str(trigger["source"]))
 
-        if "{{ trigger.transaction_id }}" in result and trigger.get("transaction_id") is not None:
-            result = result.replace("{{ trigger.transaction_id }}", str(trigger["transaction_id"]))
+        if (
+            "{{ trigger.transaction_id }}" in result
+            and trigger.get("transaction_id") is not None
+        ):
+            result = result.replace(
+                "{{ trigger.transaction_id }}", str(trigger["transaction_id"])
+            )
 
         if "{{ trigger.admin_email }}" in result and trigger.get("admin_email"):
-            result = result.replace("{{ trigger.admin_email }}", str(trigger["admin_email"]))
+            result = result.replace(
+                "{{ trigger.admin_email }}", str(trigger["admin_email"])
+            )
 
         if "{{ trigger.payload.error_code }}" in result:
             payload = trigger.get("payload", {})
@@ -104,11 +111,17 @@ class BaseAction(ABC):
                 result = result.replace("{{ trigger.error_message }}", str(err_msg))
 
         # Nowe: zmienne dla refund approve
-        if "{{ trigger.refund_document_url }}" in result and trigger.get("refund_document_url"):
-            result = result.replace("{{ trigger.refund_document_url }}", str(trigger["refund_document_url"]))
+        if "{{ trigger.refund_document_url }}" in result and trigger.get(
+            "refund_document_url"
+        ):
+            result = result.replace(
+                "{{ trigger.refund_document_url }}", str(trigger["refund_document_url"])
+            )
 
         if "{{ trigger.machine_au_time }}" in result and trigger.get("machine_au_time"):
-            result = result.replace("{{ trigger.machine_au_time }}", str(trigger["machine_au_time"]))
+            result = result.replace(
+                "{{ trigger.machine_au_time }}", str(trigger["machine_au_time"])
+            )
 
         # 2) error_message - uniwersalny placeholder: użyj trigger.error_message,
         #    a gdy brak - spróbuj zbudować z orchestrator._state (klienci w błędzie)
