@@ -53,16 +53,6 @@
       "level": "success",
       "message": "✅ Zakończono wysyłkę powiadomień SMS do klientów",
       "description": "Potwierdzenie wysłania powiadomień SMS"
-    },
-    {
-      "type": "aps_database_update",
-      "description": "Oznaczenie zamówień jako powiadomione",
-      "component": "main_database",
-      "table": "orders",
-      "update_column": "status",
-      "update_value": "sms_sent",
-      "where_column": "status",
-      "where_value": "order_processing_has_started"
     }
   ]
 }
