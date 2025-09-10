@@ -7,6 +7,8 @@ from typing import Any, Dict
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
+from .lynx_refund_action import LynxRefundAction
+from .lynx_refund_approve_action import LynxRefundApproveAction
 from .restart_orders_action import RestartOrdersAction
 from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
@@ -48,6 +50,10 @@ class ActionExecutor:
         
         # NOWE: Akcje biznesowe APS
         self._actions["restart_orders"] = RestartOrdersAction()
+        
+        # NOWE: Akcje Lynx API
+        self._actions["lynx_refund"] = LynxRefundAction()
+        self._actions["lynx_refund_approve"] = LynxRefundApproveAction()
         
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """

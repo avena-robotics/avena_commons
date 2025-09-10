@@ -3,13 +3,10 @@
   "description": "Przykład użycia nowej akcji send_custom_command z różnymi selektorami i danymi niestandardowymi",
   "version": "1.0.0",
   "priority": 50,
-  "manual_run": true,
-  "conditions": [
-    {
-      "type": "time",
-      "always_true": true
-    }
-  ],
+  "trigger": {
+    "type": "manual",
+    "description": "Ręczne uruchomienie demonstracji send_custom_command"
+  },
   "actions": [
     {
       "type": "log_event",

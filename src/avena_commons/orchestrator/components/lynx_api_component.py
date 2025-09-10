@@ -319,3 +319,87 @@ class LynxAPIComponent:
                 "error": str(e),
                 "transaction_id": transaction_id
             }
+
+    async def send_refund_approve_request(
+        self,
+        transaction_id: int,
+        is_refunded_externally: bool = False,
+        refund_document_url: str = "",
+        machine_au_time: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Wysyła żądanie approve refund do Lynx API.
+
+        Args:
+            transaction_id: ID transakcji do zatwierdzenia zwrotu
+            is_refunded_externally: Czy zwrot został wykonany zewnętrznie
+            refund_document_url: URL do dokumentu zwrotu (jeśli zewnętrzny)
+            machine_au_time: Czas autoryzacji maszyny (opcjonalnie, domyślnie bieżący)
+
+        Returns:
+            Odpowiedź z API
+
+        Raises:
+            Exception: W przypadku błędu komunikacji z API
+        """
+        if not self._is_initialized or not self._session:
+            raise Exception(f"Komponent Lynx API '{self.name}' nie jest zainicjalizowany")
+
+        url = f"{self._base_url}/operational/v1/payment/refund-approve"
+        
+        # Użyj podanego czasu
+        if machine_au_time is None:
+            raise ValueError("machine_au_time musi być pobrany. Dane:  transaction_id: {transaction_id}, is_refunded_externally: {is_refunded_externally}, refund_document_url: {refund_document_url}, machine_au_time: {machine_au_time}")
+
+        payload = {
+            "IsRefundedExternally": is_refunded_externally,
+            "RefundDocumentUrl": refund_document_url,
+            "TransactionId": transaction_id,
+            "SiteId": self._site_id,  # Użyj site_id z konfiguracji komponentu
+            "MachineAuTime": machine_au_time
+        }
+
+        try:
+            debug(
+                f"🚀 Wysyłanie żądania approve refund do Lynx API dla transakcji {transaction_id}",
+                message_logger=self._message_logger,
+            )
+            
+            response = self._session.post(url, json=payload)
+            response.raise_for_status()  # Rzuci wyjątek dla kodów błędów HTTP
+            
+            result = response.json() if response.content else {}
+            
+            info(
+                f"✅ Żądanie approve refund wysłane pomyślnie dla transakcji {transaction_id}",
+                message_logger=self._message_logger,
+            )
+            
+            return {
+                "success": True,
+                "status_code": response.status_code,
+                "response": result,
+                "transaction_id": transaction_id
+            }
+
+        except requests.exceptions.RequestException as e:
+            error(
+                f"❌ Błąd wysyłania żądania approve refund dla transakcji {transaction_id}: {e}",
+                message_logger=self._message_logger,
+            )
+            return {
+                "success": False,
+                "error": str(e),
+                "transaction_id": transaction_id
+            }
+
+        except Exception as e:
+            error(
+                f"❌ Nieoczekiwany błąd przy wysyłaniu approve refund dla transakcji {transaction_id}: {e}",
+                message_logger=self._message_logger,
+            )
+            return {
+                "success": False,
+                "error": str(e),
+                "transaction_id": transaction_id
+            }

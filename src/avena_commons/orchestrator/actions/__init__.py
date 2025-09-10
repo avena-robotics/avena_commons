@@ -10,6 +10,7 @@ from .base_action import ActionContext, ActionExecutionError, BaseAction
 from .database_update_action_base import DatabaseUpdateAction
 from .log_action import LogAction
 from .lynx_refund_action import LynxRefundAction
+from .lynx_refund_approve_action import LynxRefundApproveAction
 from .restart_orders_action import RestartOrdersAction
 from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
@@ -24,6 +25,7 @@ __all__ = [
     "ActionExecutionError",
     "LogAction",
     "LynxRefundAction",
+    "LynxRefundApproveAction",
     "RestartOrdersAction",
     "SendCommandAction",
     "SendCustomCommandAction",

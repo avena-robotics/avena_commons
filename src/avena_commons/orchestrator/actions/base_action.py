@@ -103,6 +103,13 @@ class BaseAction(ABC):
             if err_msg is not None:
                 result = result.replace("{{ trigger.error_message }}", str(err_msg))
 
+        # Nowe: zmienne dla refund approve
+        if "{{ trigger.refund_document_url }}" in result and trigger.get("refund_document_url"):
+            result = result.replace("{{ trigger.refund_document_url }}", str(trigger["refund_document_url"]))
+
+        if "{{ trigger.machine_au_time }}" in result and trigger.get("machine_au_time"):
+            result = result.replace("{{ trigger.machine_au_time }}", str(trigger["machine_au_time"]))
+
         # 2) error_message - uniwersalny placeholder: użyj trigger.error_message,
         #    a gdy brak - spróbuj zbudować z orchestrator._state (klienci w błędzie)
         if "{{ error_message }}" in result:

@@ -6,7 +6,7 @@
   "priority": 60,
   "cooldown": 300,
   "trigger": {
-    "type": "time_based",
+    "type": "automatic",
     "description": "Restart zamówień co godzinę dla statusu pending z błędami",
     "conditions": {
       "time": {
