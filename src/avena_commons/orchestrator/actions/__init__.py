@@ -16,6 +16,7 @@ from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
 from .send_sms_action import SendSmsAction
+from .send_sms_to_customer_action import SendSmsToCustomerAction
 from .wait_for_state_action import WaitForStateAction
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "SystemctlAction",
     "SendEmailAction",
     "SendSmsAction",
+    "SendSmsToCustomerAction",
     "DatabaseUpdateAction",
 ]
