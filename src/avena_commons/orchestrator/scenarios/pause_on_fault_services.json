@@ -2,7 +2,7 @@
   "name": "Wstrzymanie systemu przy błędach (@all)",
   "description": "Autonomiczny scenariusz bezpieczeństwa - wstrzymuje wszystkie usługi gdy wykryty zostanie błąd",
   "priority": 10,
-  "cooldown": 10,
+  "cooldown": 60,
   "trigger": {
     "type": "automatic",
     "conditions": {
