@@ -47,7 +47,6 @@ class DatabaseListCondition(DatabaseCondition):
             condition_factory: Fabryka warunków
         """
         # Wywołaj konstruktor rodzica, ale bez walidacji expected_value
-        # (nie jest potrzebne dla list condition)
         super(DatabaseCondition, self).__init__(
             config, message_logger, condition_factory
         )
@@ -154,14 +153,10 @@ class DatabaseListCondition(DatabaseCondition):
                 limit=self.limit,
                 order_by=self.order_by,
             )
+            
+            self.copy_dict_deep(context, self.context)  # Skopiuj kontekst do self.context
 
-            debug(
-                f"📊 Pobrano {len(records)} rekordów z tabeli '{self.table}'",
-                message_logger=self.message_logger,
-            )
-
-            self.context = context  # Zaktualizuj kontekst warunku
-            self.context['trigger_data']['result_key'] = records  # Zapisz rekordy w kontekście pod result_key
+            self.context['trigger_data'][self.result_key] = records  # Zapisz rekordy w kontekście pod result_key
 
             # Zwróć True jeśli znaleziono rekordy, False jeśli lista pusta
             result = len(records) > 0
@@ -179,6 +174,28 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
             return False
+        
+    def copy_dict_deep(self, source_dict: Dict[str, Any], target_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Przepisuje wszystkie klucze ze słownika źródłowego do docelowego z głęboką kopią.
+        
+        Jeśli wartość jest słownikiem, kopiuje rekursywnie wszystkie zagnieżdżone klucze.
+        
+        Args:
+            source_dict: Słownik źródłowy z którego kopiowane są klucze
+            target_dict: Słownik docelowy do którego kopiowane są klucze
+            
+        Returns:
+            Dict[str, Any]: Słownik docelowy z przepisanymi kluczami
+        """
+        for key, value in source_dict.items():
+            if isinstance(value, dict):
+                if key not in target_dict:
+                    target_dict[key] = {}
+                self.copy_dict_deep(value, target_dict[key])
+            else:
+                target_dict[key] = value
+        return target_dict
 
     def __str__(self) -> str:
         """Zwraca czytelny opis warunku."""
