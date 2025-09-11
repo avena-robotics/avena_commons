@@ -1693,9 +1693,7 @@ class Orchestrator(EventListener):
 
             # Ewaluuj warunek
             should_trigger = await condition.evaluate(context)
-
-            # Pobierz dane z warunków (jeśli zostały zapisane) # TODO: lepszy sposób przekazywania danych z trigger data
-            trigger_data = condition._context.get("trigger_data", {})
+            trigger_data = condition.context['trigger_data']
 
             return should_trigger, trigger_data
 

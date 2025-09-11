@@ -160,8 +160,8 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
 
-            # Zapisz wyniki w kontekście
-            self._store_records_in_context(context, records)
+            self.context = context  # Zaktualizuj kontekst warunku
+            self.context['trigger_data']['result_key'] = records  # Zapisz rekordy w kontekście pod result_key
 
             # Zwróć True jeśli znaleziono rekordy, False jeśli lista pusta
             result = len(records) > 0
@@ -179,32 +179,6 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
             return False
-
-    def _store_records_in_context(
-        self, context: Dict[str, Any], records: List[Dict[str, Any]]
-    ) -> None:
-        """
-        Zapisuje pobrane rekordy w kontekście pod określonym kluczem.
-
-        Rekordy są dostępne dla akcji w scenariuszu przez trigger_data.
-
-        Args:
-            context: Kontekst wykonania
-            records: Lista rekordów do zapisania
-        """
-        # Upewnij się, że istnieje struktura dla danych trigger
-        if "trigger_data" not in context:
-            context["trigger_data"] = {}
-
-        # Zapisz rekordy pod określonym kluczem
-        context["trigger_data"][self.result_key] = records
-        
-        self._context = copy.deepcopy(context)
-
-        debug(
-            f"💾 Zapisano {len(records)} rekordów w kontekście pod kluczem '{self.result_key}'",
-            message_logger=self.message_logger,
-        )
 
     def __str__(self) -> str:
         """Zwraca czytelny opis warunku."""

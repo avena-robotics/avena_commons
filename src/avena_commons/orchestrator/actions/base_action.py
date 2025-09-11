@@ -30,6 +30,12 @@ class ActionContext:
 
     # Dodatkowe dane kontekstowe
     additional_data: Optional[Dict[str, Any]] = None
+    
+    def __str__(self):
+        return f"ActionContext(scenario={self.scenario_name}, trigger_data={self.trigger_data}, additional_data={self.additional_data})"
+    
+    def __repr__(self):
+        return self.__str__()
 
 
 class BaseAction(ABC):
