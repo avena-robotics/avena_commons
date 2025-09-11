@@ -74,10 +74,18 @@ class DatabaseComponent:
     ) -> Dict[str, Any]:
         """
         Zwraca kopię where_conditions z generyczną normalizacją wartości (Enum → .value).
+        Obsługuje także listy wartości.
         """
         converted: Dict[str, Any] = {}
         for col, val in where_conditions.items():
-            converted[col] = self._to_db_value_for_column(col, val)
+            if isinstance(val, list):
+                # Konwertuj każdy element listy
+                converted[col] = [
+                    self._to_db_value_for_column(col, item) for item in val
+                ]
+            else:
+                # Konwertuj pojedynczą wartość
+                converted[col] = self._to_db_value_for_column(col, val)
         return converted
 
     def validate_config(self) -> bool:
@@ -331,9 +339,29 @@ class DatabaseComponent:
         param_index = 1
 
         for col, val in where_conditions.items():
-            where_parts.append(f"{col} = ${param_index}")
-            values.append(val)
-            param_index += 1
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
 
         where_clause = " AND ".join(where_parts)
         query = f"SELECT {column} FROM {table} WHERE {where_clause}"
@@ -397,9 +425,29 @@ class DatabaseComponent:
         param_index = 1
 
         for col, val in converted_where.items():
-            where_parts.append(f"{col} = ${param_index}")
-            values.append(val)
-            param_index += 1
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
 
         where_clause = " AND ".join(where_parts)
 
@@ -494,9 +542,29 @@ class DatabaseComponent:
             if hasattr(val, "value"):
                 val = val.value  # Pobierz .value z enuma dla asyncpg
 
-            where_parts.append(f"{col} = ${param_index}")
-            values.append(val)
-            param_index += 1
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
 
         where_clause = " AND ".join(where_parts)
         query = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
@@ -607,9 +675,30 @@ class DatabaseComponent:
         for col, val in converted_where.items():
             if hasattr(val, "value"):
                 val = val.value
-            where_parts.append(f"{col} = ${param_index}")
-            values.append(val)
-            param_index += 1
+
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
 
         where_clause = " AND ".join(where_parts)
         query = f"UPDATE {table} SET {target_column} = {set_expr} WHERE {where_clause}"
