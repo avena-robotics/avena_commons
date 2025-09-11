@@ -92,6 +92,10 @@ class EventListener:
     _latest_state_data: dict = {}
     __state_update_frequency: int = 1  # Hz
     __state_update_thread: threading.Thread = None
+    
+    _error: bool = False
+    _error_code: int = 0
+    _error_message: str | None = None
 
     def __init__(
         self,
@@ -1276,6 +1280,11 @@ class EventListener:
                         self._change_fsm_state(EventListenerState.FAULT)
                     case EventListenerState.ACK:
                         await self.on_ack()
+                        
+                        self._error = False
+                        self._error_code = 0
+                        self._error_message = None
+                        
                         self.__save_state()
                         self._change_fsm_state(EventListenerState.STOPPED)
                     case _:
