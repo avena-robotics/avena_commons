@@ -5,6 +5,7 @@ Rozszerza funkcjonalność DatabaseCondition o możliwość pobrania wielu rekor
 spełniających warunek i udostępnienia ich w kontekście scenariusza.
 """
 
+import copy
 from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, error
@@ -197,6 +198,8 @@ class DatabaseListCondition(DatabaseCondition):
 
         # Zapisz rekordy pod określonym kluczem
         context["trigger_data"][self.result_key] = records
+        
+        self._context = copy.deepcopy(context)
 
         debug(
             f"💾 Zapisano {len(records)} rekordów w kontekście pod kluczem '{self.result_key}'",

@@ -1694,8 +1694,8 @@ class Orchestrator(EventListener):
             # Ewaluuj warunek
             should_trigger = await condition.evaluate(context)
 
-            # Pobierz dane z warunków (jeśli zostały zapisane)
-            trigger_data = context.get("trigger_data", {})
+            # Pobierz dane z warunków (jeśli zostały zapisane) # TODO: lepszy sposób przekazywania danych z trigger data
+            trigger_data = condition._context.get("trigger_data", {})
 
             return should_trigger, trigger_data
 
@@ -1895,7 +1895,7 @@ class Orchestrator(EventListener):
                 }
 
                 # Dodaj dane z warunków (np. z database_list)
-                combined_trigger_data.update(trigger_data)
+                combined_trigger_data["action_data"] = trigger_data
 
                 task = asyncio.create_task(
                     self._execute_scenario_with_tracking(
