@@ -70,8 +70,9 @@ class EvaluateConditionAction(BaseAction):
             )
 
             # Ewaluuj warunki
-            condition_result = await self._evaluate_conditions(conditions, context)
-
+            condition_result, condition_data = await self._evaluate_conditions(conditions, context)
+            context.trigger_data.update(condition_data)
+            
             info(
                 f"📊 Wynik ewaluacji warunków: {condition_result}",
                 message_logger=context.message_logger,
@@ -97,12 +98,7 @@ class EvaluateConditionAction(BaseAction):
                     message_logger=context.message_logger,
                 )
 
-            return {
-                "condition_result": condition_result,
-                "executed_branch": action_branch,
-                "executed_actions_count": len(executed_actions),
-                "action_results": executed_actions,
-            }
+            return context
 
         except ActionExecutionError:
             raise
@@ -256,12 +252,15 @@ class EvaluateConditionAction(BaseAction):
                 condition_config, context.message_logger
             )
             result = await condition.evaluate(condition_context)
+            result_data = condition.context['trigger_data']
+            
+            debug(f"Action Evaluate Condition result_data: {result_data}", message_logger=context.message_logger)
 
             debug(
                 f"🔍 Ewaluacja warunków: {result}",
                 message_logger=context.message_logger,
             )
-            return result
+            return result, result_data
 
         except Exception as e:
             error(
