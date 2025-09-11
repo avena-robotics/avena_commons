@@ -34,7 +34,7 @@
   },
   "actions": [
     {
-      "type": "logic_and",
+      "type": "evaluate_condition",
       "conditions": [
         {
           "type": "database_list",

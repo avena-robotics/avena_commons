@@ -132,6 +132,7 @@ class ActionModel(BaseModel):
             "custom_process",
             # NOWE: Typy kontroli przepływu scenariuszy
             "execute_scenario",
+            "evaluate_condition",
         }
         if v not in known_types:
             # Nie blokujemy nieznanych typów - mogą być dynamicznie ładowane

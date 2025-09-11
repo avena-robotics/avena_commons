@@ -1,5 +1,5 @@
 {
-  "name": "Uruchomienie wszystkich serwisów - tryb manualny",
+  "name": "Wznowienie wszystkich serwisów - tryb manualny",
   "description": "Scenariusz manualny doprowadzający wszystkie klienty systemu do stanu RUN z różnych stanów początkowych (STOPPED, PAUSE, INITIALIZED). Obsługuje inteligentne przejścia stanów FSM.",
   "priority": 98,
   "cooldown": 5,
