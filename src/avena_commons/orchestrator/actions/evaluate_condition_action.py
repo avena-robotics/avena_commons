@@ -21,7 +21,9 @@ class EvaluateConditionAction(BaseAction):
     Obsługuje zarówno pojedyncze warunki jak i złożone konstrukcje logiczne.
 
     Args:
-        conditions: Lista warunków do sprawdzenia (wymagane)
+        conditions: Warunki do sprawdzenia w jednym z formatów:
+                   - Słownik jak w trigger: {"client_state": {"any_service_in_state": ["FAULT"]}}
+                   - Lista obiektów: [{"type": "database_list", "component": "...", ...}]
         true_actions: Lista akcji do wykonania gdy warunki są spełnione (opcjonalne)
         false_actions: Lista akcji do wykonania gdy warunki nie są spełnione (opcjonalne)
 
@@ -34,7 +36,7 @@ class EvaluateConditionAction(BaseAction):
 
     def __init__(self):
         """Inicjalizuje akcję evaluate_condition."""
-        self._action_executor = None
+        pass
 
     async def execute(
         self, action_config: Dict[str, Any], context: ActionContext
@@ -129,23 +131,39 @@ class EvaluateConditionAction(BaseAction):
             )
 
         conditions = action_config["conditions"]
-        if not isinstance(conditions, list) or len(conditions) == 0:
-            raise ActionExecutionError(
-                "evaluate_condition", "Pole 'conditions' musi być niepustą listą"
-            )
 
-        # Sprawdź że każdy warunek ma odpowiednią strukturę
-        for i, condition in enumerate(conditions):
-            if not isinstance(condition, dict):
+        # Obsługuj oba formaty: słownik (jak w trigger) lub lista
+        if isinstance(conditions, dict):
+            # Format jak w trigger: {"client_state": {...}}
+            if len(conditions) == 0:
                 raise ActionExecutionError(
                     "evaluate_condition",
-                    f"Warunek {i} musi być słownikiem, otrzymano: {type(condition)}",
+                    "Pole 'conditions' nie może być pustym słownikiem",
+                )
+        elif isinstance(conditions, list):
+            # Format z listą: [{"type": "...", ...}]
+            if len(conditions) == 0:
+                raise ActionExecutionError(
+                    "evaluate_condition", "Pole 'conditions' musi być niepustą listą"
                 )
 
-            if "type" not in condition:
-                raise ActionExecutionError(
-                    "evaluate_condition", f"Warunek {i} musi zawierać pole 'type'"
-                )
+            # Sprawdź że każdy warunek ma odpowiednią strukturę
+            for i, condition in enumerate(conditions):
+                if not isinstance(condition, dict):
+                    raise ActionExecutionError(
+                        "evaluate_condition",
+                        f"Warunek {i} musi być słownikiem, otrzymano: {type(condition)}",
+                    )
+
+                if "type" not in condition:
+                    raise ActionExecutionError(
+                        "evaluate_condition", f"Warunek {i} musi zawierać pole 'type'"
+                    )
+        else:
+            raise ActionExecutionError(
+                "evaluate_condition",
+                f"Pole 'conditions' musi być słownikiem lub listą, otrzymano: {type(conditions)}",
+            )
 
         # Sprawdź że przynajmniej jedna z akcji jest zdefiniowana
         true_actions = action_config.get("true_actions", [])
@@ -179,14 +197,12 @@ class EvaluateConditionAction(BaseAction):
                         f"Akcja {i} w {name} musi zawierać pole 'type'",
                     )
 
-    async def _evaluate_conditions(
-        self, conditions: Dict[str, Any], context: ActionContext
-    ) -> bool:
+    async def _evaluate_conditions(self, conditions, context: ActionContext) -> bool:
         """
         Ewaluuje warunki używając factory pattern.
 
         Args:
-            conditions: Konfiguracja warunków do sprawdzenia (może być zagnieżdżona)
+            conditions: Konfiguracja warunków do sprawdzenia (słownik jak w trigger lub lista)
             context: Kontekst wykonania
 
         Returns:
@@ -200,12 +216,44 @@ class EvaluateConditionAction(BaseAction):
             orchestrator = context.orchestrator
             condition_context = {
                 "clients": getattr(orchestrator, "_state", {}).copy(),
-                "trigger": context.trigger_data or {},
+                "components": getattr(
+                    orchestrator, "_components", {}
+                ),  # Dodaj komponenty!
+                "trigger_data": context.trigger_data or {},
             }
+
+            # Konwertuj format listy na format słownika jeśli potrzeba
+            if isinstance(conditions, list):
+                # Format z listy: [{"type": "database_list", ...}]
+                # Konwertuj na format słownika dla ConditionFactory
+                if len(conditions) == 1:
+                    # Pojedynczy warunek - użyj go bezpośrednio
+                    condition_item = conditions[0].copy()  # Utwórz kopię
+                    condition_type = condition_item.pop("type")  # Usuń 'type' z kopii
+                    condition_config = {condition_type: condition_item}
+                else:
+                    # Wiele warunków - zawrap w AND
+                    converted_conditions = []
+                    for condition_item in conditions:
+                        condition_item_copy = condition_item.copy()
+                        condition_type = condition_item_copy.pop("type")
+                        converted_conditions.append({
+                            condition_type: condition_item_copy
+                        })
+
+                    condition_config = {"and": {"conditions": converted_conditions}}
+            else:
+                # Format słownika (jak w trigger) - użyj bezpośrednio
+                condition_config = conditions
+
+            debug(
+                f"🔍 Konfiguracja warunków po konwersji: {condition_config}",
+                message_logger=context.message_logger,
+            )
 
             # Użyj factory do utworzenia i ewaluacji warunków
             condition = ConditionFactory.create_condition(
-                conditions, context.message_logger
+                condition_config, context.message_logger
             )
             result = await condition.evaluate(condition_context)
 
@@ -240,12 +288,9 @@ class EvaluateConditionAction(BaseAction):
         Raises:
             ActionExecutionError: W przypadku błędu wykonania akcji
         """
-        if self._action_executor is None:
-            # Utwórz executor if needed (singleton-like behavior)
-            # Import tutaj aby uniknąć circular import
-            from .action_executor import ActionExecutor
-
-            self._action_executor = ActionExecutor()
+        # Użyj ActionExecutor z orkiestratora zamiast tworzyć nową instancję
+        # Dzięki temu mamy dostęp do wszystkich zarejestrowanych akcji (systemowych + użytkownika)
+        action_executor = context.orchestrator._action_executor
 
         results = []
 
@@ -256,9 +301,7 @@ class EvaluateConditionAction(BaseAction):
                     message_logger=context.message_logger,
                 )
 
-                result = await self._action_executor.execute_action(
-                    action_config, context
-                )
+                result = await action_executor.execute_action(action_config, context)
 
                 results.append({
                     "action_index": i,
