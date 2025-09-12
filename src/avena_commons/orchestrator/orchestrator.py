@@ -1409,11 +1409,7 @@ class Orchestrator(EventListener):
         try:
             actions = scenario.get("actions", [])
             for action_config in actions:
-                debug(f"Before Action Context: {context}", self._message_logger)
-                context = await self._action_executor.execute_action(
-                    action_config, context
-                )
-                debug(f"After Action Context: {context}", self._message_logger)
+                await self._action_executor.execute_action(action_config, context)
 
             info(
                 f"Scenariusz '{scenario_name}' zakończony pomyślnie",
