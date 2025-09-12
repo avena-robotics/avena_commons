@@ -23,7 +23,7 @@ from typing import Any, Dict, List
 
 import requests
 
-from avena_commons.util.logger import error, info, warning
+from avena_commons.util.logger import debug, error, info, warning
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
 
@@ -130,10 +130,11 @@ class SendSmsToCustomerAction(BaseAction):
                         break
 
             if not customer_records:
-                raise ActionExecutionError(
-                    self.action_type,
-                    "Nie znaleziono listy rekordów klientów w trigger_data",
+                info(
+                    f"send_sms_to_customer: brak rekordów klientów w trigger_data",
+                    message_logger=context.message_logger,
                 )
+                return
 
             # 3) Określ pole z numerem telefonu
             phone_field = action_config.get("phone_field")

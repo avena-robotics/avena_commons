@@ -1410,9 +1410,10 @@ class Orchestrator(EventListener):
             actions = scenario.get("actions", [])
             for action_config in actions:
                 debug(f"Before Action Context: {context}", self._message_logger)
-                context = await self._action_executor.execute_action(action_config, context)
+                context = await self._action_executor.execute_action(
+                    action_config, context
+                )
                 debug(f"After Action Context: {context}", self._message_logger)
-                
 
             info(
                 f"Scenariusz '{scenario_name}' zakończony pomyślnie",
@@ -1696,7 +1697,11 @@ class Orchestrator(EventListener):
 
             # Ewaluuj warunek
             should_trigger = await condition.evaluate(context)
-            trigger_data = condition.context['trigger_data']
+            trigger_data = (
+                condition.context["trigger_data"]
+                if "trigger_data" in condition.context
+                else {}
+            )
 
             return should_trigger, trigger_data
 
@@ -1893,7 +1898,7 @@ class Orchestrator(EventListener):
                     "source": "autonomous_mode",
                     "event_type": "AUTONOMOUS_TRIGGER",
                     "timestamp": datetime.now().isoformat(),
-                    'trigger_data': {}
+                    "trigger_data": {},
                 }
 
                 # Dodaj dane z warunków (np. z database_list)

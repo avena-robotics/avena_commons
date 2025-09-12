@@ -5,7 +5,6 @@ ActionExecutor - klasa zarządzająca wykonywaniem akcji scenariuszy.
 from typing import Any, Dict
 
 from .base_action import ActionContext, ActionExecutionError, BaseAction
-from .evaluate_condition_action import EvaluateConditionAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
 from .lynx_refund_action import LynxRefundAction
@@ -51,7 +50,6 @@ class ActionExecutor:
 
         # NOWE: Akcje kontroli przepływu scenariuszy
         self._actions["execute_scenario"] = ExecuteScenarioAction()
-        self._actions["evaluate_condition"] = EvaluateConditionAction()
 
         # NOWE: Akcje Lynx API
         self._actions["lynx_refund"] = LynxRefundAction()

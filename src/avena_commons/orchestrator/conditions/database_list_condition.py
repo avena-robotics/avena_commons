@@ -153,11 +153,12 @@ class DatabaseListCondition(DatabaseCondition):
                 limit=self.limit,
                 order_by=self.order_by,
             )
-            
-            self.copy_dict_deep(context, self.context)  # Skopiuj kontekst do self.context
-
-            self.context['trigger_data'][self.result_key] = records  # Zapisz rekordy w kontekście pod result_key
-
+            self.copy_dict_deep(
+                context, self.context
+            )  # Skopiuj kontekst do self.context
+            self.context["trigger_data"][self.result_key] = (
+                records  # Zapisz rekordy w kontekście pod result_key
+            )
             # Zwróć True jeśli znaleziono rekordy, False jeśli lista pusta
             result = len(records) > 0
 
@@ -174,17 +175,19 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
             return False
-        
-    def copy_dict_deep(self, source_dict: Dict[str, Any], target_dict: Dict[str, Any]) -> Dict[str, Any]:
+
+    def copy_dict_deep(
+        self, source_dict: Dict[str, Any], target_dict: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Przepisuje wszystkie klucze ze słownika źródłowego do docelowego z głęboką kopią.
-        
+
         Jeśli wartość jest słownikiem, kopiuje rekursywnie wszystkie zagnieżdżone klucze.
-        
+
         Args:
             source_dict: Słownik źródłowy z którego kopiowane są klucze
             target_dict: Słownik docelowy do którego kopiowane są klucze
-            
+
         Returns:
             Dict[str, Any]: Słownik docelowy z przepisanymi kluczami
         """
