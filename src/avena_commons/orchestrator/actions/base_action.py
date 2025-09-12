@@ -1,3 +1,4 @@
+# AI: BaseAction implementuje template rendering z zachowaniem typów dla pojedynczych zmiennych Jinja2 oraz standardowe renderowanie dla mieszanego tekstu. Obsługuje zagnieżdżone struktury i notację kropkową.
 """
 BaseAction - klasa bazowa dla wszystkich akcji scenariuszy z ScenarioContext.
 """
@@ -100,9 +101,6 @@ class BaseAction(ABC):
         
         env = Environment(loader=BaseLoader())
         
-        # Dodaj niestandardowe funkcje do kontekstu Jinja2
-        template_data['_get_nested_value'] = lambda obj, path: self._get_nested_value(obj, path.split('.'))
-        
         try:
             template = env.from_string(text)
             result = template.render(**template_data)
@@ -111,25 +109,6 @@ class BaseAction(ABC):
             from avena_commons.util.logger import error
             error(f"Błąd podczas renderowania template: {e}", message_logger=context.message_logger)
             return text
-
-    def _get_nested_value(self, obj: Any, keys: list) -> Any:
-        """
-        Pomocnicza metoda do pobierania zagnieżdżonych wartości z obiektów/słowników.
-
-        Args:
-            obj: Obiekt źródłowy
-            keys: Lista kluczy do przechodzenia
-
-        Returns:
-            Any: Znaleziona wartość z zachowanym typem
-        """
-        value = obj
-        for key in keys:
-            if isinstance(value, dict):
-                value = value[key]
-            else:
-                value = getattr(value, key)
-        return value
 
     def _get_config_value(
         self, 
