@@ -1597,6 +1597,7 @@ class Orchestrator(EventListener):
         # Utwórz kontekst scenariusza
         scenario_context = ScenarioContext(
             scenario_name=scenario_name,
+            orchestrator=self,
             action_executor=self._action_executor,
             message_logger=self._message_logger,
             clients=filtered_clients_state,
