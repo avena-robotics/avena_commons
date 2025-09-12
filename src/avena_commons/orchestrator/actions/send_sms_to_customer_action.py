@@ -111,72 +111,46 @@ class SendSmsToCustomerAction(BaseAction):
                     self.action_type, "Brak sms.source w konfiguracji"
                 )
 
-            # 2) Pobierz listę klientów/rekordów z context
-            if not context.context:
-                raise ActionExecutionError(self.action_type, "Brak danych context")
-
-            # Szukaj listy w context - może być pod różnymi kluczami
-            customer_records = None
-            for key in context.context:
-                value = context.context[key]
-                if isinstance(value, list) and value:
-                    # Sprawdź czy pierwszy element listy ma strukturę rekordu (dict)
-                    if isinstance(value[0], dict):
-                        customer_records = value
-                        info(
-                            f"send_sms_to_customer: znaleziono listę rekordów pod kluczem '{key}' ({len(value)} rekordów)",
-                            message_logger=context.message_logger,
-                        )
-                        break
+            customer_records = context.get('customers')
 
             if not customer_records:
-                info(
-                    f"send_sms_to_customer: brak rekordów klientów w context",
-                    message_logger=context.message_logger,
-                )
-                return
+                raise ActionExecutionError(self.action_type, "Brak danych klientów w context")
+            
+            # for key in context.context:
+            #     value = context.context[key]
+            #     if isinstance(value, list) and value:
+            #         # Sprawdź czy pierwszy element listy ma strukturę rekordu (dict)
+            #         if isinstance(value[0], dict):
+            #             customer_records = value
+            #             info(
+            #                 f"send_sms_to_customer: znaleziono listę rekordów pod kluczem '{key}' ({len(value)} rekordów)",
+            #                 message_logger=context.message_logger,
+            #             )
+            #             break
 
-            # 3) Określ pole z numerem telefonu
-            phone_field = action_config.get("phone_field")
-            if not phone_field:
-                # Próbuj znaleźć automatycznie
-                sample_record = customer_records[0]
-                phone_candidates = [
-                    "client_phone_number",  # Standardowe pole w systemie
-                    "telefon",
-                    "phone",
-                    "numer_telefonu",
-                    "phone_number",
-                    "tel",
-                ]
-                for candidate in phone_candidates:
-                    if candidate in sample_record:
-                        phone_field = candidate
-                        break
+            # if not customer_records:
+            #     info(
+            #         f"send_sms_to_customer: brak rekordów klientów w context",
+            #         message_logger=context.message_logger,
+            #     )
+            #     return
 
-                if not phone_field:
-                    raise ActionExecutionError(
-                        self.action_type,
-                        f"Nie znaleziono pola z numerem telefonu. Sprawdź dostępne pola: {list(sample_record.keys())}",
-                    )
-
-            # 4) Pobierz numery telefonów z rekordów
+            # 3) Pobierz numery telefonów z rekordów
             recipients_with_data = []
             for record in customer_records:
-                if isinstance(record, dict) and phone_field in record:
-                    phone = str(record[phone_field]).strip()
-                    if phone:
-                        recipients_with_data.append({"phone": phone, "record": record})
+                # kds_order_number = customer_records['kds_order_number'] if 'kds_order_number' in customer_records else None
+                client_phone_number = customer_records['client_phone_number'] if 'client_phone_number' in customer_records else None
+                recipient_data.append(client_phone_number)
 
             if not recipients_with_data:
                 warning(
-                    f"send_sms_to_customer: brak prawidłowych numerów telefonów w polu '{phone_field}'",
+                    f"send_sms_to_customer: brak prawidłowych numerów telefonów w polu 'client_phone_number'",
                     message_logger=context.message_logger,
                 )
                 return
 
             info(
-                f"send_sms_to_customer: przygotowano {len(recipients_with_data)} adresatów z pola '{phone_field}'",
+                f"send_sms_to_customer: przygotowano {len(recipients_with_data)} adresatów z pola 'client_phone_number'",
                 message_logger=context.message_logger,
             )
 
