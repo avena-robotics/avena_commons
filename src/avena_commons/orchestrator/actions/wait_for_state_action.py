@@ -7,8 +7,8 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ActionExecutionError, BaseAction
 from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class WaitForStateAction(BaseAction):
@@ -164,11 +164,10 @@ class WaitForStateAction(BaseAction):
         Używa tej samej logiki co SendCommandAction.
         """
         target_clients = []
-        orchestrator = context.orchestrator
 
         # Sprawdź selektor "@all"
         if "target" in action_config and action_config["target"] == "@all":
-            target_clients.extend(self._get_all_clients(orchestrator))
+            target_clients.extend(context.clients)
 
         # Sprawdź pojedynczy serwis
         elif "client" in action_config and action_config["client"]:
@@ -180,7 +179,7 @@ class WaitForStateAction(BaseAction):
         # Sprawdź pojedynczą grupę
         elif "group" in action_config and action_config["group"]:
             group_name = action_config["group"]
-            target_clients.extend(self._get_clients_by_group(group_name, orchestrator))
+            target_clients.extend(self._get_clients_by_group(group_name, context.orchestrator))
 
         # Sprawdź wiele grup
         elif "groups" in action_config and action_config["groups"]:
@@ -188,7 +187,7 @@ class WaitForStateAction(BaseAction):
             if isinstance(groups, list):
                 for group_name in groups:
                     target_clients.extend(
-                        self._get_clients_by_group(group_name, orchestrator)
+                        self._get_clients_by_group(group_name, context.orchestrator)
                     )
 
         # Usunięcie duplikatów
@@ -208,7 +207,7 @@ class WaitForStateAction(BaseAction):
                 target_clients = [
                     client_name
                     for client_name in target_clients
-                    if orchestrator._state.get(client_name, {}).get("fsm_state")
+                    if context.orchestrator._state.get(client_name, {}).get("fsm_state")
                     in set(state_in)
                 ]
 
@@ -217,7 +216,7 @@ class WaitForStateAction(BaseAction):
                 target_clients = [
                     client_name
                     for client_name in target_clients
-                    if orchestrator._state.get(client_name, {}).get("fsm_state")
+                    if context.orchestrator._state.get(client_name, {}).get("fsm_state")
                     not in excluded
                 ]
         except Exception:
@@ -253,8 +252,6 @@ class WaitForStateAction(BaseAction):
             target_state: Oczekiwany stan
             context: Kontekst wykonania
         """
-        orchestrator = context.orchestrator
-
         info(
             f"🔍 _wait_for_clients_state: ROZPOCZĘCIE - czekam na jeden ze stanów {target_states} dla {len(clients)} klientów: {clients}",
             message_logger=context.message_logger,
@@ -275,7 +272,7 @@ class WaitForStateAction(BaseAction):
 
             for client_name in clients:
                 # Pobierz aktualny stan serwisu z orchestratora
-                client_state = orchestrator._state.get(client_name, {})
+                client_state = context.orchestrator._state.get(client_name, {})
                 current_fsm_state = client_state.get("fsm_state", "UNKNOWN")
 
                 states_info.append(f"{client_name}={current_fsm_state}")

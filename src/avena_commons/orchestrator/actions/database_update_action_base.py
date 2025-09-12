@@ -73,14 +73,13 @@ class DatabaseUpdateAction(BaseAction):
                     self.action_type, "Pole 'where' musi być niepustym słownikiem"
                 )
 
-            components = context.get('components', {})
-            if component_name not in components:
+            if component_name not in context.components:
                 raise ActionExecutionError(
                     self.action_type,
                     f"Komponent bazodanowy '{component_name}' nie jest dostępny",
                 )
 
-            db_component = components[component_name]
+            db_component = context.components[component_name]
 
             enhanced_where = dict(where)
 

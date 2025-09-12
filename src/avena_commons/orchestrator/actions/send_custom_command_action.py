@@ -138,7 +138,7 @@ class SendCustomCommandAction(BaseAction):
 
         # Sprawdź selektor "@all"
         if "target" in action_config and action_config["target"] == "@all":
-            target_clients.extend(self._get_all_clients(orchestrator))
+            target_clients.extend(context.clients)
 
         # Sprawdź pojedynczy komponent
         elif "client" in action_config and action_config["client"]:
@@ -185,19 +185,6 @@ class SendCustomCommandAction(BaseAction):
                 clients.append(client_name)
 
         return clients
-
-    def _get_all_clients(self, orchestrator) -> List[str]:
-        """
-        Pobiera wszystkie zarejestrowane serwisy.
-
-        Args:
-            orchestrator: Referencja do Orchestratora
-
-        Returns:
-            Lista nazw wszystkich serwisów
-        """
-        config = orchestrator._configuration.get("clients", {})
-        return list(config.keys())
 
     def _resolve_template_variables_in_data(
         self, data: Dict[str, Any], context: ScenarioContext
@@ -258,16 +245,13 @@ class SendCustomCommandAction(BaseAction):
         Raises:
             ActionExecutionError: W przypadku błędu wysyłania
         """
-        orchestrator = context.orchestrator
-        config = orchestrator._configuration.get("clients", {})
-
-        if client_name not in config:
+        if client_name not in context.clients:
             raise ActionExecutionError(
                 "send_custom_command",
                 f'Serwis "{client_name}" nie znaleziony w konfiguracji',
             )
 
-        client_config = config[client_name]
+        client_config = context.clients[client_name]
 
         try:
             # Pobierz timeout z konfiguracji akcji (jeśli podany)
@@ -276,7 +260,7 @@ class SendCustomCommandAction(BaseAction):
                 timeout = self._parse_timeout(timeout)
 
             # Użyj metody _event z Orchestratora do wysłania polecenia z danymi
-            event = await orchestrator._event(
+            event = await context.orchestrator._event(
                 destination=client_name,
                 destination_address=client_config["address"],
                 destination_port=client_config["port"],

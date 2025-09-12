@@ -60,13 +60,12 @@ class LynxRefundAction(BaseAction):
                     "lynx_refund", "Orchestrator nie ma zdefiniowanych komponentów"
                 )
 
-            components = context.get('components', {})
-            if not component_name in components:
+            if not component_name in context.components:
                 raise ActionExecutionError(
                     "lynx_refund", f"Komponent '{component_name}' nie został znaleziony"
                 )
                 
-            lynx_component = components[component_name]
+            lynx_component = context.components[component_name]
 
             # Sprawdź czy komponent to Lynx API
             if not hasattr(lynx_component, "send_refund_request"):

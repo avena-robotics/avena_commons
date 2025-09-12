@@ -16,6 +16,8 @@ class ScenarioContext(BaseModel):
     
     scenario_name: str = Field(..., description="Nazwa scenariusza")
     
+    orchestrator: Any = Field(..., description="Instancja Orchestratora", exclude=True)
+    
     # Komponenty systemu (readonly dla warunków/akcji)
     action_executor: Any = Field(..., description="Executor akcji", exclude=True)
     message_logger: Any = Field(..., description="Logger wiadomości", exclude=True) 
@@ -27,7 +29,7 @@ class ScenarioContext(BaseModel):
     
     class Config:
         arbitrary_types_allowed = True
-        exclude = {"action_executor", "message_logger"}
+        exclude = {"action_executor", "message_logger", "orchestrator"}
     
     def get(self, key: str, default: Any = None) -> Any:
         """Pobiera zmienną z kontekstu scenariusza."""

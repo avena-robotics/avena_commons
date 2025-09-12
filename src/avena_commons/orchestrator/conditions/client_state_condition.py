@@ -35,7 +35,7 @@ class ClientStateCondition(BaseCondition):
         exclude_set: set[str] | None = set(exclude_clients) if exclude_clients else None
 
         # Pobierz aktualny stan klientów z kontekstu
-        clients_state = context.get("clients", {})
+        clients_state = context.clients
 
         if any_service_in_state:
             # Normalizuj do listy

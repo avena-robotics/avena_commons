@@ -58,15 +58,7 @@ class LynxRefundApproveAction(BaseAction):
                     "Brak nazwy komponentu Lynx API (pole: component)",
                 )
 
-            # Pobierz komponent z orchestratora
-            if not hasattr(context.orchestrator, "_components"):
-                raise ActionExecutionError(
-                    "lynx_refund_approve",
-                    "Orchestrator nie ma zdefiniowanych komponentów",
-                )
-
-            components = context.get('components', {})
-            component = components.get(component_name)
+            component = context.components.get(component_name)
             
             if not component:
                 raise ActionExecutionError(

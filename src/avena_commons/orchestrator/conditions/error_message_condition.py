@@ -83,7 +83,7 @@ class ErrorMessageCondition(BaseCondition):
             )
 
         # Pobierz stany klientów
-        clients_state = context.get("clients", {})
+        clients_state = context.clients
         if not clients_state:
             if self.message_logger:
                 self.message_logger.debug(

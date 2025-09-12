@@ -1,0 +1,60 @@
+{
+  "name": "order_refund_approve",
+  "description": "Scenariusz refund z użyciem zmiennych szablonowych z triggera",
+  "priority": 90,
+  "trigger": {
+    "type": "automatic",
+    "description": "Zwrot środków dla zamówień oznaczonych statusem refund_requested w bazie danych",
+    "conditions": {
+      "database_list": {
+        "component": "main_database",
+        "table": "aps_order",
+        "columns": [
+          "id", "aps_id", "origin", "status", "pickup_number",
+          "kds_order_number", "client_phone_number",
+          "transaction_id"
+        ],
+        "where": {
+          "status": "error",
+          "created_at": "> NOW() - INTERVAL '1 hour'"
+        },
+        "result_key": "zamowienia_restart",
+        "limit": 100,
+        "order_by": "created_at ASC"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log",
+      "message": "Rozpoczynam refund dla transakcji {{ trigger_data.zamowienia_restart.transaction_id }}",
+      "level": "info"
+    },
+    {
+      "type": "lynx_refund",
+      "component": "lynx_api",
+      "transaction_id": "{{ trigger_data.zamowienia_restart.transaction_id }}",
+      "refund_amount": 0,
+      "refund_reason": "Auto refund - {{ trigger_data.zamowienia_restart.error_message }}",
+      "refund_email_list": "{{ trigger_data.admin_email }}"
+    },
+    {
+      "type": "log",
+      "message": "Refund request wysłane, rozpoczynam approve",
+      "level": "info"
+    },
+    {
+      "type": "lynx_refund_approve",
+      "component": "lynx_api",
+      "transaction_id": "{{ trigger_data.transaction_id }}",
+      "is_refunded_externally": false,
+      "refund_document_url": "{{ trigger_data.refund_document_url }}",
+      "machine_au_time": "{{ trigger_data.machine_au_time }}"
+    },
+    {
+      "type": "log",
+      "message": "Refund approve dla transakcji {{ trigger_data.transaction_id }} zakończone pomyślnie",
+      "level": "success"
+    }
+  ]
+}
