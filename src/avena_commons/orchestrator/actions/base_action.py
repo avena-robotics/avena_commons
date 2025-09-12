@@ -36,24 +36,24 @@ class BaseAction(ABC):
         """
         pass
 
-    def _resolve_template_variables(self, text: str, context: ScenarioContext) -> str:
+    def _resolve_template_variables(self, text: str, context: ScenarioContext) -> Any:
         """
         Rozwiązuje zmienne templatów w tekście używając kontekstu scenariusza.
+        
+        Jeśli cały tekst to jedna zmienna Jinja ({{ var }}), zwraca oryginalną wartość
+        zachowując typ. W przeciwnym razie renderuje jako string.
 
         Args:
             text: Tekst z potencjalnymi zmiennymi template
             context: Kontekst scenariusza z danymi
 
         Returns:
-            str: Tekst z rozwiązanymi zmiennymi
+            Any: Wartość zmiennej z zachowanym typem lub wyrenderowany string
         """
         if not text or not isinstance(text, str):
             return str(text) if text is not None else ""
 
-        from jinja2 import BaseLoader, Environment
-
-        # Środowisko Jinja2 do renderowania szablonów
-        env = Environment(loader=BaseLoader())
+        import re
 
         # Przygotowanie danych kontekstowych dla templateów
         template_data = {}
@@ -65,7 +65,41 @@ class BaseAction(ABC):
         # Dodanie podstawowych danych z context
         template_data['scenario_name'] = context.scenario_name
 
-        # Renderowanie szablonu
+        # Sprawdź czy cały tekst to jedna zmienna (np. "{{ variable }}" lub "{{ var.attr }}")
+        single_var_pattern = r'^\s*\{\{\s*([^}]+)\s*\}\}\s*$'
+        match = re.match(single_var_pattern, text)
+        
+        if match:
+            # Wyciągnij nazwę zmiennej
+            var_expression = match.group(1).strip()
+            
+            try:
+                # Obsługa zagnieżdżonych kluczy jak "data.key" lub "var.attribute"
+                if '.' in var_expression:
+                    keys = var_expression.split('.')
+                    value = template_data
+                    for key in keys:
+                        if isinstance(value, dict):
+                            value = value[key]
+                        else:
+                            # Dla obiektów użyj getattr
+                            value = getattr(value, key)
+                    return value
+                else:
+                    # Prosty klucz
+                    return template_data[var_expression]
+                    
+            except (KeyError, AttributeError, TypeError) as e:
+                from avena_commons.util.logger import error
+                error(f"Nie można pobrać zmiennej '{var_expression}': {e}", 
+                      message_logger=context.message_logger)
+                return None
+
+        # Jeśli to nie jest pojedyncza zmienna, użyj standardowego renderowania Jinja2
+        from jinja2 import BaseLoader, Environment
+        
+        env = Environment(loader=BaseLoader())
+        
         try:
             template = env.from_string(text)
             result = template.render(**template_data)
@@ -94,7 +128,7 @@ class BaseAction(ABC):
             context: Kontekst scenariusza dla templateów
 
         Returns:
-            Any: Wartość z konfiguracji (z rozwiązanymi templateami)
+            Any: Wartość z konfiguracji z zachowanymi typami danych
 
         Raises:
             ActionExecutionError: Gdy wymagana wartość nie istnieje
@@ -107,11 +141,38 @@ class BaseAction(ABC):
                 f"Brak wymaganego parametru '{key}' w konfiguracji akcji"
             )
         
-        # Rozwiąż templaty jeśli wartość jest stringiem i mamy kontekst
-        if isinstance(value, str) and context:
-            value = self._resolve_template_variables(value, context)
+        # Rozwiąż templaty zachowując oryginalne typy
+        if context:
+            return self._resolve_nested_templates(value, context)
         
         return value
+
+    def _resolve_nested_templates(self, data: Any, context: ScenarioContext) -> Any:
+        """
+        Rekurencyjnie rozwiązuje templaty w zagnieżdżonych strukturach danych.
+
+        Args:
+            data: Dane do przetworzenia (może być string, lista, słownik, etc.)
+            context: Kontekst scenariusza
+
+        Returns:
+            Any: Przetworzone dane z rozwiązanymi templateami i zachowanymi typami
+        """
+        if isinstance(data, str):
+            return self._resolve_template_variables(data, context)
+        elif isinstance(data, dict):
+            return {
+                key: self._resolve_nested_templates(value, context)
+                for key, value in data.items()
+            }
+        elif isinstance(data, list):
+            return [
+                self._resolve_nested_templates(item, context)
+                for item in data
+            ]
+        else:
+            # Dla innych typów (int, float, bool, None, etc.) zwróć bez zmian
+            return data
 
     def _validate_config(
         self, 
