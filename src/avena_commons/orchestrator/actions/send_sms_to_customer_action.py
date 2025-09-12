@@ -111,36 +111,27 @@ class SendSmsToCustomerAction(BaseAction):
                     self.action_type, "Brak sms.source w konfiguracji"
                 )
 
-            customer_records = context.get('customers')
+            customer_records_field = action_config.get("customers")
+
+            customer_records = self._resolve_template_variables(
+                customer_records_field, context
+            )
 
             if not customer_records:
-                raise ActionExecutionError(self.action_type, "Brak danych klientów w context")
-            
-            # for key in context.context:
-            #     value = context.context[key]
-            #     if isinstance(value, list) and value:
-            #         # Sprawdź czy pierwszy element listy ma strukturę rekordu (dict)
-            #         if isinstance(value[0], dict):
-            #             customer_records = value
-            #             info(
-            #                 f"send_sms_to_customer: znaleziono listę rekordów pod kluczem '{key}' ({len(value)} rekordów)",
-            #                 message_logger=context.message_logger,
-            #             )
-            #             break
-
-            # if not customer_records:
-            #     info(
-            #         f"send_sms_to_customer: brak rekordów klientów w context",
-            #         message_logger=context.message_logger,
-            #     )
-            #     return
+                raise ActionExecutionError(
+                    self.action_type, "Brak danych klientów w context"
+                )
 
             # 3) Pobierz numery telefonów z rekordów
             recipients_with_data = []
-            for record in customer_records:
+            for i, record in enumerate(customer_records):
                 # kds_order_number = customer_records['kds_order_number'] if 'kds_order_number' in customer_records else None
-                client_phone_number = customer_records['client_phone_number'] if 'client_phone_number' in customer_records else None
-                recipient_data.append(client_phone_number)
+                client_phone_number = (
+                    record["client_phone_number"]
+                    if "client_phone_number" in record
+                    else None
+                )
+                recipients_with_data.append(client_phone_number)
 
             if not recipients_with_data:
                 warning(
@@ -150,7 +141,7 @@ class SendSmsToCustomerAction(BaseAction):
                 return
 
             info(
-                f"send_sms_to_customer: przygotowano {len(recipients_with_data)} adresatów z pola 'client_phone_number'",
+                f"send_sms_to_customer: przygotowano {len(recipients_with_data)}, {recipients_with_data} adresatów z pola 'client_phone_number'",
                 message_logger=context.message_logger,
             )
 
@@ -197,15 +188,9 @@ class SendSmsToCustomerAction(BaseAction):
             sent_count = 0
 
             for recipient_data in recipients_with_data:
-                phone = recipient_data["phone"]
-                record = recipient_data["record"]
+                text = self._resolve_template_variables(raw_text, context)
 
-                # Zastąp placeholdery w tekście danymi z rekordu klienta
-                text = self._resolve_template_variables_with_record(
-                    raw_text, context, record
-                )
-
-                dest = _normalize_dest(phone)
+                dest = _normalize_dest(recipient_data)
                 segments = _split_text(text, segment_length)
 
                 recipient_ok = True
@@ -248,7 +233,7 @@ class SendSmsToCustomerAction(BaseAction):
 
                         if ok:
                             info(
-                                f"📱 send_sms_to_customer: Wysłano SMS do {dest} (segment {idx}/{len(segments)}){(' (id: ' + sms_id_info + ')') if sms_id_info else ''}",
+                                f"📱 send_sms_to_customer: Wysłano SMS do {dest} (segment {idx}/{len(segments)}){(' (id: ' + sms_id_info + ')') if sms_id_info else ''}. Treść segmentu: {segment}",
                                 message_logger=context.message_logger,
                             )
                         else:
@@ -316,27 +301,3 @@ class SendSmsToCustomerAction(BaseAction):
             except Exception:
                 # Licznik błędów nie może przerwać dalszego działania
                 pass
-
-    def _resolve_template_variables_with_record(
-        self, text: str, context: ScenarioContext, record: Dict[str, Any]
-    ) -> str:
-        """Rozwiąż zmienne w tekście używając danych z rekordu klienta oraz standardowego kontekstu.
-
-        Args:
-            text: Tekst z placeholderami do zastąpienia.
-            context: Kontekst akcji z danymi triggera.
-            record: Pojedynczy rekord klienta z danymi.
-
-        Returns:
-            str: Tekst z zastąpionymi placeholderami.
-        """
-        # Najpierw użyj standardowej metody z base_action
-        resolved_text = self._resolve_template_variables(text, context)
-
-        # Następnie zastąp placeholdery danymi z rekordu klienta
-        for key, value in record.items():
-            placeholder = f"{{{{ {key} }}}}"
-            if placeholder in resolved_text:
-                resolved_text = resolved_text.replace(placeholder, str(value))
-
-        return resolved_text
