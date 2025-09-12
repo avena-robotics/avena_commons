@@ -144,6 +144,7 @@ class Orchestrator(EventListener):
 
         # NOWE: Przechowywanie kontekstów scenariuszy
         self.scenario_data: Dict[str, Any] = {}  # ScenarioContext per nazwa scenariusza
+        self.completed_scenario_contexts_dir = "temp/completed_scenarios"
 
         self._action_executor = ActionExecutor(
             register_default_actions=False
@@ -1354,8 +1355,7 @@ class Orchestrator(EventListener):
                 message_logger=self._message_logger,
             )
 
-            # Usuń kontekst po udanym wykonaniu
-            self.scenario_data.pop(scenario_name, None)
+            # Usuń kontekst po udanym wykonaniu -> finally
             return True
 
         except ActionExecutionError as e:
@@ -1363,8 +1363,7 @@ class Orchestrator(EventListener):
                 f"Błąd wykonywania scenariusza '{scenario_name}': {e}",
                 message_logger=self._message_logger,
             )
-            # Usuń kontekst po błędzie
-            self.scenario_data.pop(scenario_name, None)
+            # Usuń kontekst po błędzie -> finally
             return False
         except Exception as e:
             error(
@@ -1375,9 +1374,13 @@ class Orchestrator(EventListener):
                 f"Traceback: {traceback.format_exc()}",
                 message_logger=self._message_logger,
             )
-            # Usuń kontekst po błędzie
-            self.scenario_data.pop(scenario_name, None)
+            # Usuń kontekst po błędzie -> finally
             return False
+        finally:
+            context_to_dump = self.scenario_data.pop(scenario_name, None)
+            await self._serialize_completed_scenario_context(
+                context_to_dump
+            )
 
     async def _execute_action(
         self, action_config: Dict[str, Any], context: ScenarioContext
@@ -1850,6 +1853,31 @@ class Orchestrator(EventListener):
                     f"Traceback: {traceback.format_exc()}",
                     message_logger=self._message_logger,
                 )
+                
+    async def _serialize_completed_scenario_context(self, scenario_context: ScenarioContext) -> None:
+        """Serializuje i zapisuje zakończony context scenariusza do pliku JSON.
+
+        Args:
+            scenario_context(ScenarioContext): Obiekt ScenarioContext do serializacji
+        """
+        try:
+            context_data = {**scenario_context.to_dict(), "completion_timestamp": datetime.now().isoformat()}
+
+            # Serializacja całości za pomocą odziedziczonej metody
+            serialized_data = self._serialize_value(context_data)
+
+            # Generowanie nazwy pliku
+            filename = f"context_{scenario_context.scenario_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filepath = self.completed_scenario_contexts_dir / filename
+
+            # Zapis do pliku
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(serialized_data, f, ensure_ascii=False, indent=4)
+
+            debug(f"Zapisano dane kontekstu scenariusza {scenario_context.scenario_name} do pliku {filename}", message_logger=self._message_logger)
+
+        except Exception as e:
+            error(f"Błąd podczas zapisywania danych kontekstu scenariusza {scenario_context.scenario_name}: {str(e)}", message_logger=self._message_logger)
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
         """

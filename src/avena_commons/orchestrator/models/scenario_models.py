@@ -43,3 +43,6 @@ class ScenarioContext(BaseModel):
         """Aktualizuje zmienne kontekstu z słownika."""
         self.context.update(data)
 
+    def to_dict(self) -> dict:
+        """Konwertuje kontekst scenariusza na słownik, z wyłączeniem pól exclude."""
+        return self.model_dump(exclude=self.Config.exclude)
