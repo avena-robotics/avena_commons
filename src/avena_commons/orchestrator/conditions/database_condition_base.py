@@ -118,15 +118,14 @@ class DatabaseCondition(BaseCondition):
         """
         try:
             # Pobierz komponent bazodanowy z kontekstu
-            components = context.get("components", {})
-            if self.component_name not in components:
+            if self.component_name not in context.components:
                 error(
                     f"❌ Komponent bazodanowy '{self.component_name}' nie został znaleziony w orchestratorze",
                     message_logger=self._message_logger,
                 )
                 return False
 
-            db_component = components[self.component_name]
+            db_component = context.components[self.component_name]
 
             # Sprawdź czy komponent jest połączony
             if not db_component.is_connected:
