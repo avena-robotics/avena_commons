@@ -142,6 +142,31 @@ class BaseAction(ABC):
             )
         
         return processed_config
+    
+    def _parse_timeout(self, timeout_str: str) -> float:
+        """
+        Parsuje string timeout (np. '30s', '2m') na sekundy.
+
+        Args:
+            timeout_str: String z timeout (np. "30s", "2m", "1.5h")
+
+        Returns:
+            Timeout w sekundach jako float
+        """
+        if isinstance(timeout_str, (int, float)):
+            return float(timeout_str)
+
+        timeout_str = str(timeout_str).strip().lower()
+
+        if timeout_str.endswith("s"):
+            return float(timeout_str[:-1])
+        elif timeout_str.endswith("m"):
+            return float(timeout_str[:-1]) * 60
+        elif timeout_str.endswith("h"):
+            return float(timeout_str[:-1]) * 3600
+        else:
+            # Assume seconds if no unit
+            return float(timeout_str)
 
 
 class ActionExecutionError(Exception):
