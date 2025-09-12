@@ -13,6 +13,7 @@ import asyncio
 import importlib
 import inspect
 import json
+import os
 import traceback
 from collections import OrderedDict
 from datetime import datetime
@@ -144,7 +145,11 @@ class Orchestrator(EventListener):
 
         # NOWE: Przechowywanie kontekstów scenariuszy
         self.scenario_data: Dict[str, Any] = {}  # ScenarioContext per nazwa scenariusza
-        self.completed_scenario_contexts_dir = "temp/completed_scenarios"
+        
+        path = "temp/completed_scenarios"
+        if os.path.exists(path) is False:
+            os.makedirs(path)
+        self.completed_scenario_contexts_dir = path
 
         self._action_executor = ActionExecutor(
             register_default_actions=False
