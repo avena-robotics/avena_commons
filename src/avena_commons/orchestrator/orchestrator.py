@@ -1589,18 +1589,21 @@ class Orchestrator(EventListener):
         # KROK 2: Utwórz ScenarioContext
         # Przefiltruj stan klientów do znanych klientów
         configured_clients = self._configuration.get("clients", {})
-        filtered_clients_state = {
-            client_name: self._state.get(client_name, {})
-            for client_name in configured_clients.keys()
-        }
-
+        # Uzupełnij dane klientów z konfiguracji i ich stan z self._state
+        clients_state = {}
+        for client_name, client_config in configured_clients.items():
+            clients_state[client_name] = {
+                **client_config,  # Dane z konfiguracji (port, address, itp.)
+                **self._state.get(client_name, {})  # Stan aktualny (fsm_state, error, itp.)
+            }
+            
         # Utwórz kontekst scenariusza
         scenario_context = ScenarioContext(
             scenario_name=scenario_name,
             orchestrator=self,
             action_executor=self._action_executor,
             message_logger=self._message_logger,
-            clients=filtered_clients_state,
+            clients=clients_state,
             components=self._components,
             context={},  # Pusty słownik na zmienne
         )
