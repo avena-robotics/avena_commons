@@ -40,7 +40,7 @@
           "type": "database_list",
           "component": "main_database",
           "table": "aps_order",
-          "where": "LENGTH({{ trigger.zamowienia_restart }}) > 0",
+          "where": "LENGTH({{ zamowienia_restart }}) > 0",
           "result_key": "has_orders_to_restart"
         }
       ],
@@ -48,13 +48,13 @@
         {
           "type": "log_event",
           "level": "info",
-          "message": "🔄 Rozpoczynam restart {{ trigger.zamowienia_restart|length }} zamówień ze statusem error",
+          "message": "🔄 Rozpoczynam restart {{ zamowienia_restart|length }} zamówień ze statusem error",
           "description": "Rozpoczęcie procesu restartu zamówień"
         },
         {
           "type": "restart_orders",
           "component": "main_database",
-          "orders_source": "{{ trigger.zamowienia_restart }}",
+          "orders_source": "{{ zamowienia_restart }}",
           "clone_config": {
             "copy_fields": [
               "aps_id", "origin", "kds_order_number", "client_phone_number",

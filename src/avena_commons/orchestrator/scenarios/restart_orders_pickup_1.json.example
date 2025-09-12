@@ -32,13 +32,13 @@
     {
       "type": "log_event",
       "level": "info",
-      "message": "🔄 Rozpoczynam restart {{ trigger.zamowienia_pickup_1|length }} zamówień z wydawki pickup_number=1",
+      "message": "🔄 Rozpoczynam restart {{ zamowienia_pickup_1|length }} zamówień z wydawki pickup_number=1",
       "description": "Rozpoczęcie procesu restartu zamówień"
     },
     {
       "type": "restart_orders",
       "component": "main_database",
-      "orders_source": "{{ trigger.zamowienia_pickup_1 }}",
+      "orders_source": "{{ zamowienia_pickup_1 }}",
       "clone_config": {
         "copy_fields": [
           "aps_id", "origin", "kds_order_number", "client_phone_number",
@@ -58,7 +58,7 @@
     },
     {
       "type": "send_email",
-      "to": "{{ trigger.admin_email }}",
+      "to": "{{ admin_email }}",
       "subject": "🔄 Restart zamówień z wydawki 1 - raport",
       "body": "Restart zamówień z wydawki pickup_number=1 został zakończony.\n\n📊 Podsumowanie:\n- Łącznie przetworzonych: {{ action_result.total_count }}\n- Pomyślnie sklonowanych: {{ action_result.success_count }}\n- Ustawiono na refund_pending: {{ action_result.refund_count }}\n- Błędy: {{ action_result.error_count }}\n\n{% if action_result.refund_count > 0 %}🚨 Uwaga: {{ action_result.refund_count }} zamówień wymaga interwencji (brak produktów w magazynie).{% endif %}\n\nSystem automatycznie przypisze nowe zamówienia do działających wydawek.",
       "description": "Powiadomienie email o wyniku restartu"

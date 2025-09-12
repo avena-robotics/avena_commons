@@ -38,13 +38,13 @@
     {
       "type": "log_event", 
       "level": "info",
-      "message": "✅ Znaleziono {{ trigger.aktywni_klienci|length }} aktywnych klientów",
+      "message": "✅ Znaleziono {{ aktywni_klienci|length }} aktywnych klientów",
       "description": "Wynik sprawdzenia"
     },
     {
       "type": "log_event",
       "level": "info", 
-      "message": "👥 Lista klientów: {% for klient in trigger.aktywni_klienci %}{{ klient.nazwa }}{% if not loop.last %}, {% endif %}{% endfor %}",
+      "message": "👥 Lista klientów: {% for klient in aktywni_klienci %}{{ klient.nazwa }}{% if not loop.last %}, {% endif %}{% endfor %}",
       "description": "Szczegółowa lista klientów"
     }
   ]
