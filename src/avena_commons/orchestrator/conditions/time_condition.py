@@ -2,12 +2,13 @@ from datetime import datetime, time
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class TimeCondition(BaseCondition):
     """Sprawdza warunki czasowe."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Ewaluacja warunków czasowych względem bieżącego czasu.
 
@@ -17,7 +18,7 @@ class TimeCondition(BaseCondition):
         - specific_date: ISO-8601 data (YYYY-MM-DD lub pełna z czasem)
 
         Args:
-            context (Dict[str, Any]): Nieużywany (zachowany dla spójności interfejsu).
+            context (ScenarioContext): Nieużywany (zachowany dla spójności interfejsu).
 
         Returns:
             bool: True, jeśli spełniono przynajmniej jeden z warunków.

@@ -12,7 +12,8 @@ from typing import Any, Dict
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class DatabaseUpdateAction(BaseAction):
@@ -25,7 +26,7 @@ class DatabaseUpdateAction(BaseAction):
     action_type = "database_update"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Dict[str, Any]:
         """
         Aktualizuje dane w bazie: SET stałej wartości lub kopia kolumna→kolumna.
@@ -39,7 +40,7 @@ class DatabaseUpdateAction(BaseAction):
                 - value (Any): Wartość do ustawienia (wariant 1).
                 - to_column (str): Kolumna docelowa (wariant 2).
                 - from_column (str): Kolumna źródłowa (wariant 2).
-            context (ActionContext): Kontekst wykonania z dostępem do komponentów DB.
+            context (ScenarioContext): Kontekst wykonania z dostępem do komponentów DB.
 
         Returns:
             Dict[str, Any]: Podsumowanie liczby zaktualizowanych rekordów i parametrów.
@@ -72,9 +73,7 @@ class DatabaseUpdateAction(BaseAction):
                     self.action_type, "Pole 'where' musi być niepustym słownikiem"
                 )
 
-            # Pobierz komponent DB z orchestratora
-            orchestrator = context.orchestrator
-            components = getattr(orchestrator, "_components", {})
+            components = context.get('components', {})
             if component_name not in components:
                 raise ActionExecutionError(
                     self.action_type,

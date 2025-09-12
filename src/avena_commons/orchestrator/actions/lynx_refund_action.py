@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from avena_commons.util.logger import debug, info
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction, ScenarioContext
 
 
 class LynxRefundAction(BaseAction):
@@ -19,19 +19,19 @@ class LynxRefundAction(BaseAction):
     Obsługuje zmienne szablonowe:
     - type: "lynx_refund"
     - component: "lynx_api"
-    - transaction_id: "{{ trigger.transaction_id }}"
-    - refund_reason: "Auto refund - {{ trigger.error_message }}"
-    - refund_email_list: "{{ trigger.admin_email }}"
+    - transaction_id: "{{ context.result_key.transaction_id }}"
+    - refund_reason: "Auto refund - {{ context.error_message }}"
+    - refund_email_list: "{{ context.admin_email }}"
 
     Dostępne zmienne szablonowe:
-    - {{ trigger.transaction_id }} - ID transakcji z triggera
-    - {{ trigger.error_message }} - Wiadomość błędu z triggera
-    - {{ trigger.source }} - Źródło triggera
+    - {{ context.transaction_id }} - ID transakcji z triggera
+    - {{ context.error_message }} - Wiadomość błędu z triggera
+    - {{ context.source }} - Źródło triggera
     - {{ error_message }} - Uniwersalny error message (z trigger lub stanu)
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Dict[str, Any]:
         """
         Wykonuje akcję wysyłania żądania refund.
@@ -60,14 +60,16 @@ class LynxRefundAction(BaseAction):
                     "lynx_refund", "Orchestrator nie ma zdefiniowanych komponentów"
                 )
 
-            component = context.orchestrator._components.get(component_name)
-            if not component:
+            components = context.get('components', {})
+            if not component_name in components:
                 raise ActionExecutionError(
                     "lynx_refund", f"Komponent '{component_name}' nie został znaleziony"
                 )
+                
+            lynx_component = components[component_name]
 
             # Sprawdź czy komponent to Lynx API
-            if not hasattr(component, "send_refund_request"):
+            if not hasattr(lynx_component, "send_refund_request"):
                 raise ActionExecutionError(
                     "lynx_refund",
                     f"Komponent '{component_name}' nie jest komponentem Lynx API",
@@ -119,12 +121,12 @@ class LynxRefundAction(BaseAction):
 
             debug(
                 f"Wysyłanie żądania refund do Lynx API - TransactionID: {transaction_id}, "
-                f"Amount: {refund_amount}, Reason: '{refund_reason}', SiteID z komponentu: {component.get_site_id()}",
+                f"Amount: {refund_amount}, Reason: '{refund_reason}', SiteID z komponentu: {lynx_component.get_site_id()}",
                 message_logger=context.message_logger,
             )
 
             # Wykonaj żądanie refund (site_id jest automatycznie pobierane z komponentu)
-            result = await component.send_refund_request(
+            result = await lynx_component.send_refund_request(
                 transaction_id=transaction_id,
                 refund_amount=refund_amount,
                 refund_email_list=refund_email_list,

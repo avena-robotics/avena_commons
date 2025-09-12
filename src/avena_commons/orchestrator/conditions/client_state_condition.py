@@ -1,12 +1,13 @@
 from typing import Any, Dict, List
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class ClientStateCondition(BaseCondition):
     """Sprawdza stan klienta."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Ewaluacja warunku na podstawie stanów klientów w kontekście.
 
@@ -18,7 +19,7 @@ class ClientStateCondition(BaseCondition):
         - exclude_clients (str|List[str]) – lista klientów do pominięcia.
 
         Args:
-            context (Dict[str, Any]): Kontekst z kluczem "clients" zawierającym stany klientów.
+            context (ScenarioContext): Kontekst z kluczem "clients" zawierającym stany klientów.
 
         Returns:
             bool: Wynik ewaluacji warunku.

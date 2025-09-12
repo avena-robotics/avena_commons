@@ -29,7 +29,6 @@ class BaseCondition(ABC):
         self.message_logger = message_logger
         self.condition_factory = condition_factory
         self.condition_type = self.__class__.__name__.replace("Condition", "").lower()
-        self.context: Dict[str, Any] = {}
 
     @abstractmethod
     async def evaluate(self, context: Dict[str, Any]) -> bool:

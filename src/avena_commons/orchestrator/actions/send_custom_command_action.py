@@ -7,7 +7,8 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, info
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class SendCustomCommandAction(BaseAction):
@@ -50,7 +51,7 @@ class SendCustomCommandAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje akcję wysyłania polecenia niestandardowego z danymi.
@@ -119,7 +120,7 @@ class SendCustomCommandAction(BaseAction):
             )
 
     def _resolve_target_clients(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> List[str]:
         """
         Rozwiązuje komponenty docelowe na podstawie selektorów.
@@ -199,7 +200,7 @@ class SendCustomCommandAction(BaseAction):
         return list(config.keys())
 
     def _resolve_template_variables_in_data(
-        self, data: Dict[str, Any], context: ActionContext
+        self, data: Dict[str, Any], context: ScenarioContext
     ) -> Dict[str, Any]:
         """
         Rozwiązuje zmienne szablonowe w słowniku danych.
@@ -242,7 +243,7 @@ class SendCustomCommandAction(BaseAction):
         command: str,
         command_data: Dict[str, Any],
         action_config: Dict[str, Any],
-        context: ActionContext,
+        context: ScenarioContext,
     ) -> None:
         """
         Wysyła polecenie niestandardowe z danymi do konkretnego komponentu.

@@ -1,41 +1,11 @@
 """
-Bazowa klasa abstrakcyjna dla wszystkich akcji scenariuszy.
+BaseAction - klasa bazowa dla wszystkich akcji scenariuszy z ScenarioContext.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from avena_commons.util.logger import MessageLogger
-
-
-@dataclass
-class ActionContext:
-    """
-    Kontekst wykonania akcji scenariusza.
-    Zawiera wszystkie dane potrzebne do wykonania akcji.
-    """
-
-    # Referencja do Orchestratora dla dostępu do jego metod
-    orchestrator: Any  # Unikamy circular import
-
-    # Logger dla akcji
-    message_logger: Optional[MessageLogger] = None
-
-    # Dane z triggera scenariusza (dla zmiennych {{ trigger.* }})
-    trigger_data: Optional[Dict[str, Any]] = None
-
-    # Nazwa aktualnie wykonywanego scenariusza
-    scenario_name: Optional[str] = None
-
-    # Dodatkowe dane kontekstowe
-    additional_data: Optional[Dict[str, Any]] = None
-    
-    def __str__(self):
-        return f"ActionContext(scenario={self.scenario_name}, trigger_data={self.trigger_data}, additional_data={self.additional_data})"
-    
-    def __repr__(self):
-        return self.__str__()
+from ..models.scenario_models import ScenarioContext
 
 
 class BaseAction(ABC):
@@ -44,151 +14,139 @@ class BaseAction(ABC):
 
     Każda akcja musi implementować metodę execute() która przyjmuje:
     - action_config: słownik z konfiguracją akcji z YAML
-    - context: ActionContext z danymi potrzebnymi do wykonania
+    - context: ScenarioContext z danymi potrzebnymi do wykonania
     """
 
     @abstractmethod
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Any:
         """
         Wykonuje akcję na podstawie konfiguracji i kontekstu.
 
         Args:
             action_config: Konfiguracja akcji z pliku YAML
-            context: Kontekst wykonania z danymi Orchestratora
+            context: Kontekst scenariusza z danymi do wykonania
 
         Returns:
-            Wynik wykonania akcji (opcjonalny)
+            Any: Wynik wykonania akcji
 
         Raises:
-            ActionExecutionError: W przypadku błędu wykonania akcji
+            ActionExecutionError: Gdy wystąpi błąd podczas wykonywania akcji
         """
         pass
 
-    def _resolve_template_variables(self, text: str, context: ActionContext) -> str:
+    def _resolve_template_variables(self, text: str, context: ScenarioContext) -> str:
         """
-        Rozwiązuje zmienne szablonowe w tekście typu {{ trigger.source }}.
+        Rozwiązuje zmienne templatów w tekście używając kontekstu scenariusza.
 
         Args:
-            text: Tekst z potencjalnymi zmiennymi szablonowymi
-            context: Kontekst z danymi do podstawienia
+            text: Tekst z potencjalnymi zmiennymi template
+            context: Kontekst scenariusza z danymi
 
         Returns:
-            Tekst z podstawionymi zmiennymi
+            str: Tekst z rozwiązanymi zmiennymi
         """
-        if not isinstance(text, str):
+        if not text or not isinstance(text, str):
+            return str(text) if text is not None else ""
+
+        from jinja2 import BaseLoader, Environment
+
+        # Środowisko Jinja2 do renderowania szablonów
+        env = Environment(loader=BaseLoader())
+
+        # Przygotowanie danych kontekstowych dla templateów
+        template_data = {}
+
+        # Dodanie danych z kontekstu scenariusza
+        if hasattr(context, 'context') and context.context:
+            template_data.update(context.context)
+
+        # Dodanie podstawowych danych z context
+        template_data['scenario_name'] = context.scenario_name
+
+        # Renderowanie szablonu
+        try:
+            template = env.from_string(text)
+            result = template.render(**template_data)
+            return result
+        except Exception as e:
+            from avena_commons.util.logger import error
+            error(f"Błąd podczas renderowania template: {e}", message_logger=context.message_logger)
             return text
 
-        result = text
-
-        # Jeśli brak trigger_data, nadal zwracamy tekst z ewentualnymi fallbackami poniżej
-        trigger = context.trigger_data or {}
-
-        # Podstawowe zmienne trigger.*
-        if "{{ trigger.source }}" in result and trigger.get("source"):
-            result = result.replace("{{ trigger.source }}", str(trigger["source"]))
-
-        if (
-            "{{ trigger.transaction_id }}" in result
-            and trigger.get("transaction_id") is not None
-        ):
-            result = result.replace(
-                "{{ trigger.transaction_id }}", str(trigger["transaction_id"])
-            )
-
-        if "{{ trigger.admin_email }}" in result and trigger.get("admin_email"):
-            result = result.replace(
-                "{{ trigger.admin_email }}", str(trigger["admin_email"])
-            )
-
-        if "{{ trigger.payload.error_code }}" in result:
-            payload = trigger.get("payload", {})
-            if payload.get("error_code") is not None:
-                result = result.replace(
-                    "{{ trigger.payload.error_code }}", str(payload["error_code"])
-                )
-
-        # Nowe: {{ trigger.error_message }} oraz {{ error_message }}
-        # 1) trigger.error_message - pochodzi bezpośrednio z trigger_data
-        if "{{ trigger.error_message }}" in result:
-            err_msg = trigger.get("error_message")
-            if err_msg is not None:
-                result = result.replace("{{ trigger.error_message }}", str(err_msg))
-
-        # Nowe: zmienne dla refund approve
-        if "{{ trigger.refund_document_url }}" in result and trigger.get(
-            "refund_document_url"
-        ):
-            result = result.replace(
-                "{{ trigger.refund_document_url }}", str(trigger["refund_document_url"])
-            )
-
-        if "{{ trigger.machine_au_time }}" in result and trigger.get("machine_au_time"):
-            result = result.replace(
-                "{{ trigger.machine_au_time }}", str(trigger["machine_au_time"])
-            )
-
-        # 2) error_message - uniwersalny placeholder: użyj trigger.error_message,
-        #    a gdy brak - spróbuj zbudować z orchestrator._state (klienci w błędzie)
-        if "{{ error_message }}" in result:
-            replacement = None
-
-            if trigger.get("error_message") is not None:
-                replacement = str(trigger["error_message"])  # typowo string lub lista
-            else:
-                try:
-                    orch = context.orchestrator
-                    clients_with_errors = []
-                    for client_name, st in getattr(orch, "_state", {}).items():
-                        try:
-                            if st.get("error") and st.get("error_message") is not None:
-                                msg = st.get("error_message")
-                                if isinstance(msg, (list, tuple)):
-                                    msg = ", ".join(str(m) for m in msg)
-                                clients_with_errors.append(f"{client_name}: {msg}")
-                        except Exception:
-                            continue
-                    if clients_with_errors:
-                        replacement = "; ".join(sorted(clients_with_errors))
-                except Exception:
-                    pass
-
-            if replacement is None:
-                replacement = "(brak)"
-            result = result.replace("{{ error_message }}", replacement)
-
-        return result
-
-    def _parse_timeout(self, timeout_str: str) -> float:
+    def _get_config_value(
+        self, 
+        action_config: Dict[str, Any], 
+        key: str, 
+        default: Any = None, 
+        required: bool = False,
+        context: Optional[ScenarioContext] = None
+    ) -> Any:
         """
-        Parsuje string timeout (np. '30s', '2m') na sekundy.
+        Pobiera wartość z konfiguracji akcji z obsługą templateów.
 
         Args:
-            timeout_str: String z timeout (np. "30s", "2m", "1.5h")
+            action_config: Konfiguracja akcji
+            key: Klucz do pobrania
+            default: Wartość domyślna
+            required: Czy wartość jest wymagana
+            context: Kontekst scenariusza dla templateów
 
         Returns:
-            Timeout w sekundach jako float
+            Any: Wartość z konfiguracji (z rozwiązanymi templateami)
+
+        Raises:
+            ActionExecutionError: Gdy wymagana wartość nie istnieje
         """
-        if isinstance(timeout_str, (int, float)):
-            return float(timeout_str)
+        value = action_config.get(key, default)
+        
+        if required and value is None:
+            raise ActionExecutionError(
+                action_config.get("type", "unknown"),
+                f"Brak wymaganego parametru '{key}' w konfiguracji akcji"
+            )
+        
+        # Rozwiąż templaty jeśli wartość jest stringiem i mamy kontekst
+        if isinstance(value, str) and context:
+            value = self._resolve_template_variables(value, context)
+        
+        return value
 
-        timeout_str = str(timeout_str).strip().lower()
+    def _validate_config(
+        self, 
+        action_config: Dict[str, Any], 
+        required_keys: list,
+        context: Optional[ScenarioContext] = None
+    ) -> Dict[str, Any]:
+        """
+        Waliduje konfigurację akcji i zwraca przetworzone wartości.
 
-        if timeout_str.endswith("s"):
-            return float(timeout_str[:-1])
-        elif timeout_str.endswith("m"):
-            return float(timeout_str[:-1]) * 60
-        elif timeout_str.endswith("h"):
-            return float(timeout_str[:-1]) * 3600
-        else:
-            # Assume seconds if no unit
-            return float(timeout_str)
+        Args:
+            action_config: Konfiguracja akcji do walidacji
+            required_keys: Lista wymaganych kluczy
+            context: Kontekst scenariusza dla templateów
+
+        Returns:
+            Dict[str, Any]: Przetworzona konfiguracja
+
+        Raises:
+            ActionExecutionError: Gdy brakuje wymaganych parametrów
+        """
+        processed_config = {}
+        action_type = action_config.get("type", "unknown")
+        
+        for key in required_keys:
+            processed_config[key] = self._get_config_value(
+                action_config, key, required=True, context=context
+            )
+        
+        return processed_config
 
 
 class ActionExecutionError(Exception):
     """
-    Wyjątek rzucany w przypadku błędu wykonania akcji scenariusza.
+    Wyjątek rzucany podczas błędów wykonywania akcji.
     """
 
     def __init__(
@@ -197,6 +155,27 @@ class ActionExecutionError(Exception):
         message: str,
         original_exception: Optional[Exception] = None,
     ):
+        """
+        Inicjalizuje wyjątek ActionExecutionError.
+
+        Args:
+            action_type: Typ akcji która spowodowała błąd
+            message: Wiadomość błędu
+            original_exception: Oryginalny wyjątek (opcjonalny)
+        """
+        super().__init__(message)
         self.action_type = action_type
+        self.message = message
         self.original_exception = original_exception
-        super().__init__(f"Action '{action_type}' failed: {message}")
+
+    def __str__(self):
+        if self.original_exception:
+            return f"[{self.action_type}] {self.message} (Causa: {self.original_exception})"
+        return f"[{self.action_type}] {self.message}"
+
+    def __repr__(self):
+        return (
+            f"ActionExecutionError(action_type='{self.action_type}', "
+            f"message='{self.message}', "
+            f"original_exception={repr(self.original_exception)})"
+        )

@@ -6,7 +6,8 @@ from typing import Any, Dict
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
 
 
 class LogAction(BaseAction):
@@ -26,7 +27,7 @@ class LogAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje logowanie komunikatu z określonym poziomem.

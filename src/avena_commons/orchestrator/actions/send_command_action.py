@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, info
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
 
 
 class SendCommandAction(BaseAction):
@@ -30,7 +31,7 @@ class SendCommandAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje akcję wysyłania komendy.
@@ -78,7 +79,7 @@ class SendCommandAction(BaseAction):
             raise ActionExecutionError("send_command", f"Nieoczekiwany błąd: {str(e)}")
 
     def _resolve_target_clients(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> List[str]:
         """
         Rozwiązuje komponenty docelowe na podstawie selektorów.
@@ -157,7 +158,7 @@ class SendCommandAction(BaseAction):
         return list(config.keys())
 
     async def _send_command_to_client(
-        self, client_name: str, command: str, context: ActionContext
+        self, client_name: str, command: str, context: ScenarioContext
     ) -> None:
         """
         Wysyła komendę do konkretnego komponentu.

@@ -5,11 +5,11 @@ Rozszerza funkcjonalność DatabaseCondition o możliwość pobrania wielu rekor
 spełniających warunek i udostępnienia ich w kontekście scenariusza.
 """
 
-import copy
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from avena_commons.util.logger import debug, error
 
+from ..models.scenario_models import ScenarioContext
 from .database_condition_base import DatabaseCondition
 
 
@@ -100,7 +100,7 @@ class DatabaseListCondition(DatabaseCondition):
             if not isinstance(result_key, str) or not result_key.strip():
                 raise ValueError("Pole 'result_key' musi być niepustym stringiem")
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Ewaluuje warunek bazodanowy i pobiera listę rekordów.
 
@@ -153,13 +153,9 @@ class DatabaseListCondition(DatabaseCondition):
                 limit=self.limit,
                 order_by=self.order_by,
             )
-            self.copy_dict_deep(
-                context, self.context
-            )  # Skopiuj kontekst do self.context
-            self.context["trigger_data"][self.result_key] = (
-                records  # Zapisz rekordy w kontekście pod result_key
-            )
-            # Zwróć True jeśli znaleziono rekordy, False jeśli lista pusta
+            # Zapisz wyniki w kontekście pod określonym kluczem
+            context.set(self.result_key, records)
+
             result = len(records) > 0
 
             debug(
@@ -175,30 +171,6 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
             return False
-
-    def copy_dict_deep(
-        self, source_dict: Dict[str, Any], target_dict: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Przepisuje wszystkie klucze ze słownika źródłowego do docelowego z głęboką kopią.
-
-        Jeśli wartość jest słownikiem, kopiuje rekursywnie wszystkie zagnieżdżone klucze.
-
-        Args:
-            source_dict: Słownik źródłowy z którego kopiowane są klucze
-            target_dict: Słownik docelowy do którego kopiowane są klucze
-
-        Returns:
-            Dict[str, Any]: Słownik docelowy z przepisanymi kluczami
-        """
-        for key, value in source_dict.items():
-            if isinstance(value, dict):
-                if key not in target_dict:
-                    target_dict[key] = {}
-                self.copy_dict_deep(value, target_dict[key])
-            else:
-                target_dict[key] = value
-        return target_dict
 
     def __str__(self) -> str:
         """Zwraca czytelny opis warunku."""

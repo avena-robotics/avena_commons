@@ -22,7 +22,8 @@ import requests
 
 from avena_commons.util.logger import error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
 
 
 class SendSmsAction(BaseAction):
@@ -35,7 +36,7 @@ class SendSmsAction(BaseAction):
     action_type = "send_sms"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         # Globalny limiter prób: pomiń akcję po przekroczeniu kolejnych błędów
         orch = context.orchestrator

@@ -25,7 +25,7 @@ import requests
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ScenarioContext, ActionExecutionError, BaseAction
 
 
 class SendSmsToCustomerAction(BaseAction):
@@ -38,7 +38,7 @@ class SendSmsToCustomerAction(BaseAction):
     action_type = "send_sms_to_customer"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         # Globalny limiter prób: pomiń akcję po przekroczeniu kolejnych błędów
         orch = context.orchestrator
@@ -344,7 +344,7 @@ class SendSmsToCustomerAction(BaseAction):
                 pass
 
     def _resolve_template_variables_with_record(
-        self, text: str, context: ActionContext, record: Dict[str, Any]
+        self, text: str, context: ScenarioContext, record: Dict[str, Any]
     ) -> str:
         """Rozwiąż zmienne w tekście używając danych z rekordu klienta oraz standardowego kontekstu.
 

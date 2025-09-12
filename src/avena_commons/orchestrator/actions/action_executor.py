@@ -4,7 +4,8 @@ ActionExecutor - klasa zarządzająca wykonywaniem akcji scenariuszy.
 
 from typing import Any, Dict
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
 from .lynx_refund_action import LynxRefundAction
@@ -75,20 +76,19 @@ class ActionExecutor:
         return self._actions.copy()
 
     async def execute_action(
-        self, action_config: Dict[str, Any], context: ActionContext
-    ) -> Any:
-        """
-        Wykonuje akcję na podstawie konfiguracji (deleguje do zarejestrowanej akcji).
+        self, action_config: Dict[str, Any], context: ScenarioContext
+    ) -> bool:
+        """Wykonuje akcję na podstawie konfiguracji.
 
         Args:
-            action_config: Konfiguracja akcji z pliku YAML (musi zawierać klucz 'type')
-            context: Kontekst wykonania akcji
+            action_config: Konfiguracja akcji do wykonania.
+            context: Kontekst scenariusza z danymi do wykonania akcji.
 
         Returns:
-            Wynik wykonania akcji (zależny od typu akcji)
+            bool: True jeśli akcja została wykonana pomyślnie, False w przeciwnym razie.
 
         Raises:
-            ActionExecutionError: W przypadku błędu wykonania lub nieznanego typu akcji
+            ActionExecutionError: Gdy wystąpi błąd podczas wykonywania akcji.
         """
         action_type = action_config.get("type")
 

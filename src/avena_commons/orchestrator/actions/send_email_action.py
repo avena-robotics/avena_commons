@@ -28,14 +28,14 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ScenarioContext, ActionExecutionError, BaseAction
 
 
 class SendEmailAction(BaseAction):
     action_type = "send_email"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wysyła wiadomość e-mail na podstawie konfiguracji akcji i kontekstu.
@@ -46,7 +46,7 @@ class SendEmailAction(BaseAction):
                 - subject (str): Temat wiadomości (wspiera {{ }} szablony).
                 - body (str): Treść wiadomości (wspiera {{ }} szablony).
                 - smtp (Dict[str, Any]): Konfiguracja SMTP (opcjonalnie, nadpisuje globalną).
-            context (ActionContext): Kontekst wykonania z dostępem do orchestratora i triggera.
+            context (ScenarioContext): Kontekst wykonania z dostępem do orchestratora i triggera.
 
         Raises:
             ActionExecutionError: W przypadku braków konfiguracji lub błędu wysyłki.

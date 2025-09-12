@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Tuple
 
 from avena_commons.util.logger import debug, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class SystemctlAction(BaseAction):
@@ -39,7 +40,7 @@ class SystemctlAction(BaseAction):
     _ALLOWED_OPS = {"stop", "start", "restart", "reload", "enable", "disable", "status"}
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje operację systemctl na wskazanych usługach.
@@ -52,7 +53,7 @@ class SystemctlAction(BaseAction):
                 - use_sudo (bool): Czy użyć sudo -n (domyślnie False).
                 - timeout (str|int|float): Timeout (np. "30s", "2m") lub sekundy.
                 - ignore_errors (bool): Czy kontynuować mimo błędów (domyślnie False).
-            context (ActionContext): Kontekst wykonania akcji.
+            context (ScenarioContext): Kontekst wykonania akcji.
 
         Raises:
             ActionExecutionError: Gdy konfiguracja jest niepoprawna lub operacja systemctl się nie powiedzie.

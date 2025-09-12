@@ -14,9 +14,9 @@ from collections import defaultdict
 from typing import Any, Dict, List
 
 from avena_commons.orchestrator.actions.base_action import (
-    ActionContext,
     ActionExecutionError,
     BaseAction,
+    ScenarioContext,
 )
 from avena_commons.util.logger import debug, error, info, warning
 
@@ -37,7 +37,7 @@ class RestartOrdersAction(BaseAction):
     action_type = "restart_orders"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Dict[str, Any]:
         """
         Wykonuje restart zamówień z pełną weryfikacją dostępności.
@@ -47,7 +47,7 @@ class RestartOrdersAction(BaseAction):
                 - component (str): nazwa komponentu DB (wymagane)
                 - orders_source (str): klucz z listą zamówień z triggera
                 - clone_config (Dict): konfiguracja klonowania pól
-            context (ActionContext): Kontekst wykonania
+            context (ScenarioContext): Kontekst wykonania
 
         Returns:
             Dict[str, Any]: Podsumowanie: success_count, refund_count, total_count, details
@@ -166,7 +166,7 @@ class RestartOrdersAction(BaseAction):
             )
 
     def _get_orders_from_context(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> List[Dict[str, Any]]:
         """Pobiera listę zamówień z kontekstu triggera."""
         orders_source = action_config.get("orders_source")
@@ -179,10 +179,8 @@ class RestartOrdersAction(BaseAction):
         orders_key = self._resolve_template_variables(orders_source, context)
 
         # Pobierz dane z trigger_data
-        trigger_data = context.trigger_data or {}
-        orders = trigger_data.get(
-            orders_key.replace("{{ trigger.", "").replace(" }}", "")
-        )
+
+        orders = context.context.get(orders_key)
 
         if not isinstance(orders, list):
             raise ActionExecutionError(
@@ -193,17 +191,17 @@ class RestartOrdersAction(BaseAction):
         return orders
 
     def _get_database_component(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ):
         """Pobiera komponent bazodanowy z orchestratora."""
         component_name = action_config.get("component")
+
         if not component_name:
             raise ActionExecutionError(
                 self.action_type, "Brak 'component' w konfiguracji"
             )
 
-        orchestrator = context.orchestrator
-        components = getattr(orchestrator, "_components", {})
+        components = context.get("components", {})
         if component_name not in components:
             raise ActionExecutionError(
                 self.action_type,
@@ -356,7 +354,7 @@ class RestartOrdersAction(BaseAction):
         order: Dict,
         availability_check: Dict,
         clone_config: Dict,
-        context: ActionContext,
+        context: ScenarioContext,
     ) -> int:
         """
         Przetwarza pomyślny restart: klonowanie zamówienia i pozycji.
@@ -424,7 +422,7 @@ class RestartOrdersAction(BaseAction):
             return new_order_id
 
     async def _process_failed_restart(
-        self, db_component, order_id: int, context: ActionContext
+        self, db_component, order_id: int, context: ScenarioContext
     ):
         """
         Przetwarza nieudany restart: tylko status zamówienia na 'refund_pending'.

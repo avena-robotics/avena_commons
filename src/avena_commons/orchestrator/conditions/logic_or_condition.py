@@ -1,17 +1,18 @@
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class LogicOrCondition(BaseCondition):
     """Warunek logiczny OR - przynajmniej jeden warunek musi być spełniony."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Zwraca True, jeśli co najmniej jeden zagnieżdżony warunek jest spełniony.
 
         Args:
-            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunków.
+            context (ScenarioContext): Kontekst ewaluacji przekazywany do pod-warunków.
 
         Returns:
             bool: Wynik alternatywy warunków (OR).

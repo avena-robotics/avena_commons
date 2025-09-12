@@ -7,7 +7,8 @@ from typing import Any, Dict
 
 from avena_commons.util.logger import debug, info
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class LynxRefundApproveAction(BaseAction):
@@ -33,7 +34,7 @@ class LynxRefundApproveAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Dict[str, Any]:
         """
         Wykonuje akcję wysyłania żądania approve refund.
@@ -64,7 +65,9 @@ class LynxRefundApproveAction(BaseAction):
                     "Orchestrator nie ma zdefiniowanych komponentów",
                 )
 
-            component = context.orchestrator._components.get(component_name)
+            components = context.get('components', {})
+            component = components.get(component_name)
+            
             if not component:
                 raise ActionExecutionError(
                     "lynx_refund_approve",

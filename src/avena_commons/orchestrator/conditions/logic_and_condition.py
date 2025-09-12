@@ -1,17 +1,18 @@
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class LogicAndCondition(BaseCondition):
     """Warunek logiczny AND - wszystkie warunki muszą być spełnione."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Zwraca True, jeśli wszystkie zagnieżdżone warunki są spełnione.
 
         Args:
-            context (Dict[str, Any]): Kontekst ewaluacji przekazywany do pod-warunków.
+            context (ScenarioContext): Kontekst ewaluacji przekazywany do pod-warunków.
 
         Returns:
             bool: Wynik koniunkcji warunków (AND).

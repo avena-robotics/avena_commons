@@ -10,6 +10,7 @@ from typing import Any, Dict
 from avena_commons.util.logger import debug, error
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class DatabaseCondition(BaseCondition):
@@ -105,7 +106,7 @@ class DatabaseCondition(BaseCondition):
         if operator not in null_operators and "expected_value" not in self.config:
             raise ValueError(f"Operator '{operator}' wymaga pola 'expected_value'")
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         """
         Ewaluuje warunek bazodanowy.
 

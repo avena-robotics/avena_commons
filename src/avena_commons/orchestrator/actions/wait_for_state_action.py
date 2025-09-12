@@ -7,7 +7,8 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
 
 
 class WaitForStateAction(BaseAction):
@@ -33,7 +34,7 @@ class WaitForStateAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje oczekiwanie na stan serwisów z timeout.
@@ -156,7 +157,7 @@ class WaitForStateAction(BaseAction):
             )
 
     def _resolve_target_clients(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> List[str]:
         """
         Rozwiązuje serwisy docelowe na podstawie selektorów.
@@ -242,7 +243,7 @@ class WaitForStateAction(BaseAction):
         return list(config.keys())
 
     async def _wait_for_clients_state(
-        self, clients: List[str], target_states: List[str], context: ActionContext
+        self, clients: List[str], target_states: List[str], context: ScenarioContext
     ) -> None:
         """
         Czeka aż wszystkie serwisy osiągną określony stan.
@@ -302,7 +303,7 @@ class WaitForStateAction(BaseAction):
         action_config: Dict[str, Any],
         clients: List[str],
         target_states: List[str],
-        context: ActionContext,
+        context: ScenarioContext,
     ) -> None:
         """
         Obsługuje timeout - loguje błąd i wykonuje akcje on_failure jeśli są zdefiniowane.
