@@ -1612,9 +1612,10 @@ class Orchestrator(EventListener):
         trigger = scenario.get("trigger", {})
         conditions = trigger.get("conditions", {})
 
+        self.scenario_data[scenario_name] = scenario_context
+
         if not conditions:
             # Brak warunków = zawsze wykonuj, zachowaj kontekst
-            self.scenario_data[scenario_name] = scenario_context
             return True
 
         try:

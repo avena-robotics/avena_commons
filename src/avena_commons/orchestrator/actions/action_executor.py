@@ -6,7 +6,6 @@ from typing import Any, Dict
 
 from ..models.scenario_models import ScenarioContext
 from .base_action import ActionExecutionError, BaseAction
-from .execute_scenario_action import ExecuteScenarioAction
 from .log_action import LogAction
 from .lynx_refund_action import LynxRefundAction
 from .lynx_refund_approve_action import LynxRefundApproveAction
@@ -48,9 +47,6 @@ class ActionExecutor:
         self._actions["send_email"] = SendEmailAction()
         self._actions["send_sms"] = SendSmsAction()
         self._actions["send_sms_to_customer"] = SendSmsToCustomerAction()
-
-        # NOWE: Akcje kontroli przepływu scenariuszy
-        self._actions["execute_scenario"] = ExecuteScenarioAction()
 
         # NOWE: Akcje Lynx API
         self._actions["lynx_refund"] = LynxRefundAction()

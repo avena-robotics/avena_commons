@@ -3,7 +3,7 @@ Akcja send_sms_to_customer dla scenariuszy orkiestratora.
 
 Wysyła SMS-y do klientów przez MultiInfo Plus API, pobierając numery telefonów
 z danych triggera. Wzorowana na send_sms_action, ale numery "to" są pobierane
-z listy w trigger_data zamiast być definiowane bezpośrednio w akcji.
+z listy w context zamiast być definiowane bezpośrednio w akcji.
 
 Przykład konfiguracji:
 {
@@ -14,7 +14,7 @@ Przykład konfiguracji:
 }
 
 Gdzie phone_field określa nazwę pola zawierającego numer telefonu w rekordach
-z trigger_data (domyślnie "client_phone_number" lub "phone").
+z context (domyślnie "client_phone_number" lub "phone").
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import requests
 
 from avena_commons.util.logger import debug, error, info, warning
 
-from .base_action import ScenarioContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction, ScenarioContext
 
 
 class SendSmsToCustomerAction(BaseAction):
@@ -111,14 +111,14 @@ class SendSmsToCustomerAction(BaseAction):
                     self.action_type, "Brak sms.source w konfiguracji"
                 )
 
-            # 2) Pobierz listę klientów/rekordów z trigger_data
-            if not context.trigger_data:
-                raise ActionExecutionError(self.action_type, "Brak danych trigger_data")
+            # 2) Pobierz listę klientów/rekordów z context
+            if not context.context:
+                raise ActionExecutionError(self.action_type, "Brak danych context")
 
-            # Szukaj listy w trigger_data - może być pod różnymi kluczami
+            # Szukaj listy w context - może być pod różnymi kluczami
             customer_records = None
-            for key in context.trigger_data:
-                value = context.trigger_data[key]
+            for key in context.context:
+                value = context.context[key]
                 if isinstance(value, list) and value:
                     # Sprawdź czy pierwszy element listy ma strukturę rekordu (dict)
                     if isinstance(value[0], dict):
@@ -131,7 +131,7 @@ class SendSmsToCustomerAction(BaseAction):
 
             if not customer_records:
                 info(
-                    f"send_sms_to_customer: brak rekordów klientów w trigger_data",
+                    f"send_sms_to_customer: brak rekordów klientów w context",
                     message_logger=context.message_logger,
                 )
                 return

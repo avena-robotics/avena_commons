@@ -20,10 +20,9 @@ from .wait_for_state_action import WaitForStateAction
 
 __all__ = [
     "ActionExecutionError",
-    "ActionExecutor", 
+    "ActionExecutor",
     "BaseAction",
     "DatabaseUpdateAction",
-    "ExecuteScenarioAction",
     "LogAction",
     "LynxRefundAction",
     "LynxRefundApproveAction",
