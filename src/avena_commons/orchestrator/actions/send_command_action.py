@@ -177,14 +177,12 @@ class SendCommandAction(BaseAction):
                 f'Serwis "{client_name}" nie znaleziony w konfiguracji',
             )
 
-        client_config = context.clients[client_name]
-
         try:
             # Użyj metody _event z Orchestratora do wysłania komendy
             event = await context.orchestrator._event(
                 destination=client_name,
-                destination_address=client_config["address"],
-                destination_port=client_config["port"],
+                destination_address=context.clients[client_name]["address"],
+                destination_port=context.clients[client_name]["port"],
                 event_type=command,
                 data={},
                 to_be_processed=True,
