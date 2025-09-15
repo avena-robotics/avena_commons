@@ -121,6 +121,115 @@ class BaseAction(ABC):
         """
         return cls._action_error_counts.copy()
 
+    def _initialize_placeholders(self, context: ScenarioContext) -> None:
+        """
+        Inicjalizuje placeholdery w kontekście scenariusza na podstawie danych z 'clients'.
+
+        Tworzy placeholdery:
+        - clients_in_fault: lista klientów w stanie FAULT
+        - clients_error_messages: sformatowane komunikaty błędów klientów (dla e-mail)
+        - clients_error_messages_sms: uproszczone komunikaty błędów (dla SMS)
+
+        Args:
+            context: Kontekst scenariusza do zaktualizowania
+        """
+        try:
+            # clients_in_fault
+            clients_in_fault = []
+            for client_name, client_data in context.clients.items():
+                fsm_state = client_data.get("fsm_state")
+                if fsm_state == "FAULT":
+                    clients_in_fault.append(client_name)
+
+            clients_in_fault_str = (
+                ", ".join(sorted(clients_in_fault)) if clients_in_fault else "(brak)"
+            )
+            context.set("clients_in_fault", clients_in_fault_str)
+
+            # clients_error_messages dla e-mail (z formatowaniem)
+            formatted_entries = []
+            for client_name, client_data in sorted(
+                context.clients.items(), key=lambda x: x[0]
+            ):
+                try:
+                    if (
+                        client_data.get("error")
+                        and client_data.get("error_message") is not None
+                    ):
+                        raw_msg = client_data.get("error_message")
+                        if isinstance(raw_msg, (list, tuple)):
+                            raw_msg = ", ".join(str(m) for m in raw_msg)
+                        msg = str(raw_msg)
+
+                        # Podziel komunikat na część opisową i szczegóły słownika
+                        first_line = msg.strip()
+                        details_line = None
+                        if ", {" in msg:
+                            pre, rest = msg.split(", {", 1)
+                            first_line = pre.strip()
+                            details_line = "{" + rest.strip()
+
+                        entry_lines = [
+                            f"- {client_name}:",
+                            f"  --> {first_line}",
+                        ]
+                        if details_line:
+                            # Sformatuj szczegóły słownika do: key: value => key: value
+                            def _format_details_line(details: str) -> str:
+                                s = (details or "").strip()
+                                if s.startswith("{") and s.endswith("}"):
+                                    s = s[1:-1]
+                                parts = []
+                                for chunk in s.split(","):
+                                    if ":" not in chunk:
+                                        continue
+                                    key, val = chunk.split(":", 1)
+                                    key = key.strip().strip("'\"")
+                                    val = val.strip().strip("'\"")
+                                    parts.append(f"{key}: {val}")
+                                return " => ".join(parts) if parts else details
+
+                            formatted_details = _format_details_line(details_line)
+                            entry_lines.append(f"      {formatted_details}")
+
+                        formatted_entries.append("\n".join(entry_lines))
+                except Exception:
+                    continue
+
+            clients_error_messages_str = (
+                "\n".join(formatted_entries) if formatted_entries else "(brak)"
+            )
+            context.set("clients_error_messages", clients_error_messages_str)
+
+            # clients_error_messages_sms - uproszczona wersja dla SMS (bez formatowania)
+            sms_entries = []
+            for client_name, client_data in sorted(
+                context.clients.items(), key=lambda x: x[0]
+            ):
+                try:
+                    if (
+                        client_data.get("error")
+                        and client_data.get("error_message") is not None
+                    ):
+                        raw_msg = client_data.get("error_message")
+                        if isinstance(raw_msg, (list, tuple)):
+                            raw_msg = ", ".join(str(m) for m in raw_msg)
+                        msg = str(raw_msg)
+                        sms_entries.append(f"{client_name}: {msg}")
+                except Exception:
+                    continue
+
+            clients_error_messages_sms_str = (
+                "\n".join(sms_entries) if sms_entries else "(brak)"
+            )
+            context.set("clients_error_messages_sms", clients_error_messages_sms_str)
+
+        except Exception:
+            # W przypadku błędu ustaw domyślne wartości
+            context.set("clients_in_fault", "(brak)")
+            context.set("clients_error_messages", "(brak)")
+            context.set("clients_error_messages_sms", "(brak)")
+
     def _resolve_template_variables(self, text: str, context: ScenarioContext) -> Any:
         """
         Rozwiązuje zmienne templatów w tekście używając kontekstu scenariusza.

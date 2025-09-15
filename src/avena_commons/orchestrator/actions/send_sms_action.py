@@ -35,6 +35,9 @@ class SendSmsAction(BaseAction):
     async def execute(
         self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
+        # Inicjalizuj placeholdery dla tej akcji
+        self._initialize_placeholders(context)
+
         # Pobierz komponent SMS z kontekstu
         sms_component = None
         for comp_name, comp in context.components.items():
@@ -96,93 +99,8 @@ class SendSmsAction(BaseAction):
                     self.action_type, "Brak pola 'text' (lub 'message')"
                 )
 
-            # Szablony zmiennych
+            # Szablony zmiennych (i gotowe placeholdery z kontekstu)
             text = self._resolve_template_variables(raw_text, context)
-
-            # Dodatkowe placeholdery specyficzne dla tej akcji (stan orchestratora)
-            try:
-                clients_in_fault = []
-                for client_name, st in orch._state.items():
-                    fsm = st.get("fsm_state")
-                    if fsm in {"FAULT"}:
-                        clients_in_fault.append(client_name)
-                clients_in_fault_str = (
-                    ", ".join(sorted(clients_in_fault))
-                    if clients_in_fault
-                    else "(brak)"
-                )
-                text = text.replace("{{ clients_in_fault }}", clients_in_fault_str)
-
-                # Nowe: {{ clients_error_messages }} - format jak w e-mailu, ale bez details_line
-                if "{{ clients_error_messages }}" in text:
-                    formatted_entries: List[str] = []
-                    try:
-                        for client_name, st in orch._state.items():
-                            try:
-                                if (
-                                    st.get("error")
-                                    and st.get("error_message") is not None
-                                ):
-                                    msg = st.get("error_message")
-                                    if isinstance(msg, (list, tuple)):
-                                        msg = ", ".join(str(m) for m in msg)
-                                    formatted_entries.append(f"{client_name}: {msg}")
-                            except Exception:
-                                continue
-                    except Exception:
-                        pass
-
-                    clients_error_messages_str = (
-                        "\n".join(formatted_entries) if formatted_entries else "(brak)"
-                    )
-                    text = text.replace(
-                        "{{ clients_error_messages }}", clients_error_messages_str
-                    )
-
-                if "{{ trigger.source }}" in text:
-                    trigger_source = None
-                    if context.trigger_data and context.trigger_data.get("source"):
-                        trigger_source = str(context.trigger_data["source"])
-                    else:
-                        # fallback z klientów w FAULT
-                        if clients_in_fault:
-                            trigger_source = clients_in_fault[0]
-                        else:
-                            trigger_source = "(nieznany)"
-                    text = text.replace("{{ trigger.source }}", trigger_source)
-
-                # Nowe: fallback dla {{ trigger.error_message }}
-                if "{{ trigger.error_message }}" in text:
-                    trig_err = None
-                    if (
-                        context.trigger_data
-                        and context.trigger_data.get("error_message") is not None
-                    ):
-                        trig_err = str(context.trigger_data["error_message"])
-                    else:
-                        # Spróbuj zebrać z orchestrator._state
-                        clients_with_errors = []
-                        for client_name, st in orch._state.items():
-                            try:
-                                if (
-                                    st.get("error")
-                                    and st.get("error_message") is not None
-                                ):
-                                    msg = st.get("error_message")
-                                    if isinstance(msg, (list, tuple)):
-                                        msg = ", ".join(str(m) for m in msg)
-                                    clients_with_errors.append(f"{client_name}: {msg}")
-                            except Exception:
-                                continue
-                        trig_err = (
-                            "; ".join(sorted(clients_with_errors))
-                            if clients_with_errors
-                            else "(brak)"
-                        )
-                    text = text.replace("{{ trigger.error_message }}", trig_err)
-            except Exception:
-                # Nie przerywaj wysyłki przy problemach z rozszerzeniami placeholderów
-                pass
 
             # Wysyłka SMS przez komponent
             ignore_errors = bool(action_config.get("ignore_errors", False))

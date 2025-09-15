@@ -183,7 +183,7 @@ class EmailComponent:
             )
             return True  # Uznajemy za sukces jeśli komponent jest wyłączony
 
-        return self.health_check()
+        return await self.health_check()
 
     async def disconnect(self) -> bool:
         """

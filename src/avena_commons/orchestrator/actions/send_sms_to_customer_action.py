@@ -50,7 +50,6 @@ class SendSmsToCustomerAction(BaseAction):
             )
             return
 
-        orch = context.orchestrator
         success = False
         had_action_error = False
 
