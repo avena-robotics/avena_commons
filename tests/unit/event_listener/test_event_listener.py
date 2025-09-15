@@ -62,7 +62,7 @@ class TestEventListener:
             address="127.0.0.1",
             port=port,
             message_logger=mock_message_logger,
-            do_not_load_state=True,  # Prevent file operations in tests
+            load_state=False,  # Prevent file operations in tests
         )
         yield listener
         # Cleanup
@@ -76,7 +76,7 @@ class TestEventListener:
         listener = EventListener(
             name="test_minimal",
             message_logger=mock_message_logger,
-            do_not_load_state=True,
+            load_state=False,
         )
 
         assert listener._EventListener__name == "test_minimal"
@@ -416,6 +416,54 @@ class TestEventListener:
         for input_val, expected in test_cases:
             result = listener._serialize_value(input_val)
             assert result == expected
+
+    def test_serialize_value_components_with_to_dict(self, basic_event_listener):
+        """Test serialization of objects with to_dict() method."""
+        listener = basic_event_listener
+
+        # Mock component with to_dict method
+        class MockComponent:
+            def __init__(self, name, value):
+                self.name = name
+                self.value = value
+
+            def to_dict(self):
+                return {
+                    "component_name": self.name,
+                    "component_type": "MockComponent",
+                    "value": self.value,
+                    "status": "active",
+                }
+
+        # Test component serialization
+        component = MockComponent("test_component", 42)
+        result = listener._serialize_value(component)
+
+        expected = {
+            "component_name": "test_component",
+            "component_type": "MockComponent",
+            "value": 42,
+            "status": "active",
+        }
+
+        assert result == expected
+
+        # Test nested structure with component
+        nested_data = {
+            "scenario": "test",
+            "components": [component],
+            "metadata": {"count": 1},
+        }
+
+        result = listener._serialize_value(nested_data)
+
+        expected_nested = {
+            "scenario": "test",
+            "components": [expected],
+            "metadata": {"count": 1},
+        }
+
+        assert result == expected_nested
 
     def test_context_managers(self, basic_event_listener):
         """Test thread-safe context managers."""

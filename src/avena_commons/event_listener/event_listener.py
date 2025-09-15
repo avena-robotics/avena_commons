@@ -316,11 +316,15 @@ class EventListener:
             Any: Serialized value ready for JSON format
 
         Note:
-            Handles serialization of Pydantic objects, dictionaries, and lists, datetime objects, and Enum values
+            Handles serialization of Pydantic objects, dictionaries, lists, datetime objects,
+            Enum values, and objects with to_dict() method (like orchestrator components)
         """
 
         if isinstance(value, BaseModel):
             return value.model_dump(mode="json")
+        elif hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+            # Obsługa komponentów orchestratora (DatabaseComponent, EmailComponent, etc.)
+            return self._serialize_value(value.to_dict())
         elif isinstance(value, dict):
             return {k: self._serialize_value(v) for k, v in value.items()}
         elif isinstance(value, list):
