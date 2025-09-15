@@ -1,7 +1,7 @@
 {
   "name": "Wstrzymanie systemu przy błędach (@all)",
   "description": "Autonomiczny scenariusz bezpieczeństwa - wstrzymuje wszystkie usługi gdy wykryty zostanie błąd",
-  "priority": 10,
+  "priority": 90,
   "cooldown": 60,
   "trigger": {
     "type": "automatic",
@@ -39,7 +39,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Błędy {{ clients_error_messages }}"
+      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Błędy {{ clients_error_messages_sms }}"
     },
     {
       "type": "send_email",
@@ -51,7 +51,7 @@
         "lukasz.lecki@pomagier.info"
       ],
       "subject": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}",
-      "body": "Wykryto stan FAULT. Źródło: {{ trigger.source }}. Lista klientów w błędzie: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
+      "body": "Wykryto stan FAULT. Lista klientów w błędzie: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "log_event",
@@ -93,7 +93,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
+      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages_sms }}"
     },
     {
       "type": "send_email",
