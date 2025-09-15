@@ -97,34 +97,6 @@ class Orchestrator(EventListener):
             "conditions_directory": None,  # Użytkownik może nadpisać w JSON
             # Limity wykonywania scenariuszy
             "max_concurrent_scenarios": 1,  # Maksymalna liczba jednoczesnych scenariuszy (domyślnie 1)
-            # Konfiguracja SMTP dla akcji send_email (globalna)
-            "smtp": {
-                "host": "",
-                "port": 587,
-                "username": "",
-                "password": "",
-                "starttls": False,
-                "tls": False,
-                "from": "",
-                # Maksymalna liczba kolejnych błędów ActionExecutionError
-                # po której wysyłka e-maili będzie ignorowana (4. i kolejne próby)
-                # Wartość <= 0 wyłącza ten limit
-                "max_error_attempts": 3,
-            },
-            # Konfiguracja SMS dla akcji send_sms (globalna)
-            "sms": {
-                "enabled": False,
-                "url": "",
-                "login": "",
-                "password": "",
-                "cert_path": "",
-                "serviceId": 0,
-                "source": "",
-                # Maksymalna liczba kolejnych błędów ActionExecutionError
-                # po której wysyłka SMS będzie ignorowana (4. i kolejne próby)
-                # Wartość <= 0 wyłącza ten limit
-                "max_error_attempts": 3,
-            },
         }
 
         self._scenarios = OrderedDict()
@@ -158,10 +130,6 @@ class Orchestrator(EventListener):
         #     self, self._message_logger
         # )  # System autonomiczny
 
-        # Globalne liczniki kolejnych błędów akcji (wg typu akcji)
-        # Klucze: np. "send_sms", "send_email"
-        self._action_error_counts: Dict[str, int] = {}
-
         try:
             super().__init__(
                 name=name,
@@ -174,39 +142,6 @@ class Orchestrator(EventListener):
             # self._load_scenarios()
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
-
-    # ==== Liczniki błędów akcji (globalne) ====
-    def get_action_error_count(self, action_type: str) -> int:
-        """Zwróć liczbę kolejnych błędów dla danego typu akcji."""
-        return int(self._action_error_counts.get(action_type, 0))
-
-    def increment_action_error_count(self, action_type: str) -> int:
-        """Zwiększ licznik kolejnych błędów dla danego typu akcji i zwróć aktualną wartość."""
-        current = int(self._action_error_counts.get(action_type, 0)) + 1
-        self._action_error_counts[action_type] = current
-        return current
-
-    def reset_action_error_count(self, action_type: str) -> None:
-        """Wyzeruj licznik kolejnych błędów dla danego typu akcji."""
-        if action_type in self._action_error_counts:
-            del self._action_error_counts[action_type]
-
-    def should_skip_action_due_to_errors(
-        self, action_type: str, max_attempts: int
-    ) -> bool:
-        """
-        Zwróć True, jeżeli należy pominąć wykonanie akcji z powodu przekroczenia
-        dozwolonej liczby kolejnych błędów (max_attempts > 0 i count >= max_attempts).
-        """
-        if max_attempts is None:
-            return False
-        try:
-            max_attempts_int = int(max_attempts)
-        except Exception:
-            max_attempts_int = 0
-        if max_attempts_int <= 0:
-            return False
-        return self.get_action_error_count(action_type) >= max_attempts_int
 
     # ==== Liczniki wykonań scenariuszy ====
     def get_scenario_execution_count(self, scenario_name: str) -> int:

@@ -22,13 +22,11 @@ Przykład użycia w JSON scenariusza:
 }
 """
 
-import smtplib
-from email.message import EmailMessage
 from typing import Any, Dict, List
 
-from avena_commons.util.logger import error, info, warning
+from avena_commons.util.logger import error, warning
 
-from .base_action import ScenarioContext, ActionExecutionError, BaseAction
+from .base_action import ActionExecutionError, BaseAction, ScenarioContext
 
 
 class SendEmailAction(BaseAction):
@@ -53,62 +51,45 @@ class SendEmailAction(BaseAction):
 
         """
         orch = context.orchestrator
-        pre_smtp_cfg = action_config.get("smtp", {}) or {}
-        if not pre_smtp_cfg:
-            pre_smtp_cfg = (orch._configuration or {}).get("smtp", {}) or {}
+
+        # Pobierz komponent email z kontekstu
+        email_component = None
+        for comp_name, comp in context.components.items():
+            if (
+                hasattr(comp, "__class__")
+                and comp.__class__.__name__ == "EmailComponent"
+            ):
+                email_component = comp
+                break
+
+        if not email_component:
+            raise ActionExecutionError(
+                "send_email", "Brak komponentu EmailComponent w kontekście"
+            )
+
+        if not email_component.is_initialized:
+            raise ActionExecutionError(
+                "send_email", "Komponent EmailComponent nie jest zainicjalizowany"
+            )
+
         try:
-            try:
-                max_attempts = int(pre_smtp_cfg.get("max_error_attempts", 0) or 0)
-            except Exception:
-                max_attempts = 0
-            if orch.should_skip_action_due_to_errors(self.action_type, max_attempts):
+            max_attempts = email_component.max_error_attempts
+            if self.should_skip_action_due_to_errors(self.action_type, max_attempts):
                 warning(
-                    f"send_email: pomijam wysyłkę (przekroczony limit kolejnych błędów: {orch.get_action_error_count(self.action_type)}/{max_attempts})",
+                    f"send_email: pomijam wysyłkę (przekroczony limit kolejnych błędów: {self.get_action_error_count(self.action_type)}/{max_attempts})",
                     message_logger=context.message_logger,
                 )
                 return
 
             success = False
             had_action_error = False
-            # Priorytet: per-akcja (legacy) -> globalny orchestrator._configuration['smtp']
-            smtp_cfg = action_config.get("smtp", {}) or {}
-            if not smtp_cfg:
-                orch = context.orchestrator
-                smtp_cfg = (orch._configuration or {}).get("smtp", {}) or {}
 
-            host = smtp_cfg.get("host")
-            port = int(smtp_cfg.get("port", 587))
-            username = smtp_cfg.get("username")
-            password = smtp_cfg.get("password")
-            use_starttls = bool(smtp_cfg.get("starttls", True))
-            use_tls = bool(smtp_cfg.get("tls", False))  # alternatywa dla portu 465
-            mail_from = smtp_cfg.get("from") or username
-
-            if not host:
-                raise ActionExecutionError(
-                    "send_email", "Brak smtp.host w konfiguracji (globalnej lub akcji)"
-                )
-            if not mail_from:
-                raise ActionExecutionError(
-                    "send_email",
-                    "Brak smtp.from (lub username) w konfiguracji (globalnej lub akcji)",
-                )
-
-            # Odbiorcy: dopuszczamy string lub listę
+            # Odbiorcy: używamy metody z komponentu
             to_field = action_config.get("to")
-            if not to_field:
-                raise ActionExecutionError(
-                    "send_email", "Brak pola to (lista adresów lub string)"
-                )
-            to_addresses: List[str]
-            if isinstance(to_field, list):
-                to_addresses = [str(a).strip() for a in to_field if str(a).strip()]
-            else:
-                to_addresses = [str(to_field).strip()]
-            if not to_addresses:
-                raise ActionExecutionError(
-                    "send_email", "Lista adresów to jest pusta po przetworzeniu"
-                )
+            try:
+                to_addresses = email_component.parse_recipients(to_field)
+            except ValueError as e:
+                raise ActionExecutionError("send_email", str(e))
 
             raw_subject = action_config.get("subject", "")
             raw_body = action_config.get("body", "")
@@ -263,62 +244,22 @@ class SendEmailAction(BaseAction):
                 # Ciche pominięcie - e-mail i tak zostanie wysłany bez rozszerzeń
                 pass
 
-            # Zbuduj wiadomość
-            message = EmailMessage()
-            message["From"] = mail_from
-            message["To"] = ", ".join(to_addresses)
-            message["Subject"] = subject
-            message.set_content(body)
-
-            # Połączenie SMTP
-            if use_tls:
-                # SMTPS (implicit TLS), zwykle port 465
-                with smtplib.SMTP_SSL(host=host, port=port) as smtp:
-                    smtp.ehlo()
-                    if username and password and smtp.has_extn("auth"):
-                        smtp.login(username, password)
-                    elif username and password:
-                        warning(
-                            "send_email: Serwer nie wspiera AUTH - pomijam logowanie",
-                            message_logger=context.message_logger,
-                        )
-                    smtp.send_message(message)
-            else:
-                with smtplib.SMTP(host=host, port=port) as smtp:
-                    smtp.ehlo()
-                    if use_starttls:
-                        smtp.starttls()
-                        smtp.ehlo()
-                    if username and password and smtp.has_extn("auth"):
-                        smtp.login(username, password)
-                    elif username and password:
-                        warning(
-                            "send_email: Serwer nie wspiera AUTH - pomijam logowanie",
-                            message_logger=context.message_logger,
-                        )
-                    smtp.send_message(message)
-
-            info(
-                f"📧 send_email: Wysłano e-mail do {to_addresses} z tematem '{subject}'",
-                message_logger=context.message_logger,
-            )
-            success = True
-
-        except ActionExecutionError:
-            had_action_error = True
-            raise
-        except Exception as e:
-            had_action_error = True
-            error(
-                f"send_email: błąd wysyłki e-mail: {e}",
-                message_logger=context.message_logger,
-            )
-            raise ActionExecutionError("send_email", f"Błąd wysyłki e-mail: {e}", e)
+            # Wysyłka e-maila przez komponent
+            try:
+                await email_component.send_email(to_addresses, subject, body)
+                success = True
+            except Exception as e:
+                had_action_error = True
+                error(
+                    f"send_email: błąd wysyłki e-mail: {e}",
+                    message_logger=context.message_logger,
+                )
+                raise ActionExecutionError("send_email", f"Błąd wysyłki e-mail: {e}", e)
         finally:
             try:
                 if success:
-                    orch.reset_action_error_count(self.action_type)
+                    self.reset_action_error_count(self.action_type)
                 elif had_action_error:
-                    orch.increment_action_error_count(self.action_type)
+                    self.increment_action_error_count(self.action_type)
             except Exception:
                 pass
