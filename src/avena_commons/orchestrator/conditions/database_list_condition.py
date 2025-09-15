@@ -139,16 +139,25 @@ class DatabaseListCondition(DatabaseCondition):
                 message_logger=self.message_logger,
             )
 
-            # Pozwól klasom pochodnym rozszerzyć WHERE (dziedziczone z DatabaseCondition)
-            enhanced_where_conditions = self._augment_where(
-                self.where_conditions, db_component
+            # Rozwiąż zmienne template w warunkach WHERE
+            resolved_where_conditions = self._resolve_template_variables_in_dict(
+                self.where_conditions, context
+            )
+
+            debug(
+                f"📋 Warunki WHERE przed rozwiązaniem: {self.where_conditions}",
+                message_logger=self.message_logger,
+            )
+            debug(
+                f"📋 Warunki WHERE po rozwiązaniu: {resolved_where_conditions}",
+                message_logger=self.message_logger,
             )
 
             # Pobierz rekordy z bazy danych
             records = await db_component.fetch_records(
                 table=self.table,
                 columns=self.columns,
-                where_conditions=enhanced_where_conditions,
+                where_conditions=resolved_where_conditions,
                 limit=self.limit,
                 order_by=self.order_by,
             )

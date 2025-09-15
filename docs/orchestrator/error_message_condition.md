@@ -183,3 +183,101 @@ Warunek jest zoptymalizowany pod kątem wydajności:
 - Wzorce regex są kompilowane tylko raz
 - Sprawdzanie odbywa się tylko dla klientów spełniających kryteria zakresu
 - Wczesne wyjście przy pierwszym dopasowaniu (jeśli nie potrzeba wszystkich)
+
+# ErrorMessageCondition - Obsługa nazwanych grup regex
+
+## Opracowanie
+
+Zaimplementowano alternatywne podejście w `ErrorMessageCondition` umożliwiające użycie **nazwanych grup** w wyrażeniach regularnych obok istniejących numerowanych grup.
+
+### Kluczowe zmiany
+
+1. **Rozszerzona logika extract_to_context**: Obsługuje teraz zarówno numery grup (int) jak i nazwy grup (string)
+2. **Automatyczne rozpoznawanie typu grupy**: System automatycznie wykrywa czy użytkownik podał numer czy nazwę grupy
+3. **Ulepszone komunikaty logowania**: Rozróżnia między grupami numerowanymi a nazwanymi w logach
+4. **Zachowanie kompatybilności wstecznej**: Istniejące konfiguracje z numerami grup działają bez zmian
+
+### Sposób działania
+
+Dla wzorca `feeder(?P<id>\d+)` i konfiguracji:
+```json
+{
+  "extract_to_context": {
+    "wydawka_id": "id"
+  }
+}
+```
+
+System:
+1. Wykrywa że `"id"` to string (nazwana grupa)
+2. Używa `regex_match.groupdict().get("id")` zamiast `regex_match.group(1)`
+3. Wyciąga wartość z nazwanej grupy `id`
+4. Automatycznie konwertuje na int jeśli możliwe
+5. Zapisuje w kontekście jako `wydawka_id`
+
+### Przykłady użycia
+
+#### Numerowana grupa (dotychczasowy sposób)
+```json
+{
+  "error_message": {
+    "mode": "regex",
+    "pattern": "feeder(\\d+)",
+    "extract_to_context": {
+      "wydawka_id": 1
+    }
+  }
+}
+```
+
+#### Nazwana grupa (nowy sposób)
+```json
+{
+  "error_message": {
+    "mode": "regex", 
+    "pattern": "feeder(?P<id>\\d+)",
+    "extract_to_context": {
+      "wydawka_id": "id"
+    }
+  }
+}
+```
+
+#### Mieszane grupy
+```json
+{
+  "error_message": {
+    "mode": "regex",
+    "pattern": "(feeder)(?P<id>\\d+): (error)",
+    "extract_to_context": {
+      "device_type": 1,        
+      "wydawka_id": "id",      
+      "status": 3              
+    }
+  }
+}
+```
+
+### Zalety nazwanych grup
+
+1. **Czytelność**: `"wydawka_id": "id"` jest bardziej zrozumiałe niż `"wydawka_id": 1`
+2. **Odporność na zmiany**: Dodanie nowych grup nie psuje istniejących numerów
+3. **Samodokumentujący kod**: Nazwa grupy opisuje co zawiera
+4. **Łatwiejsze debugowanie**: Logi pokazują nazwy grup zamiast numerów
+
+### Obsługa błędów
+
+- **Nieistniejąca nazwana grupa**: Generuje ostrzeżenie i pomija wyciąganie
+- **Nieprawidłowy numer grupy**: Zachowanie jak dotychczas (IndexError)
+- **Mieszane typy**: Obsługuje jednocześnie numery i nazwy w tej samej konfiguracji
+
+## Podsumowanie
+
+Implementacja rozszerza możliwości `ErrorMessageCondition` o obsługę nazwanych grup regex, zachowując pełną kompatybilność wsteczną. Nowa funkcjonalność została przetestowana i działa poprawnie dla wszystkich scenariuszy:
+- Numerowane grupy (istniejące konfiguracje)
+- Nazwane grupy (nowa funkcjonalność)
+- Mieszane grupy (kombinacja obu podejść)
+- Automatyczna konwersja typów (string → int gdzie możliwe)
+- Odpowiednie komunikaty błędów i logowanie
+
+Użytkownicy mogą teraz korzystać z bardziej czytelnych i maintainable konfiguracji regex w scenariuszach orchestratora.

@@ -1,10 +1,10 @@
 """Warunek sprawdzający zawartość komunikatów błędów od klientów IO.
 
 Cel: Umożliwia uruchamianie scenariuszy w zależności od konkretnych urządzeń/błędów
-zawartych w error_message od klientów. Obsługuje różne tryby dopasowania.
+zawartych w error_message od klientów. Obsługuje różne tryby dopasowania i wyciąganie danych.
 
 Wejścia: Konfiguracja z kryteriami dopasowania, kontekst ze stanami klientów
-Wyjścia: bool - czy warunek jest spełniony
+Wyjścia: bool - czy warunek jest spełniony, opcjonalnie zapisuje dane do kontekstu
 Ograniczenia: Wymaga dostępu do orchestrator._state z error_message klientów
 """
 
@@ -19,7 +19,8 @@ class ErrorMessageCondition(BaseCondition):
     Sprawdza zawartość komunikatów błędów (error_message) od klientów.
 
     Umożliwia uruchamianie scenariuszy w zależności od konkretnych urządzeń
-    lub typów błędów zawartych w error_message.
+    lub typów błędów zawartych w error_message. Obsługuje również wyciąganie
+    danych z wiadomości błędów do kontekstu scenariusza.
 
     Obsługiwane tryby dopasowania:
     - contains: sprawdza czy error_message zawiera określony tekst
@@ -32,13 +33,44 @@ class ErrorMessageCondition(BaseCondition):
     - error_clients_only: tylko klienci z error=True (domyślnie False)
     - all_clients: wszyscy klienci niezależnie od stanu (domyślnie False)
 
-    Przykład konfiguracji:
+    Wyciąganie danych (tylko dla trybu regex):
+    - extract_to_context: dict mapujący nazwy zmiennych kontekstu na:
+      * numery grup regex (int): np. {"wydawka_id": 1} dla grupy (\\d+)
+      * nazwy grup regex (str): np. {"wydawka_id": "id"} dla grupy (?P<id>\\d+)
+
+    Przykład konfiguracji prostej:
     {
         "error_message": {
             "mode": "contains",
             "pattern": "feeder1",
             "case_sensitive": false,
             "fault_clients_only": true
+        }
+    }
+
+    Przykład konfiguracji z wyciąganiem danych (numerowana grupa):
+    {
+        "error_message": {
+            "mode": "regex",
+            "pattern": "feeder(\\d+)",
+            "case_sensitive": false,
+            "fault_clients_only": true,
+            "extract_to_context": {
+                "wydawka_id": 1
+            }
+        }
+    }
+
+    Przykład konfiguracji z wyciąganiem danych (nazwana grupa):
+    {
+        "error_message": {
+            "mode": "regex",
+            "pattern": "feeder(?P<id>\\d+)",
+            "case_sensitive": false,
+            "fault_clients_only": true,
+            "extract_to_context": {
+                "wydawka_id": "id"
+            }
         }
     }
     """
@@ -49,6 +81,7 @@ class ErrorMessageCondition(BaseCondition):
 
         Args:
             context: Kontekst z kluczem "clients" zawierającym stany klientów
+                    lub instancja ScenarioContext
 
         Returns:
             bool: True jeśli znaleziono dopasowanie, False w przeciwnym razie
@@ -61,6 +94,7 @@ class ErrorMessageCondition(BaseCondition):
         mode = self.config.get("mode", "contains")
         pattern = self.config.get("pattern")
         case_sensitive = self.config.get("case_sensitive", False)
+        extract_to_context = self.config.get("extract_to_context", {})
 
         # Opcje zakresu sprawdzania
         fault_clients_only = self.config.get("fault_clients_only", True)
@@ -82,8 +116,16 @@ class ErrorMessageCondition(BaseCondition):
                 f"Obsługiwane: {valid_modes}"
             )
 
-        # Pobierz stany klientów
-        clients_state = context.clients
+        # Sprawdź czy mamy ScenarioContext czy zwykły dict
+        scenario_context = None
+        if hasattr(context, "clients") and hasattr(context, "set"):
+            # To jest ScenarioContext
+            scenario_context = context
+            clients_state = context.clients
+        else:
+            # To jest zwykły dict z kontekstem
+            clients_state = context.get("clients", {})
+
         if not clients_state:
             if self.message_logger:
                 self.message_logger.debug(
@@ -132,10 +174,65 @@ class ErrorMessageCondition(BaseCondition):
                 error_message = str(error_message)
 
             # Sprawdź dopasowanie
-            if self._check_pattern_match(
+            match_result = self._check_pattern_match(
                 error_message, search_pattern, mode, case_sensitive, regex_pattern
-            ):
+            )
+
+            if match_result:
                 matching_clients.append(client_name)
+
+                # Jeśli to regex i mamy extract_to_context, wyciągnij dane
+                if (
+                    mode == "regex"
+                    and extract_to_context
+                    and regex_pattern
+                    and scenario_context
+                ):
+                    regex_match = regex_pattern.search(error_message)
+                    if regex_match:
+                        for context_key, group_identifier in extract_to_context.items():
+                            try:
+                                # Obsługa nazwanych grup (string) i numerowanych grup (int)
+                                if isinstance(group_identifier, str):
+                                    # Nazwana grupa - używamy groupdict()
+                                    extracted_value = regex_match.groupdict().get(
+                                        group_identifier
+                                    )
+                                    if extracted_value is None:
+                                        if self.message_logger:
+                                            self.message_logger.warning(
+                                                f"ErrorMessageCondition: nie znaleziono nazwanej grupy '{group_identifier}' "
+                                                f"dla klucza '{context_key}'"
+                                            )
+                                        continue
+                                    group_type = "nazwanej"
+                                else:
+                                    # Numerowana grupa - używamy group(index)
+                                    extracted_value = regex_match.group(
+                                        group_identifier
+                                    )
+                                    group_type = "numerowanej"
+
+                                # Spróbuj przekonwertować na liczbę jeśli to możliwe
+                                try:
+                                    extracted_value = int(extracted_value)
+                                except ValueError:
+                                    # Zostaw jako string jeśli konwersja nie jest możliwa
+                                    pass
+
+                                scenario_context.set(context_key, extracted_value)
+                                if self.message_logger:
+                                    self.message_logger.debug(
+                                        f"ErrorMessageCondition: wyciągnięto '{context_key}' = {extracted_value} "
+                                        f"(typ: {type(extracted_value).__name__}) z {group_type} grupy '{group_identifier}' w kliencie '{client_name}'"
+                                    )
+                            except (IndexError, ValueError) as e:
+                                if self.message_logger:
+                                    self.message_logger.warning(
+                                        f"ErrorMessageCondition: nie można wyciągnąć grupy '{group_identifier}' "
+                                        f"dla klucza '{context_key}': {e}"
+                                    )
+
                 if self.message_logger:
                     self.message_logger.debug(
                         f"ErrorMessageCondition: dopasowanie znalezione w kliencie '{client_name}': "
