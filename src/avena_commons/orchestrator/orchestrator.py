@@ -32,9 +32,6 @@ from .actions import ActionExecutionError, ActionExecutor
 from .actions.base_action import BaseAction
 from .base.base_condition import BaseCondition
 
-# Import komponentów
-from .components import DatabaseComponent, LynxAPIComponent
-
 # Import nowego systemu warunków
 from .factories.condition_factory import ConditionFactory
 
@@ -365,7 +362,9 @@ class Orchestrator(EventListener):
         """
         Ładuje komponenty zewnętrzne z konfiguracji.
 
-        Na razie obsługujemy tylko komponenty typu database.
+        Generyczna metoda która automatycznie importuje i instancjonuje komponenty
+        na podstawie typu z konfiguracji. Obsługuje wszystkie komponenty zgodne
+        z konwencją nazewnictwa: {type} -> {Type}Component.
         """
         try:
             info(
@@ -393,51 +392,27 @@ class Orchestrator(EventListener):
                         "type", "database"
                     )  # Domyślnie database
 
-                    if component_type == "database":
-                        info(
-                            f"🔧 Ładowanie komponentu bazodanowego: {component_name}",
-                            message_logger=self._message_logger,
-                        )
+                    info(
+                        f"🔧 Ładowanie komponentu typu '{component_type}': {component_name}",
+                        message_logger=self._message_logger,
+                    )
 
-                        # Utwórz komponent bazodanowy
-                        component = DatabaseComponent(
-                            name=component_name,
-                            config=component_config,
-                            message_logger=self._message_logger,
-                        )
+                    # Dynamiczne ładowanie komponentu
+                    component = self._create_component_instance(
+                        component_type, component_name, component_config
+                    )
 
+                    if component is not None:
                         # Zapisz komponent
                         self._components[component_name] = component
 
                         info(
-                            f"✅ Komponent bazodanowy '{component_name}' załadowany",
+                            f"✅ Komponent '{component_name}' typu '{component_type}' załadowany",
                             message_logger=self._message_logger,
                         )
-
-                    elif component_type == "lynx_api":
-                        info(
-                            f"🔧 Ładowanie komponentu Lynx API: {component_name}",
-                            message_logger=self._message_logger,
-                        )
-
-                        # Utwórz komponent Lynx API
-                        component = LynxAPIComponent(
-                            name=component_name,
-                            config=component_config,
-                            message_logger=self._message_logger,
-                        )
-
-                        # Zapisz komponent
-                        self._components[component_name] = component
-
-                        info(
-                            f"✅ Komponent Lynx API '{component_name}' załadowany",
-                            message_logger=self._message_logger,
-                        )
-
                     else:
                         warning(
-                            f"⚠️ Nieznany typ komponentu '{component_type}' dla '{component_name}' - pomijam",
+                            f"⚠️ Nie udało się utworzyć komponentu '{component_name}' typu '{component_type}' - pomijam",
                             message_logger=self._message_logger,
                         )
 
@@ -456,9 +431,14 @@ class Orchestrator(EventListener):
                     f"🎯 Łącznie załadowanych komponentów: {loaded_count}",
                     message_logger=self._message_logger,
                 )
-                for i, component_name in enumerate(self._components.keys(), 1):
+                for i, (component_name, component) in enumerate(
+                    self._components.items(), 1
+                ):
+                    component_type = getattr(
+                        component, "_component_type", component.__class__.__name__
+                    )
                     info(
-                        f"   {i}. {component_name} (database)",
+                        f"   {i}. {component_name} ({component_type})",
                         message_logger=self._message_logger,
                     )
             else:
@@ -476,6 +456,110 @@ class Orchestrator(EventListener):
                 f"Traceback: {traceback.format_exc()}",
                 message_logger=self._message_logger,
             )
+
+    def _create_component_instance(
+        self, component_type: str, component_name: str, component_config: Dict[str, Any]
+    ):
+        """
+        Tworzy instancję komponentu na podstawie jego typu.
+
+        Args:
+            component_type: Typ komponentu (np. 'database', 'lynx_api', 'email', 'sms')
+            component_name: Nazwa komponentu
+            component_config: Konfiguracja komponentu
+
+        Returns:
+            Instancja komponentu lub None w przypadku błędu
+        """
+        try:
+            # Konwertuj typ na nazwę klasy (np. 'lynx_api' -> 'LynxApiComponent')
+            class_name = self._get_component_class_name(component_type)
+
+            # Konwertuj typ na nazwę modułu (np. 'lynx_api' -> 'lynx_api_component')
+            module_name = f"{component_type}_component"
+
+            # Pełna ścieżka modułu
+            full_module_path = f"avena_commons.orchestrator.components.{module_name}"
+
+            debug(
+                f"Próba importu modułu: {full_module_path}, klasa: {class_name}",
+                message_logger=self._message_logger,
+            )
+
+            # Dynamiczny import modułu
+            try:
+                module = importlib.import_module(full_module_path)
+            except ImportError as import_error:
+                error(
+                    f"❌ Nie można zaimportować modułu '{full_module_path}': {import_error}",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            # Pobierz klasę z modułu
+            if not hasattr(module, class_name):
+                error(
+                    f"❌ Klasa '{class_name}' nie istnieje w module '{full_module_path}'",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            component_class = getattr(module, class_name)
+
+            # Sprawdź czy to klasa
+            if not inspect.isclass(component_class):
+                error(
+                    f"❌ '{class_name}' nie jest klasą w module '{full_module_path}'",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            # Utwórz instancję komponentu ze standardowymi argumentami
+            component_instance = component_class(
+                name=component_name,
+                config=component_config,
+                message_logger=self._message_logger,
+            )
+
+            # Dodaj informację o typie dla późniejszego logowania
+            component_instance._component_type = component_type
+
+            debug(
+                f"✅ Utworzono instancję komponentu '{class_name}' dla '{component_name}'",
+                message_logger=self._message_logger,
+            )
+
+            return component_instance
+
+        except Exception as e:
+            error(
+                f"❌ Błąd tworzenia instancji komponentu typu '{component_type}': {e}",
+                message_logger=self._message_logger,
+            )
+            error(
+                f"Traceback: {traceback.format_exc()}",
+                message_logger=self._message_logger,
+            )
+            return None
+
+    def _get_component_class_name(self, component_type: str) -> str:
+        """
+        Konwertuje typ komponentu na nazwę klasy zgodnie z konwencją.
+
+        Args:
+            component_type: Typ komponentu (np. 'database', 'lynx_api', 'email')
+
+        Returns:
+            Nazwa klasy komponentu (np. 'DatabaseComponent', 'LynxApiComponent', 'EmailComponent')
+        """
+        # Podziel typ na części po '_' i pierwszą literę każdej części zrób wielką
+        parts = component_type.split("_")
+        class_name_parts = [part.capitalize() for part in parts]
+
+        # Połącz z 'Component'
+        class_name = "".join(class_name_parts) + "Component"
+
+        return class_name
 
     async def _initialize_components(self):
         """

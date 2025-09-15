@@ -160,6 +160,98 @@ class SmsComponent:
             )
             return False
 
+    async def connect(self) -> bool:
+        """
+        Nawiązuje połączenie z serwisem SMS API.
+
+        Returns:
+            True jeśli połączenie zostało nawiązane pomyślnie
+        """
+        if not self._is_initialized:
+            error(
+                f"❌ Komponent SMS '{self.name}' nie jest zainicjalizowany",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        if not self._is_enabled:
+            info(
+                f"ℹ️ Komponent SMS '{self.name}' jest wyłączony - pomijam nawiązywanie połączenia",
+                message_logger=self._message_logger,
+            )
+            return True  # Uznajemy za sukces jeśli komponent jest wyłączony
+
+        try:
+            info(
+                f"🔌 Sprawdzanie połączenia z API SMS: {self.name}",
+                message_logger=self._message_logger,
+            )
+
+            # Test połączenia z API SMS przez prosty request
+            test_url = (
+                self._url_base.rstrip("/") + "/ping"
+            )  # Próba ping endpointu (jeśli istnieje)
+
+            try:
+                # Spróbuj prostego requestu do API (z timeoutem)
+                response = requests.head(
+                    self._url_base.rstrip("/"), cert=self._cert_path, timeout=10
+                )
+                # Akceptuj różne kody odpowiedzi jako znak że serwer odpowiada
+                if response.status_code < 500:  # Nie błąd serwera
+                    info(
+                        f"✅ Połączenie z API SMS '{self.name}' sprawdzone pomyślnie (status: {response.status_code})",
+                        message_logger=self._message_logger,
+                    )
+                    return True
+                else:
+                    warning(
+                        f"⚠️ API SMS '{self.name}' odpowiada błędem serwera (status: {response.status_code}), ale połączenie możliwe",
+                        message_logger=self._message_logger,
+                    )
+                    return True  # Nawet błąd serwera oznacza że można się połączyć
+            except requests.exceptions.Timeout:
+                warning(
+                    f"⚠️ Timeout przy sprawdzaniu połączenia z API SMS '{self.name}' - może być niedostępne",
+                    message_logger=self._message_logger,
+                )
+                return False
+            except requests.exceptions.ConnectionError:
+                error(
+                    f"❌ Nie można nawiązać połączenia z API SMS '{self.name}'",
+                    message_logger=self._message_logger,
+                )
+                return False
+            except requests.exceptions.RequestException as e:
+                warning(
+                    f"⚠️ Błąd przy sprawdzaniu połączenia z API SMS '{self.name}': {e}",
+                    message_logger=self._message_logger,
+                )
+                return True  # Różne błędy HTTP mogą oznaczać że API działa
+
+        except Exception as e:
+            error(
+                f"❌ Błąd połączenia z API SMS '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            return False
+
+    async def disconnect(self) -> bool:
+        """
+        Rozłącza połączenie z serwisem SMS API.
+
+        Dla komponentu SMS nie ma trwałego połączenia do rozłączenia,
+        więc metoda zawsze zwraca True.
+
+        Returns:
+            True zawsze (metoda dla kompatybilności z interfejsem)
+        """
+        debug(
+            f"🔌 Rozłączanie komponentu SMS '{self.name}' (brak trwałego połączenia)",
+            message_logger=self._message_logger,
+        )
+        return True
+
     async def health_check(self) -> bool:
         """
         Sprawdza stan zdrowia komponentu SMS.

@@ -162,6 +162,45 @@ class EmailComponent:
             )
             return False
 
+    async def connect(self) -> bool:
+        """
+        Nawiązuje połączenie SMTP z serwerem email.
+
+        Returns:
+            True jeśli połączenie zostało nawiązane pomyślnie
+        """
+        if not self._is_initialized:
+            error(
+                f"❌ Komponent email '{self.name}' nie jest zainicjalizowany",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        if not self._is_enabled:
+            info(
+                f"ℹ️ Komponent email '{self.name}' jest wyłączony - pomijam nawiązywanie połączenia",
+                message_logger=self._message_logger,
+            )
+            return True  # Uznajemy za sukces jeśli komponent jest wyłączony
+
+        return self.health_check()
+
+    async def disconnect(self) -> bool:
+        """
+        Rozłącza połączenie z serwerem SMTP.
+
+        Dla komponentu email nie ma trwałego połączenia do rozłączenia,
+        więc metoda zawsze zwraca True.
+
+        Returns:
+            True zawsze (metoda dla kompatybilności z interfejsem)
+        """
+        debug(
+            f"🔌 Rozłączanie komponentu email '{self.name}' (brak trwałego połączenia)",
+            message_logger=self._message_logger,
+        )
+        return True
+
     async def health_check(self) -> bool:
         """
         Sprawdza stan zdrowia komponentu email.
