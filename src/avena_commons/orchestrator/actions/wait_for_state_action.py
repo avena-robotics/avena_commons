@@ -179,7 +179,9 @@ class WaitForStateAction(BaseAction):
         # Sprawdź pojedynczą grupę
         elif "group" in action_config and action_config["group"]:
             group_name = action_config["group"]
-            target_clients.extend(self._get_clients_by_group(group_name, context.orchestrator))
+            target_clients.extend(
+                self._get_clients_by_group(group_name, context.orchestrator)
+            )
 
         # Sprawdź wiele grup
         elif "groups" in action_config and action_config["groups"]:

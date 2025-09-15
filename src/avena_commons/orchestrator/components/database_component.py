@@ -763,5 +763,5 @@ class DatabaseComponent:
             "is_initialized": self._is_initialized,
             "is_connected": self._is_connected,
             "column_type_cache_keys": list(self._column_type_cache.keys()),
-            "status": self.get_status()
+            "status": self.get_status(),
         }

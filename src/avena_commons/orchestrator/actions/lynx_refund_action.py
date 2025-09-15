@@ -64,7 +64,7 @@ class LynxRefundAction(BaseAction):
                 raise ActionExecutionError(
                     "lynx_refund", f"Komponent '{component_name}' nie został znaleziony"
                 )
-                
+
             lynx_component = context.components[component_name]
 
             # Sprawdź czy komponent to Lynx API

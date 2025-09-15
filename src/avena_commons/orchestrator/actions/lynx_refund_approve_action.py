@@ -59,7 +59,7 @@ class LynxRefundApproveAction(BaseAction):
                 )
 
             component = context.components.get(component_name)
-            
+
             if not component:
                 raise ActionExecutionError(
                     "lynx_refund_approve",
