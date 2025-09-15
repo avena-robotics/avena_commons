@@ -29,6 +29,7 @@ class EmailComponent:
     - from: Adres nadawcy (opcjonalnie, domyślnie username)
     - starttls: Czy używać STARTTLS (domyślnie True)
     - tls: Czy używać TLS (alternatywa dla STARTTLS, domyślnie False)
+    - enabled: Czy email jest włączony (bool)
     - max_error_attempts: Maksymalna liczba kolejnych błędów przed wyłączeniem (domyślnie 0)
     """
 
@@ -45,6 +46,7 @@ class EmailComponent:
         self.config = config
         self._message_logger = message_logger
         self._is_initialized = False
+        self._is_enabled = False
 
         # Parametry konfiguracji
         self._host = ""
@@ -138,6 +140,7 @@ class EmailComponent:
             self._use_tls = bool(self.config.get("tls", False))
 
             # Parametry opcjonalne
+            self._is_enabled = bool(self.config.get("enabled", False))
             try:
                 self._max_error_attempts = int(self.config.get("max_error_attempts", 0))
             except (ValueError, TypeError):
@@ -169,6 +172,13 @@ class EmailComponent:
         if not self._is_initialized:
             return False
 
+        if not self._is_enabled:
+            debug(
+                f"Komponent email '{self.name}' jest wyłączony",
+                message_logger=self._message_logger,
+            )
+            return False
+
         # Opcjonalnie: spróbuj nawiązać połączenie SMTP jako test zdrowia
         try:
             if self._use_tls:
@@ -194,6 +204,11 @@ class EmailComponent:
     def is_initialized(self) -> bool:
         """Zwraca True jeśli komponent jest zainicjalizowany."""
         return self._is_initialized
+
+    @property
+    def is_enabled(self) -> bool:
+        """Zwraca True jeśli email jest włączony."""
+        return self._is_enabled
 
     @property
     def max_error_attempts(self) -> int:
@@ -247,6 +262,13 @@ class EmailComponent:
             raise RuntimeError(
                 f"Komponent email '{self.name}' nie jest zainicjalizowany"
             )
+
+        if not self._is_enabled:
+            warning(
+                f"Email globalnie wyłączony - pomijam wysyłkę",
+                message_logger=self._message_logger,
+            )
+            return True
 
         if not recipients:
             raise ValueError("Lista odbiorców jest pusta")
@@ -333,6 +355,7 @@ class EmailComponent:
             "name": self.name,
             "type": "email",
             "initialized": self._is_initialized,
+            "enabled": self._is_enabled,
             "host": self._host if self._is_initialized else None,
             "port": self._port,
             "mail_from": self._mail_from if self._is_initialized else None,
@@ -361,6 +384,7 @@ class EmailComponent:
             "component_type": "EmailComponent",
             "config": safe_config,
             "is_initialized": self._is_initialized,
+            "is_enabled": self._is_enabled,
             "host": self._host if self._is_initialized else None,
             "port": self._port,
             "username": self._username if self._is_initialized else None,

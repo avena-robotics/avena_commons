@@ -72,6 +72,13 @@ class SendEmailAction(BaseAction):
                 "send_email", "Komponent EmailComponent nie jest zainicjalizowany"
             )
 
+        if not email_component.is_enabled:
+            warning(
+                "send_email: Email globalnie wyłączony - pomijam",
+                message_logger=context.message_logger,
+            )
+            return
+
         try:
             max_attempts = email_component.max_error_attempts
             if self.should_skip_action_due_to_errors(self.action_type, max_attempts):
