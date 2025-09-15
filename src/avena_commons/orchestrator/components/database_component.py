@@ -730,7 +730,7 @@ class DatabaseComponent:
             Słownik ze statusem komponentu
         """
         return {
-            "name": self.name,
+            "component_name": self.name,
             "type": "DatabaseComponent",
             "initialized": self._is_initialized,
             "connected": self._is_connected,
@@ -738,4 +738,30 @@ class DatabaseComponent:
             "database_name": self._connection_params.get("database", "unknown"),
             "database_port": self._connection_params.get("port", "unknown"),
             "name": self._connection_params.get("name", "unknown"),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Zwraca serializowalną reprezentację komponentu do JSON.
+
+        Zawiera konfigurację i stan komponentu, pomijając nieserializowalne obiekty
+        takie jak połączenia czy locki.
+
+        Returns:
+            Słownik z ustawieniami i stanem komponentu gotowy do serializacji JSON
+        """
+        # Przygotuj bezpieczną kopię parametrów połączenia bez hasła
+        safe_connection_params = self._connection_params.copy()
+        if "password" in safe_connection_params:
+            safe_connection_params["password"] = "***"
+
+        return {
+            "component_name": self.name,
+            "component_type": "DatabaseComponent",
+            "config": self.config,
+            "connection_params": safe_connection_params,
+            "is_initialized": self._is_initialized,
+            "is_connected": self._is_connected,
+            "column_type_cache_keys": list(self._column_type_cache.keys()),
+            "status": self.get_status()
         }
