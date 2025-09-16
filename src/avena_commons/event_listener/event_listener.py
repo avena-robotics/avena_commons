@@ -2222,6 +2222,7 @@ class EventListener:
         event.data["fsm_state"] = self.__fsm_state.name
         # Pola błędu (jeśli klasa potomna je definiuje)
         event.data["error"] = getattr(self, "_error", False)
+        event.data["error_code"] = getattr(self, "_error_code", False)
         event.data["error_message"] = getattr(self, "_error_message", None)
         event.result = Result(result="success")
         await self._reply(event)
