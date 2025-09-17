@@ -132,8 +132,8 @@ def fix_depth(depth_image, config):
             kernel,
             iterations=config["final_closing_mask"]["iterations"],
         )
-    debug(
-        f"fix_depth: t1: {t1.t * 1_000:.1f}ms t2: {t2.t * 1_000:.1f}ms t3: {t3.t * 1_000:.1f}ms t4: {t4.t * 1_000:.1f}ms t5: {t5.t * 1_000:.1f}ms"
-    )
+    # debug(
+    #     f"fix_depth: t1: {t1.t * 1_000:.1f}ms t2: {t2.t * 1_000:.1f}ms t3: {t3.t * 1_000:.1f}ms t4: {t4.t * 1_000:.1f}ms t5: {t5.t * 1_000:.1f}ms"
+    # )
 
     return depth_merged_closed

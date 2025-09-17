@@ -2,6 +2,12 @@
     "camera_configuration": {
         "align": "d2c",
         "camera_ip": "192.168.1.10",
+        "camera_params": [
+            1378.84831,
+            1375.17821,
+            956.711425,
+            573.043875
+        ],
         "color": {
             "exposure": 500,
             "format": "MJPG",
@@ -21,6 +27,13 @@
             "width": 1280
         },
         "disparity_to_depth": true,
+        "distortion_coefficients": [
+            0.12785771,
+            -0.39385802,
+            0.00286301,
+            -0.0010572,
+            0.35668062
+        ],
         "filters": {
             "spatial": false,
             "temporal": false
@@ -28,12 +41,12 @@
         "model": "orbec_gemini_335le"
     },
     "pipelines": {
-        "box_detection": {
+        "box_detector": {
             "configuration": {
                 "skip_first_n_frames": 20
             },
             "postprocessors": {
-                "a":{
+                "a": {
                     "center_point": [
                         1050,
                         550
@@ -104,7 +117,7 @@
                         "expected_width": 1150
                     }
                 },
-                "b":{
+                "b": {
                     "center_point": [
                         1050,
                         550
@@ -175,7 +188,7 @@
                         "expected_width": 1150
                     }
                 },
-                "c":{
+                "c": {
                     "center_point": [
                         1050,
                         550
@@ -246,14 +259,14 @@
                         "expected_width": 1150
                     }
                 }
-            }                   
+            }
         },
-        "qr_detection": {
+        "qr_detector": {
             "configuration": {
                 "skip_first_n_frames": 20
             },
             "postprocessors": {
-                "a":{
+                "a": {
                     "clahe": {
                         "clip_limit": 4.0,
                         "grid_size": 8
@@ -265,7 +278,7 @@
                     "mode": "gray",
                     "qr_size": 0.026
                 },
-                "b":{
+                "b": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -290,7 +303,7 @@
                     "mode": "gray_with_binarization",
                     "qr_size": 0.026
                 },
-                "c":{
+                "c": {
                     "clahe": {
                         "clip_limit": 1.0,
                         "grid_size": 1
@@ -302,7 +315,7 @@
                     "mode": "gray",
                     "qr_size": 0.026
                 },
-                "d":{
+                "d": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -327,7 +340,7 @@
                     "mode": "gray_with_binarization",
                     "qr_size": 0.026
                 },
-                "e":{
+                "e": {
                     "clahe": {
                         "clip_limit": 4.0,
                         "grid_size": 8
@@ -339,7 +352,7 @@
                     "mode": "saturation",
                     "qr_size": 0.026
                 },
-                "f":{
+                "f": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -364,7 +377,7 @@
                     "mode": "saturation_with_binarization",
                     "qr_size": 0.026
                 },
-                "g":{
+                "g": {
                     "clahe": {
                         "clip_limit": 1.0,
                         "grid_size": 1
@@ -376,7 +389,7 @@
                     "mode": "saturation",
                     "qr_size": 0.026
                 },
-                "h":{
+                "h": {
                     "binarization": {
                         "binarization": {
                             "C": 1,
@@ -401,7 +414,7 @@
                     "mode": "saturation_with_binarization",
                     "qr_size": 0.026
                 },
-                "i":{
+                "i": {
                     "middle_area": {
                         "max_x": 1.44,
                         "min_x": 0.56
@@ -431,5 +444,8 @@
                 }
             }
         }
+    },
+    "save_configuration": {
+        "base_path": "temp/photos"
     }
 }

@@ -1,13 +1,29 @@
 import asyncio
+import importlib
 import threading
 import traceback
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    TimeoutError,
+    as_completed,
+)
 from enum import Enum
 from typing import Optional
-from concurrent.futures import ProcessPoolExecutor, as_completed  # ← DODAJ TO!
 
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
+
+# Dodać import kompatybilny z różnymi wersjami Pythona
+try:
+    from concurrent.futures import BrokenProcessPool, ProcessLookupError
+except ImportError:
+    # Kompatybilność z Python 3.8/3.9
+    class BrokenProcessPool(RuntimeError):
+        """Zastępczy wyjątek dla starszych wersji Pythona."""
+        pass
+    ProcessLookupError = OSError
+
 
 class CameraState(Enum):
     """Stany pracy ogólnego sterownika kamery.
@@ -22,6 +38,7 @@ class CameraState(Enum):
     See Also:
         - `GeneralCameraWorker`: klasa korzystająca z tych stanów.
     """
+
     IDLE = 0  # idle
     INITIALIZING = 1  # init camera
     INITIALIZED = 2  # init camera
@@ -53,6 +70,7 @@ class GeneralCameraWorker(Worker):
     See Also:
         - `GeneralCameraConnector`: synchronizowany interfejs do workera.
     """
+
     def __init__(self, message_logger: Optional[MessageLogger] = None):
         """Zainicjalizuj workera kamery.
 
@@ -72,11 +90,10 @@ class GeneralCameraWorker(Worker):
         super().__init__(message_logger=None)
         self.state = CameraState.IDLE
 
-        self.last_frames = None
+        self.last_frame = None
         self.postprocess_configuration = None
         self.executor = None
         self.image_processing_workers = []
-
 
     @property
     def state(self) -> CameraState:
@@ -261,107 +278,228 @@ class GeneralCameraWorker(Worker):
             error(f"{self.device_name} - Stopping failed: {e}", self._message_logger)
             return False
 
-    async def _run_image_processing_workers(self, frames):
-        """Uruchom zadania przetwarzania obrazu w procesach.
-
-        Każda konfiguracja postprocess jest wykonywana jako osobne
-        zadanie w `ProcessPoolExecutor`.
-
-        Args:
-            frames (dict): Ostatnie ramki do przetwarzania.
-
-        Returns:
-            Optional[list]: Lista wyników zadań lub None przy błędzie/braku executor-a.
-
-        Raises:
-            Exception: Błędy zadań są przechwytywane i logowane.
-
-        Przykład:
-            >>> import asyncio
-            >>> worker = GeneralCameraWorker()
-            >>> worker.executor = None  # brak executora -> None
-            >>> asyncio.run(worker._run_image_processing_workers({})) is None
-            True
-        """
+    async def _run_image_processing_workers(self, frame: dict):
+        """Uruchom zadania przetwarzania obrazu w procesach z robust error handling."""
         if not self.executor:
             return None
-        
+
+        # Sprawdź czy executor jest uszkodzony przed użyciem
+        if self._is_executor_broken():
+            debug("Executor uszkodzony, próba odtworzenia", self._message_logger)
+            if not await self._recreate_executor_if_broken():
+                error("Nie udało się odtworzyć executor-a", self._message_logger)
+                return None
+
         try:
-            # Submit funkcji do procesów (NIE tworzenie nowych workerów!)
+            # Submit zadań z wykrywaniem uszkodzonego pool-a
             futures = {}
-            for i, config in enumerate(self.postprocess_configuration):
-                future = self.executor.submit(
-                    self.detector,
-                    self._process_single_config,  # Funkcja do wykonania
-                    frames,                       # Dane
-                    self.postprocess_configuration[i],                       # Konfiguracja
-                    i                             # ID
-                )
-                futures[future] = i
+            failed_submits = 0
             
-            # Zbierz wyniki
-            results = []
-            for future in as_completed(futures):
-                config_id = futures[future]
+            for i, worker in enumerate(self.image_processing_workers):
                 try:
-                    result = future.result()
-                    results.append(result)
+                    # Dodaj timeout dla submit operacji
+                    future = self.executor.submit(
+                        worker.get("detector"),
+                        frame=frame,
+                        camera_config=self.camera_configuration,
+                        config=worker.get("config"),
+                    )
+                    futures[future] = i
+                    
+                except (BrokenProcessPool, RuntimeError) as e:
+                    if any(keyword in str(e).lower() for keyword in ["process pool", "terminated abruptly", "child process"]):
+                        error(f"Process pool uszkodzony podczas submit worker_{i}: {e}", self._message_logger)
+                        failed_submits += 1
+                        
+                        # Jeśli pierwszy submit kończy się błędem pool-a, spróbuj odtworzyć
+                        if len(futures) == 0:
+                            if await self._recreate_executor_if_broken():
+                                debug("Odtworzono executor, ponawianie submit", self._message_logger)
+                                try:
+                                    future = self.executor.submit(
+                                        worker.get("detector"),
+                                        frame=frame,
+                                        camera_config=self.camera_configuration,
+                                        config=worker.get("config"),
+                                    )
+                                    futures[future] = i
+                                    failed_submits -= 1
+                                except Exception as retry_e:
+                                    error(f"Ponowny submit worker_{i} nieudany: {retry_e}", self._message_logger)
+                            else:
+                                break  # Nie udało się odtworzyć, przerwij
+                        continue
+                    else:
+                        error(f"Błąd podczas submit worker_{i}: {e}", self._message_logger)
+                        continue
+                        
                 except Exception as e:
-                    error(f"Błąd w config_{config_id}: {e}", self._message_logger)
-            
+                    error(f"Nieoczekiwany błąd podczas submit worker_{i}: {e}", self._message_logger)
+                    continue
+
+            if not futures:
+                if failed_submits > 0:
+                    error(f"Wszystkie {failed_submits} submit-y nieudane z powodu uszkodzonego pool-a", self._message_logger)
+                else:
+                    debug("Brak aktywnych zadań do wykonania", self._message_logger)
+                return []
+
+            debug(f"Submitted {len(futures)} tasks (failed: {failed_submits})", self._message_logger)
+
+            # Zbieranie wyników z rozszerzonym timeout handling
+            results = []
+            completed_count = 0
+
+            try:
+                for future in as_completed(futures, timeout=30.0):  # Zwiększony timeout
+                    config_id = futures[future]
+                    completed_count += 1
+
+                    try:
+                        if future.cancelled():
+                            debug(f"Task config_{config_id} został anulowany", self._message_logger)
+                            continue
+
+                        result = future.result(timeout=10.0)  # Zwiększony timeout na pojedynczy wynik
+                        if result is not None:
+                            results.append(result)
+                            debug(f"Otrzymano wynik z config_{config_id}", self._message_logger)
+                        else:
+                            debug(f"Pusty wynik z config_{config_id}", self._message_logger)
+
+                    except ProcessLookupError as e:
+                        error(f"Proces config_{config_id} został zakończony: {e}", self._message_logger)
+                        continue
+                    except BrokenProcessPool as e:
+                        error(f"Process pool uszkodzony przy config_{config_id}: {e}", self._message_logger)
+                        await self._recreate_executor_if_broken()
+                        break
+                    except TimeoutError:
+                        error(f"Timeout przy pobieraniu wyniku config_{config_id}", self._message_logger)
+                        continue
+                    except RuntimeError as e:
+                        if any(keyword in str(e).lower() for keyword in ["process", "pool", "terminated abruptly"]):
+                            error(f"Process issue przy config_{config_id}: {e}", self._message_logger)
+                            await self._recreate_executor_if_broken()
+                            break
+                        else:
+                            error(f"Runtime error w config_{config_id}: {e}", self._message_logger)
+                            continue
+                    except Exception as e:
+                        error(f"Nieoczekiwany błąd w config_{config_id}: {e}", self._message_logger)
+                        continue
+
+            except TimeoutError:
+                error("Timeout podczas oczekiwania na zakończenie zadań", self._message_logger)
+                self._cancel_pending_futures(futures)
+
+            debug(f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań", self._message_logger)
             return results
-            
+
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
+            if 'futures' in locals():
+                self._cancel_pending_futures(futures)
             return None
-            
-    async def _setup_image_processing_workers(self):
-        """Przygotuj executor i metadane workerów postprocess.
 
-        Tworzy `ProcessPoolExecutor` i listę opisów workerów na
-        podstawie `self.postprocess_configuration`.
+    def _cancel_pending_futures(self, futures: dict):
+        """Anuluj pending futures w przypadku błędu.
 
         Args:
-            None
+            futures (dict): Słownik future -> config_id do anulowania.
+        """
+        try:
+            for future in futures.keys():
+                if not future.done():
+                    future.cancel()
+            debug("Anulowano pending futures", self._message_logger)
+        except Exception as e:
+            error(f"Błąd podczas anulowania futures: {e}", self._message_logger)
+
+    async def _recreate_executor_if_broken(self):
+        """Odtwórz executor w przypadku uszkodzenia process pool.
 
         Returns:
-            bool: True po poprawnym przygotowaniu, False w razie błędu.
-
-        Raises:
-            Exception: Obsłużone wewnętrznie; błąd jest logowany.
-
-        Przykład:
-            >>> import asyncio
-            >>> w = GeneralCameraWorker()
-            >>> w.postprocess_configuration = []
-            >>> asyncio.run(w._setup_image_processing_workers()) in (True, False)
-            True
+            bool: True jeśli udało się odtworzyć executor.
         """
+        try:
+            debug("Próba odtworzenia uszkodzonego executor-a", self._message_logger)
+
+            # Zamknij uszkodzony executor
+            if self.executor:
+                try:
+                    self.executor.shutdown(wait=False)
+                except:
+                    pass  # Ignore błędy przy zamykaniu uszkodzonego executora
+                self.executor = None
+
+            # Poczekaj chwilę przed odtworzeniem
+            await asyncio.sleep(0)
+
+            # Odtwórz setup
+            success = await self._setup_image_processing_workers()
+            if success:
+                debug("Pomyślnie odtworzono executor", self._message_logger)
+            else:
+                error("Nie udało się odtworzyć executor-a", self._message_logger)
+            return success
+
+        except Exception as e:
+            error(f"Błąd podczas odtwarzania executor-a: {e}", self._message_logger)
+            return False
+
+    def _is_executor_broken(self) -> bool:
+        """Sprawdź czy executor jest uszkodzony.
+        
+        Returns:
+            bool: True jeśli executor jest uszkodzony lub None.
+        """
+        if not self.executor:
+            return True
+        
+        # Sprawdź czy executor ma właściwość _broken
+        if hasattr(self.executor, '_broken') and self.executor._broken:
+            return True
+            
+        return False
+
+    async def _setup_image_processing_workers(self):
+        """Przygotuj executor z ograniczoną liczbą procesów."""
         try:
             # Zamknij poprzedni executor jeśli istnieje
             if self.executor:
-                self.executor.shutdown(wait=True)
-            
-            # Utwórz nowy executor
-            self.executor = ProcessPoolExecutor(max_workers=len(self.postprocess_configuration))
+                try:
+                    self.executor.shutdown(wait=True)
+                except Exception:
+                    pass  # Ignoruj błędy przy zamykaniu
+                finally:
+                    self.executor = None
 
-            # Przygotuj workery (ale nie uruchamiaj jeszcze!)
+            # Sprawdź czy mamy konfigurację
+            if not self.postprocess_configuration:
+                debug("Brak konfiguracji postprocess, executor nie zostanie utworzony", self._message_logger)
+                return True
+
+            # Utwórz nowy executor z ograniczoną liczbą workerów dla stabilności
+            max_workers = min(len(self.postprocess_configuration), 4)  # Maksymalnie 4 procesy
+            self.executor = ProcessPoolExecutor(max_workers=max_workers)
+
+            # Przygotuj workery
             self.image_processing_workers = []
-            for i, config in enumerate(self.postprocess_configuration):
+            for config_key, config_value in self.postprocess_configuration.items():
+                debug(f"config_key: {config_key}, config_value: {config_value}", self._message_logger)
                 worker_info = {
                     "detector": self.detector,
-                    "config": self.postprocess_configuration[i],
-                    "config_name": self.postprocess_configuration[i]["mode"],
+                    "config": config_value,
                 }
                 self.image_processing_workers.append(worker_info)
-            
-            debug(f"Utworzono {len(self.image_processing_workers)} workerów do przetwarzania obrazów: detector: '{self.detector}' postprocess configuration: {', '.join(config['mode'] for config in self.postprocess_configuration)}", 
-                  self._message_logger)
-            
+
+            debug(f"Utworzono executor z {max_workers} workerami dla {len(self.image_processing_workers)} konfiguracji", self._message_logger)
             return True
-            
+
         except Exception as e:
             error(f"Błąd podczas tworzenia workerów: {e}", self._message_logger)
+            self.executor = None
             return False
 
     async def _run(self, pipe_in):
@@ -416,6 +554,7 @@ class GeneralCameraWorker(Worker):
                                 )
                                 # Tu będzie logika inicjalizacji z konfiguracją
                                 await self.init_camera(data[1])
+                                self.camera_configuration = data[1]
                                 pipe_in.send(True)
                             except Exception as e:
                                 error(
@@ -465,12 +604,15 @@ class GeneralCameraWorker(Worker):
                                     message_logger=self._message_logger,
                                 )
                                 pipe_in.send(None)
-                        
-                        case "GET_LAST_FRAMES":
+
+                        case "GET_LAST_FRAME":
                             try:
-                                pipe_in.send(self.last_frames)
+                                pipe_in.send(self.last_frame)
                             except Exception as e:
-                                error(f"{self.device_name} - Error getting last frames: {e}", message_logger=self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error getting last frame: {e}",
+                                    message_logger=self._message_logger,
+                                )
                                 pipe_in.send(None)
 
                         case "SET_POSTPROCESS_CONFIGURATION":
@@ -479,17 +621,86 @@ class GeneralCameraWorker(Worker):
                                     f"{self.device_name} - Received SET_POSTPROCESS_CONFIGURATION: detector: '{data[1]}' postprocess configuration: {len(data[2])}",
                                     self._message_logger,
                                 )
-                                self.detector = data[1] # ustawienie detectora
-                                self.pipeline_configuration = data[2]["configuration"] # ustawienie konfiguracji pipeline
-                                self.postprocess_configuration = data[2]["postprocessors"] # ustawienie konfiguracji postprocess
-                                # debug(f"{self.device_name} - Detector: {self.detector} Postprocess configuration: {len(self.postprocess_configuration)}", message_logger=self._message_logger)
+
+                                # Dynamiczny import funkcji detektora z avena_commons.vision.detector
+                                detector_name = data[1]
+                                if detector_name:
+                                    try:
+                                        # Import modułu detector z avena_commons.vision
+                                        detector_module = importlib.import_module(
+                                            "avena_commons.vision.detector"
+                                        )
+
+                                        # Pobierz funkcję detektora na podstawie nazwy
+                                        if hasattr(detector_module, detector_name):
+                                            self.detector = getattr(
+                                                detector_module, detector_name
+                                            )
+                                            debug(
+                                                f"{self.device_name} - Successfully imported detector function: {detector_name}",
+                                                self._message_logger,
+                                            )
+                                        else:
+                                            error(
+                                                f"{self.device_name} - Detector function '{detector_name}' not found in avena_commons.vision.detector",
+                                                self._message_logger,
+                                            )
+                                            self.detector = None
+                                    except ImportError as ie:
+                                        error(
+                                            f"{self.device_name} - Failed to import avena_commons.vision.detector: {ie}",
+                                            self._message_logger,
+                                        )
+                                        self.detector = None
+                                    except Exception as de:
+                                        error(
+                                            f"{self.device_name} - Error importing detector '{detector_name}': {de}",
+                                            self._message_logger,
+                                        )
+                                        self.detector = None
+                                else:
+                                    self.detector = None
+                                    debug(
+                                        f"{self.device_name} - No detector name provided, detector set to None",
+                                        self._message_logger,
+                                    )
+
+                                self.pipeline_configuration = data[2][
+                                    "configuration"
+                                ]  # ustawienie konfiguracji pipeline
+                                self.postprocess_configuration = data[2][
+                                    "postprocessors"
+                                ]  # ustawienie konfiguracji postprocess
+                                debug(
+                                    f"{self.device_name} - Detector: {self.detector} Postprocess configuration: {len(self.postprocess_configuration)}",
+                                    message_logger=self._message_logger,
+                                )
                                 await self._setup_image_processing_workers()
 
                                 pipe_in.send(True)
                             except Exception as e:
-                                error(f"{self.device_name} - Error setting postprocess configuration: {e}", message_logger=self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error setting postprocess configuration: {e}",
+                                    message_logger=self._message_logger,
+                                )
                                 pipe_in.send(False)
-
+                        case "RUN_POSTPROCESS":
+                            try:
+                                debug(
+                                    f"{self.device_name} - Received RUN_POSTPROCESS with frames",
+                                    self._message_logger,
+                                )
+                                frames = data[1]
+                                results = await self._run_image_processing_workers(
+                                    frames
+                                )
+                                pipe_in.send(results)
+                            except Exception as e:
+                                error(
+                                    f"{self.device_name} - Error running postprocess: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                pipe_in.send(None)
                         case _:
                             error(
                                 f"{self.device_name} - Unknown command: {data[0]}",
@@ -501,7 +712,7 @@ class GeneralCameraWorker(Worker):
                         frames = await self.grab_frames_from_camera()
                         if frames is None:
                             continue
-                        self.last_frames = frames
+                        self.last_frame = frames
                     # color_image = frames["color"]
                     # depth_image = frames["depth"]
                     debug(
@@ -510,7 +721,10 @@ class GeneralCameraWorker(Worker):
                     )
                     # przetwarzanie wizyjne
                     if self.postprocess_configuration:
-                        debug(f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}", message_logger=self._message_logger)
+                        debug(
+                            f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}",
+                            message_logger=self._message_logger,
+                        )
 
         except asyncio.CancelledError:
             info(
@@ -547,6 +761,7 @@ class GeneralCameraConnector(Connector):
     See Also:
         - `GeneralCameraWorker`: implementacja logiki asynchronicznej.
     """
+
     def __init__(self, message_logger: Optional[MessageLogger] = None):
         """Utwórz konektor z opcjonalnym loggerem.
 
@@ -646,21 +861,23 @@ class GeneralCameraConnector(Connector):
             value = super()._send_thru_pipe(self._pipe_out, ["GET_STATE"])
             return value
 
-    def get_last_frames(self):
+    def get_last_frame(self):
         """Pobierz ostatnio odebrane ramki.
 
         Returns:
             Any: Struktura ramek (np. dict) lub None.
 
         Przykład:
-            >>> GeneralCameraConnector().get_last_frames() is None
+            >>> GeneralCameraConnector().get_last_frame() is None
             True
         """
         with self.__lock:
-            value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAMES"])
+            value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_FRAME"])
             return value
 
-    def set_postprocess_configuration(self, *, detector: str = None, configuration: list = None):
+    def set_postprocess_configuration(
+        self, *, detector: str = None, configuration: list = None
+    ):
         """Ustaw konfigurację postprocess oraz nazwę detektora.
 
         Args:
@@ -677,5 +894,28 @@ class GeneralCameraConnector(Connector):
             True
         """
         with self.__lock:
-            value = super()._send_thru_pipe(self._pipe_out, ["SET_POSTPROCESS_CONFIGURATION", detector, configuration])
+            value = super()._send_thru_pipe(
+                self._pipe_out,
+                ["SET_POSTPROCESS_CONFIGURATION", detector, configuration],
+            )
+            return value
+
+    def run_postprocess_workers(self, frame: dict):
+        """Uruchom postprocess na podanych ramkach.
+
+        Args:
+            frames (dict): Ramki do przetworzenia.
+
+        Returns:
+            Any: Wyniki postprocessu lub None.
+
+        Przykład:
+            >>> GeneralCameraConnector().run_postprocess({}) is None
+            True
+        """
+        with self.__lock:
+            value = super()._send_thru_pipe(
+                self._pipe_out,
+                ["RUN_POSTPROCESS", frame],
+            )
             return value

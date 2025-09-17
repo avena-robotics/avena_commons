@@ -1,94 +1,36 @@
-import argparse
 import os
 import sys
-from enum import Enum
 
 # Add the src directory to the system path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from dotenv import load_dotenv
+from pupil_apriltags import Detector
 
-from avena_commons.camera.camera import Camera, CameraState
-from avena_commons.event_listener import Event, EventListenerState
-from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug, error
-# from avena_commons.vision.detector import ObjectDetector
+from avena_commons.camera.camera import Camera
+from avena_commons.camera.driver.general import CameraState
+from avena_commons.event_listener import EventListenerState
+from avena_commons.util.logger import (
+    LoggerPolicyPeriod,
+    MessageLogger,
+    debug,
+    error,
+    info,
+)
+from avena_commons.util.timing_stats import global_timing_stats
 
 
-class CameraServer(Camera):
-    def __init__(
-        self,
-        camera_ip: str,
-        port: str,
-        address: str,
-        message_logger: MessageLogger | None = None,
-        do_not_load_state: bool = False,
-    ):
-        # Domyślny stan i konfiguracja
-        self._state = {}
-
-        self._default_configuration = {  # domyslna konfiguracja
-        }
-        self.detector = None
-        self.check_local_data_frequency: int = 60
-        super().__init__(
-            name=f"camera_server_{camera_ip}",
-            address=address,
-            port=port,
-            message_logger=message_logger,
-            do_not_load_state=do_not_load_state,
-        )
-        self.start()
-
-    # MARK: SEND EVENTS
-    async def on_stopped(self):
-        self.fsm_state = EventListenerState.INITIALIZING
-
-    async def on_initialized(self):
-        self.fsm_state = EventListenerState.STARTING
-
-    async def _check_local_data(self):
-        """
-        Periodically checks and processes local data
-
-        Raises:
-            Exception: If an error occurs during data processing.
-        """
-        camera_state = self.camera.get_state()
-        # debug(
-        #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state} {type(camera_state)}",
-        #     self._message_logger,
-        # )
-        match camera_state:
-            case CameraState.ERROR:
-                self.set_state(EventListenerState.ON_ERROR)
-            case CameraState.STARTED:
-                pass
-            # with Catchtime() as ct:
-            # last_frames = self.camera.get_last_frames()
-            # pass
-            #             if last_frames is not None:
-            #                 self.latest_color_frame = last_frames["color"]
-            #                 self.latest_depth_frame = last_frames["depth"]
-            #             else:
-            #                 error(
-            #                     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Brak ramki Koloru lub Głębi",
-            #                     self._message_logger,
-            #                 )
-            # debug(
-            #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Pobrano ramki Koloru i Głębi w {ct.t * 1_000:.2f}ms",
-            #     self._message_logger,
-            # )
-            case _:
-                debug(
-                    f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state}",
-                    self._message_logger,
-                )
-
-    def _clear_before_shutdown(self):
-        __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
-        # Ustaw na None aby inne wątki nie próbowały używać
-        self._message_logger = None
+def show_intermediate_stats():
+    """Pokaż statystyki w trakcie działania."""
+    print("\n📊 Statystyki w trakcie działania:")
+    operations = global_timing_stats.get_operation_names()
+    if operations:
+        for op in operations:
+            stats = global_timing_stats.get_stats(op)
+            if stats and stats["count"] > 0:
+                print(f"   {op}: {stats['mean']:.1f}ms ({stats['count']} próbek)")
+    else:
+        print("   Brak statystyk...")
 
 
 if __name__ == "__main__":
@@ -98,19 +40,92 @@ if __name__ == "__main__":
             debug=True,
             period=LoggerPolicyPeriod.LAST_15_MINUTES,
             files_count=40,
-            colors=False,
         )
         load_dotenv(override=True)
 
         port = 9900
 
         print("port: ", port)
-        listener = CameraServer(
-            port=port,
+        listener = Camera(
+            name=f"camera_server_192.168.1.10",
             address="127.0.0.1",
-            camera_ip="192.168.1.10",
+            port=port,
             message_logger=message_logger,
         )
+        listener.start()
+
+        # Pozwól na zebranie kilku pomiarów
+        import time
+
+        print("⏳ Czekam 10 sekund na zebranie statystyk...")
+
+        # Pokaż statystyki co 2 sekundy
+        for i in range(5):
+            time.sleep(2)
+            print(f"   ... {(i + 1) * 2}s ...")
+            show_intermediate_stats()
+
+        # Wyświetl statystyki po zakończeniu testu
+        print("\n" + "=" * 60)
+        print("📊 STATYSTYKI TIMING Z TESTU KAMERY")
+        print("=" * 60)
+        global_timing_stats.print_summary()
+
+        # Szczegółowe informacje o konkretnych operacjach
+        operations = global_timing_stats.get_operation_names()
+        if operations:
+            print(f"\n🔍 Zebrano statystyki dla {len(operations)} operacji:")
+            for op in operations:
+                stats = global_timing_stats.get_stats(op)
+                if stats:
+                    print(
+                        f"   {op}: {stats['mean']:.1f}ms średnio ({stats['count']} próbek)"
+                    )
+        else:
+            print(
+                "\n❌ Brak zebranych statystyk - prawdopodobnie test zakończył się zbyt szybko"
+            )
+
     except Exception as e:
         # del message_logger
         error(f"Nieoczekiwany błąd w głównym wątku: {e}", message_logger=None)
+        # Wyświetl statystyki nawet przy błędzie
+        print("\n📊 Statystyki timing (z błędem):")
+        global_timing_stats.print_summary()
+    except KeyboardInterrupt:
+        print("\n⚡ Test przerwany przez użytkownika")
+        print("\n" + "=" * 60)
+        print("📊 FINALNE STATYSTYKI TIMING")
+        print("=" * 60)
+        global_timing_stats.print_summary()
+
+        # Szczegółowa analiza
+        operations = global_timing_stats.get_operation_names()
+        if operations:
+            print(f"\n🔍 Analiza {len(operations)} operacji:")
+            for op in operations:
+                stats = global_timing_stats.get_stats(op)
+                if stats:
+                    print(f"   {op}:")
+                    print(f"      Średnia: {stats['mean']:>8.1f} ms")
+                    print(f"      Min:     {stats['min']:>8.1f} ms")
+                    print(f"      Max:     {stats['max']:>8.1f} ms")
+                    print(f"      Próbek:  {stats['count']:>8}")
+                    if stats["count"] > 1:
+                        variance = (stats["max"] - stats["min"]) * 1000
+                        stability = (
+                            1 - (stats["max"] - stats["min"]) / stats["mean"]
+                        ) * 100
+                        print(f"      Rozrzut: {variance:>8.1f} ms")
+                        print(f"      Stabil.: {stability:>8.1f} %")
+    finally:
+        # Zawsze wyświetl podsumowanie na koniec
+        operation_count = len(global_timing_stats.get_operation_names())
+        print(f"\n🏁 Test zakończony. Dostępne operacje timing: {operation_count}")
+
+        # Jeśli test zakończył się normalnie (nie przez Ctrl+C), pokaż statystyki tutaj też
+        if operation_count > 0:
+            print("\n" + "=" * 60)
+            print("📊 STATYSTYKI TIMING (końcowe)")
+            print("=" * 60)
+            global_timing_stats.print_summary()
