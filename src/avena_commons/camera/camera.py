@@ -58,7 +58,6 @@ class Camera(EventListener):
         debug(f"camera config: {self.__camera_config}", self._message_logger)
         self.__pipelines_config = self._configuration.get("pipelines", {})
         debug(f"pipelines config: {self.__pipelines_config}", self._message_logger)
-        self.__save_config = self._configuration.get("save_configuration", {})
 
         if self.__camera_config.get("camera_ip", None) is None:
             error(

@@ -115,12 +115,12 @@ def box_detector(*, frame, camera_config, config):
         )
         debug_data["box_valid"] = valid
 
-    if not valid:
-        return None, None, None, None, detect_image
-
     with Catchtime() as t14:  # debug
         detect_image = prepare_image_output(color_image, box_contours, rect, box)
         debug_data["box_detect_image"] = detect_image
+
+    if not valid:
+        return None, None, None, None, detect_image
 
     with Catchtime() as t15:
         center, sorted_corners, angle, z = prepare_box_output(  # wynik glowny
