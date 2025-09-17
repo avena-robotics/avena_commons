@@ -15,8 +15,11 @@ httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
 pytest
-./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl; platform_system=="Windows"
-./install/pyorbbecsdk-2.0.10-cp310-cp310-linux_x86_64.whl; platform_system=="Linux"
+# Orbec SDK - poprawne markery dla wersji Pythona i platformy
+./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl; platform_system=="Windows" and python_version>="3.10" and python_version<"3.11"
+./install/pyorbbecsdk-2.0.13-cp310-cp310-linux_x86_64.whl; platform_system=="Linux" and python_version>="3.10" and python_version<"3.11"
+./install/pyorbbecsdk-2.0.13-cp312-cp312-linux_x86_64.whl; platform_system=="Linux" and python_version>="3.12" and python_version<"3.13"
+./install/pyorbbecsdk-2.0.13-cp312-cp312-win_amd64.whl; platform_system=="Windows" and python_version>="3.12" and python_version<"3.13"
 
 # DEV
 ruff
