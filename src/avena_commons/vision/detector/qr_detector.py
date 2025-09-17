@@ -23,7 +23,7 @@ def qr_detector(*, frame, camera_config, config):
             "decode_sharpening": 0,
         }
         detector = Detector(families="tag36h11", **config_detector)
-    # debug(f"QR DETECTOR: Detector initialized in {t.t:.5f} ms")
+    debug(f"QR DETECTOR: Detector initialized in {t.ms:.4f} ms")
     camera_params = (
         camera_config["camera_params"][0],
         camera_config["camera_params"][1],
