@@ -1,18 +1,22 @@
-import argparse
 import os
 import sys
-from enum import Enum
 
 # Add the src directory to the system path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from dotenv import load_dotenv
+from pupil_apriltags import Detector
 
-from avena_commons.camera.camera import Camera, CameraState
-from avena_commons.event_listener import Event, EventListenerState
-from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger, debug, error
-# from avena_commons.vision.detector import ObjectDetector
+from avena_commons.camera.camera import Camera
+from avena_commons.camera.driver.general import CameraState
+from avena_commons.event_listener import EventListenerState
+from avena_commons.util.logger import (
+    LoggerPolicyPeriod,
+    MessageLogger,
+    debug,
+    error,
+    info,
+)
 
 
 class CameraServer(Camera):
@@ -27,10 +31,23 @@ class CameraServer(Camera):
         # Domyślny stan i konfiguracja
         self._state = {}
 
-        self._default_configuration = {  # domyslna konfiguracja
+        self._default_configuration = {  # domyślna konfiguracja
+            "camera_configuration": {
+                "camera_ip": camera_ip,
+                "model": "orbec_gemini_335le",
+            }
         }
         self.detector = None
         self.check_local_data_frequency: int = 60
+
+        # Dodaj detektor apriltag dla QR
+        try:
+            self.apriltag_detector = Detector(families="tag36h11")
+            info("Utworzono detektor apriltag", self._message_logger)
+        except Exception as e:
+            error(f"Błąd tworzenia detektora apriltag: {e}", self._message_logger)
+            self.apriltag_detector = None
+
         super().__init__(
             name=f"camera_server_{camera_ip}",
             address=address,
@@ -63,18 +80,27 @@ class CameraServer(Camera):
             case CameraState.ERROR:
                 self.set_state(EventListenerState.ON_ERROR)
             case CameraState.STARTED:
-                pass
-            # with Catchtime() as ct:
-            # last_frames = self.camera.get_last_frames()
-            # pass
-            #             if last_frames is not None:
-            #                 self.latest_color_frame = last_frames["color"]
-            #                 self.latest_depth_frame = last_frames["depth"]
-            #             else:
-            #                 error(
-            #                     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Brak ramki Koloru lub Głębi",
-            #                     self._message_logger,
-            #                 )
+                # Przykład zapisywania ramek (dla demonstracji)
+                # with Catchtime() as ct:
+                last_frame = self.camera.get_last_frame()
+                # pass
+                if last_frame is not None:
+                    self.latest_color_frame = last_frame["color"]
+                    self.latest_depth_frame = last_frame["depth"]
+                    debug(
+                        f"Pobrano ramki Koloru i Głębi: {self.latest_color_frame.shape}, {self.latest_depth_frame.shape}",
+                        self._message_logger,
+                    )
+                    result = self.camera.run_postprocess_workers(last_frame)
+                    debug(
+                        f"result type: {type(result)}, result: {result}",
+                        self._message_logger,
+                    )
+                else:
+                    error(
+                        f"EVENT_LISTENER_CHECK_LOCAL_DATA: Brak ramki Koloru lub Głębi",
+                        self._message_logger,
+                    )
             # debug(
             #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: Pobrano ramki Koloru i Głębi w {ct.t * 1_000:.2f}ms",
             #     self._message_logger,
@@ -98,7 +124,6 @@ if __name__ == "__main__":
             debug=True,
             period=LoggerPolicyPeriod.LAST_15_MINUTES,
             files_count=40,
-            colors=False,
         )
         load_dotenv(override=True)
 

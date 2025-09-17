@@ -21,6 +21,9 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     Returns:
         np.ndarray: Przetworzona maska binarna
 
+    Raises:
+        ValueError: Gdy parametry konfiguracji są nieprawidłowe
+
     Example:
         >>> config = {
         ...     "blur_size": 5,
@@ -40,6 +43,51 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     closed_iterations = config["closed_iterations"]
     opened_kernel_type = config["opened_kernel_type"]
     closed_kernel_type = config["closed_kernel_type"]
+
+    # Walidacja parametrów
+    if not isinstance(blur_size, (int, float)):
+        raise ValueError(f"blur_size musi być liczbą, otrzymano: {type(blur_size)}")
+
+    if not isinstance(opened_size, (list, tuple)) or len(opened_size) != 2:
+        raise ValueError(
+            f"opened_size musi być listą/krotką 2 elementów, otrzymano: {opened_size}"
+        )
+
+    if not isinstance(closed_size, (list, tuple)) or len(closed_size) != 2:
+        raise ValueError(
+            f"closed_size musi być listą/krotką 2 elementów, otrzymano: {closed_size}"
+        )
+
+    # Konwersja na int
+    blur_size = int(blur_size)
+    opened_size = [int(opened_size[0]), int(opened_size[1])]
+    closed_size = [int(closed_size[0]), int(closed_size[1])]
+    opened_iterations = int(opened_iterations)
+    closed_iterations = int(closed_iterations)
+
+    # Konwersja typów kernel ze stringów na stałe OpenCV
+    kernel_type_map = {
+        "MORPH_RECT": cv2.MORPH_RECT,
+        "MORPH_ELLIPSE": cv2.MORPH_ELLIPSE,
+        "MORPH_CROSS": cv2.MORPH_CROSS,
+        cv2.MORPH_RECT: cv2.MORPH_RECT,
+        cv2.MORPH_ELLIPSE: cv2.MORPH_ELLIPSE,
+        cv2.MORPH_CROSS: cv2.MORPH_CROSS,
+    }
+
+    if opened_kernel_type in kernel_type_map:
+        opened_kernel_type = kernel_type_map[opened_kernel_type]
+    else:
+        raise ValueError(
+            f"Nieznany typ kernel opened_kernel_type: {opened_kernel_type}"
+        )
+
+    if closed_kernel_type in kernel_type_map:
+        closed_kernel_type = kernel_type_map[closed_kernel_type]
+    else:
+        raise ValueError(
+            f"Nieznany typ kernel closed_kernel_type: {closed_kernel_type}"
+        )
 
     if blur_size % 2 == 0:
         blur_size += 1

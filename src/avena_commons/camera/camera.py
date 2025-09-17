@@ -1,38 +1,14 @@
-import asyncio
-import base64
-import threading
-import time
-import traceback
+import pickle
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 import cv2
-import numpy as np
 from dotenv import load_dotenv
-from pyorbbecsdk import (
-    AlignFilter,
-    Config,
-    Context,
-    OBAlignMode,
-    OBFormat,
-    OBPermissionType,
-    OBPropertyID,
-    OBPropertyType,
-    OBSensorType,
-    OBStreamType,
-    Pipeline,
-    SpatialAdvancedFilter,
-    TemporalFilter,
-    VideoStreamProfile,
-)
 
-from avena_commons.camera.driver.general import CameraState
 from avena_commons.camera.driver.orbec_335le import OrbecGemini335Le
-from avena_commons.event_listener import (
-    Event,
-    EventListener,
-    EventListenerState,
-    Result,
-)
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.event_listener import EventListener
+from avena_commons.util.logger import MessageLogger, debug, error
 
 load_dotenv(override=True)
 
@@ -77,7 +53,10 @@ class Camera(EventListener):
 
         debug(f"camera init", self._message_logger)
         self.__camera_config = self._configuration.get("camera_configuration", {})
-        self.__postprocess_config = self._configuration.get("postprocessors", {})
+        debug(f"camera config: {self.__camera_config}", self._message_logger)
+        self.__pipelines_config = self._configuration.get("pipelines", {})
+        debug(f"pipelines config: {self.__pipelines_config}", self._message_logger)
+        self.__save_config = self._configuration.get("save_configuration", {})
 
         if self.__camera_config.get("camera_ip", None) is None:
             error(
@@ -102,7 +81,9 @@ class Camera(EventListener):
         )
         match self.__camera_config.get("model", None):
             case "orbec_gemini_335le":
-                self.camera = OrbecGemini335Le(self.camera_address, self._message_logger)
+                self.camera = OrbecGemini335Le(
+                    self.camera_address, self._message_logger
+                )
             case _:
                 error(
                     f"EVENT_LISTENER_INIT: Brak obsługiwanej kamery {self.__camera_config.get('model', None)} obsługiwane modele: orbec_gemini_335le",
@@ -117,7 +98,17 @@ class Camera(EventListener):
     async def on_starting(self):
         """Metoda wywoływana podczas przejścia w stan STARTING.
         Tu komponent przygotowuje się do uruchomienia głównych operacji."""
-        # self.camera.set_postprocess_configuration(detector="qr_detector", configuration=self.__postprocess_config["qr_detection"])
+        # Uruchom kamerę
+        # TODO: Odpowiedź na eventy aby wiedzieć, który postprocess użyć
+        self.camera.set_postprocess_configuration(
+            detector="qr_detector",
+            configuration=self.__pipelines_config["qr_detector"],
+        )
+        # self.camera.set_postprocess_configuration(
+        #     detector="box_detector",
+        #     configuration=self.__pipelines_config["box_detector"],
+        # )
+
         self.camera.start()
 
     async def on_stopping(self):

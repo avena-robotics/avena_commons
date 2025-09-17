@@ -7,16 +7,36 @@ import avena_commons.vision.camera as camera
 import avena_commons.vision.image_preprocess as preprocess
 import avena_commons.vision.tag_reconstruction as tag_reconstruction
 import avena_commons.vision.vision as vision
-from avena_commons.util.logger import error
+from avena_commons.util.catchtime import Catchtime
+from avena_commons.util.logger import debug, error
 
 
-def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, config):
+def qr_detector(*, frame, camera_config, config):
     debug_data = {}
+    with Catchtime() as t:
+        from pupil_apriltags import Detector
 
-    camera_matrix = camera.create_camera_matrix(camera_params)
-    camera_distortion = camera.create_camera_distortion(distortion_coefficients)
+        config_detector = {
+            "quad_decimate": 1.5,
+            "quad_sigma": 1.5,
+            "refine_edges": 1,
+            "decode_sharpening": 0,
+        }
+        detector = Detector(families="tag36h11", **config_detector)
+    # debug(f"QR DETECTOR: Detector initialized in {t.t:.5f} ms")
+    camera_params = (
+        camera_config["camera_params"][0],
+        camera_config["camera_params"][1],
+        camera_config["camera_params"][2],
+        camera_config["camera_params"][3],
+    )
+
+    camera_matrix = camera.create_camera_matrix(camera_config["camera_params"])
+    camera_distortion = camera.create_camera_distortion(
+        camera_config["distortion_coefficients"]
+    )
     qr_image_undistorted = preprocess.undistort(
-        qr_image, camera_matrix, camera_distortion
+        frame["color"], camera_matrix, camera_distortion
     )
     debug_data["qr_image_undistorted"] = qr_image_undistorted
 
@@ -104,14 +124,14 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                 gray_image, config["binarization"]
             )
             debug_data["binary_image"] = binary_image
-            
+
             preprocessed_image = preprocess.blend(
                 image1=binary_image,
                 image2=image_clahe,
                 merge_image_weight=config["merge_image_weight"],
             )
             debug_data["preprocessed_image"] = preprocessed_image
-            
+
             detections = detector.detect(  # apriltag detect
                 preprocessed_image, True, camera_params, config["qr_size"]
             )
@@ -128,7 +148,7 @@ def qr_detector(*, detector, qr_image, camera_params, distortion_coefficients, c
                     config["tag_reconstruction"],
                 )
                 debug_data["merged_image"] = merged_image
-                
+
                 gray_image = preprocess.to_gray(merged_image)
                 detections = detector.detect(
                     gray_image, True, camera_params, config["qr_size"]
