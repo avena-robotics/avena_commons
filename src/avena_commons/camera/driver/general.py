@@ -2,13 +2,27 @@ import asyncio
 import importlib
 import threading
 import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed  # ← DODAJ TO!
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    TimeoutError,
+    as_completed,
+)
 from enum import Enum
 from typing import Optional
 
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
+
+# Dodać import kompatybilny z różnymi wersjami Pythona
+try:
+    from concurrent.futures import BrokenProcessPool, ProcessLookupError
+except ImportError:
+    # Kompatybilność z Python 3.8/3.9
+    class BrokenProcessPool(RuntimeError):
+        """Zastępczy wyjątek dla starszych wersji Pythona."""
+        pass
+    ProcessLookupError = OSError
 
 
 class CameraState(Enum):
@@ -265,118 +279,227 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run_image_processing_workers(self, frame: dict):
-        """Uruchom zadania przetwarzania obrazu w procesach.
-
-        Każda konfiguracja postprocess jest wykonywana jako osobne
-        zadanie w `ProcessPoolExecutor`.
-
-        Args:
-            frames (dict): Ostatnie ramki do przetwarzania.
-
-        Returns:
-            Optional[list]: Lista wyników zadań lub None przy błędzie/braku executor-a.
-
-        Raises:
-            Exception: Błędy zadań są przechwytywane i logowane.
-
-        Przykład:
-            >>> import asyncio
-            >>> worker = GeneralCameraWorker()
-            >>> worker.executor = None  # brak executora -> None
-            >>> asyncio.run(worker._run_image_processing_workers({})) is None
-            True
-        """
+        """Uruchom zadania przetwarzania obrazu w procesach z robust error handling."""
         if not self.executor:
             return None
 
+        # Sprawdź czy executor jest uszkodzony przed użyciem
+        if self._is_executor_broken():
+            debug("Executor uszkodzony, próba odtworzenia", self._message_logger)
+            if not await self._recreate_executor_if_broken():
+                error("Nie udało się odtworzyć executor-a", self._message_logger)
+                return None
+
         try:
-            # Submit funkcji do procesów (NIE tworzenie nowych workerów!)
+            # Submit zadań z wykrywaniem uszkodzonego pool-a
             futures = {}
+            failed_submits = 0
+            
             for i, worker in enumerate(self.image_processing_workers):
-                future = self.executor.submit(
-                    worker.get(
-                        "detector"
-                    ),  # FIXME: to pownina być funkcja nie string, może setup
-                    frame=frame,  # Dane
-                    camera_config=self.camera_configuration,  # Konfiguracja kamery
-                    config=worker.get("config"),  # Konfiguracja
-                )
-                futures[future] = i
-            debug(f"future: {futures}", self._message_logger)
-
-            # Zbierz wyniki
-            results = []
-            for future in as_completed(futures):
-                config_id = futures[future]
                 try:
-                    result = future.result()
-                    if result is not None:
-                        results.append(result)
+                    # Dodaj timeout dla submit operacji
+                    future = self.executor.submit(
+                        worker.get("detector"),
+                        frame=frame,
+                        camera_config=self.camera_configuration,
+                        config=worker.get("config"),
+                    )
+                    futures[future] = i
+                    
+                except (BrokenProcessPool, RuntimeError) as e:
+                    if any(keyword in str(e).lower() for keyword in ["process pool", "terminated abruptly", "child process"]):
+                        error(f"Process pool uszkodzony podczas submit worker_{i}: {e}", self._message_logger)
+                        failed_submits += 1
+                        
+                        # Jeśli pierwszy submit kończy się błędem pool-a, spróbuj odtworzyć
+                        if len(futures) == 0:
+                            if await self._recreate_executor_if_broken():
+                                debug("Odtworzono executor, ponawianie submit", self._message_logger)
+                                try:
+                                    future = self.executor.submit(
+                                        worker.get("detector"),
+                                        frame=frame,
+                                        camera_config=self.camera_configuration,
+                                        config=worker.get("config"),
+                                    )
+                                    futures[future] = i
+                                    failed_submits -= 1
+                                except Exception as retry_e:
+                                    error(f"Ponowny submit worker_{i} nieudany: {retry_e}", self._message_logger)
+                            else:
+                                break  # Nie udało się odtworzyć, przerwij
+                        continue
+                    else:
+                        error(f"Błąd podczas submit worker_{i}: {e}", self._message_logger)
+                        continue
+                        
                 except Exception as e:
-                    error(f"Błąd w config_{config_id}: {e}", self._message_logger)
+                    error(f"Nieoczekiwany błąd podczas submit worker_{i}: {e}", self._message_logger)
+                    continue
 
+            if not futures:
+                if failed_submits > 0:
+                    error(f"Wszystkie {failed_submits} submit-y nieudane z powodu uszkodzonego pool-a", self._message_logger)
+                else:
+                    debug("Brak aktywnych zadań do wykonania", self._message_logger)
+                return []
+
+            debug(f"Submitted {len(futures)} tasks (failed: {failed_submits})", self._message_logger)
+
+            # Zbieranie wyników z rozszerzonym timeout handling
+            results = []
+            completed_count = 0
+
+            try:
+                for future in as_completed(futures, timeout=30.0):  # Zwiększony timeout
+                    config_id = futures[future]
+                    completed_count += 1
+
+                    try:
+                        if future.cancelled():
+                            debug(f"Task config_{config_id} został anulowany", self._message_logger)
+                            continue
+
+                        result = future.result(timeout=10.0)  # Zwiększony timeout na pojedynczy wynik
+                        if result is not None:
+                            results.append(result)
+                            debug(f"Otrzymano wynik z config_{config_id}", self._message_logger)
+                        else:
+                            debug(f"Pusty wynik z config_{config_id}", self._message_logger)
+
+                    except ProcessLookupError as e:
+                        error(f"Proces config_{config_id} został zakończony: {e}", self._message_logger)
+                        continue
+                    except BrokenProcessPool as e:
+                        error(f"Process pool uszkodzony przy config_{config_id}: {e}", self._message_logger)
+                        await self._recreate_executor_if_broken()
+                        break
+                    except TimeoutError:
+                        error(f"Timeout przy pobieraniu wyniku config_{config_id}", self._message_logger)
+                        continue
+                    except RuntimeError as e:
+                        if any(keyword in str(e).lower() for keyword in ["process", "pool", "terminated abruptly"]):
+                            error(f"Process issue przy config_{config_id}: {e}", self._message_logger)
+                            await self._recreate_executor_if_broken()
+                            break
+                        else:
+                            error(f"Runtime error w config_{config_id}: {e}", self._message_logger)
+                            continue
+                    except Exception as e:
+                        error(f"Nieoczekiwany błąd w config_{config_id}: {e}", self._message_logger)
+                        continue
+
+            except TimeoutError:
+                error("Timeout podczas oczekiwania na zakończenie zadań", self._message_logger)
+                self._cancel_pending_futures(futures)
+
+            debug(f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań", self._message_logger)
             return results
 
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
+            if 'futures' in locals():
+                self._cancel_pending_futures(futures)
             return None
 
-    async def _setup_image_processing_workers(self):
-        """Przygotuj executor i metadane workerów postprocess.
-
-        Tworzy `ProcessPoolExecutor` i listę opisów workerów na
-        podstawie `self.postprocess_configuration`.
+    def _cancel_pending_futures(self, futures: dict):
+        """Anuluj pending futures w przypadku błędu.
 
         Args:
-            None
+            futures (dict): Słownik future -> config_id do anulowania.
+        """
+        try:
+            for future in futures.keys():
+                if not future.done():
+                    future.cancel()
+            debug("Anulowano pending futures", self._message_logger)
+        except Exception as e:
+            error(f"Błąd podczas anulowania futures: {e}", self._message_logger)
+
+    async def _recreate_executor_if_broken(self):
+        """Odtwórz executor w przypadku uszkodzenia process pool.
 
         Returns:
-            bool: True po poprawnym przygotowaniu, False w razie błędu.
-
-        Raises:
-            Exception: Obsłużone wewnętrznie; błąd jest logowany.
-
-        Przykład:
-            >>> import asyncio
-            >>> w = GeneralCameraWorker()
-            >>> w.postprocess_configuration = []
-            >>> asyncio.run(w._setup_image_processing_workers()) in (True, False)
-            True
+            bool: True jeśli udało się odtworzyć executor.
         """
+        try:
+            debug("Próba odtworzenia uszkodzonego executor-a", self._message_logger)
+
+            # Zamknij uszkodzony executor
+            if self.executor:
+                try:
+                    self.executor.shutdown(wait=False)
+                except:
+                    pass  # Ignore błędy przy zamykaniu uszkodzonego executora
+                self.executor = None
+
+            # Poczekaj chwilę przed odtworzeniem
+            await asyncio.sleep(0)
+
+            # Odtwórz setup
+            success = await self._setup_image_processing_workers()
+            if success:
+                debug("Pomyślnie odtworzono executor", self._message_logger)
+            else:
+                error("Nie udało się odtworzyć executor-a", self._message_logger)
+            return success
+
+        except Exception as e:
+            error(f"Błąd podczas odtwarzania executor-a: {e}", self._message_logger)
+            return False
+
+    def _is_executor_broken(self) -> bool:
+        """Sprawdź czy executor jest uszkodzony.
+        
+        Returns:
+            bool: True jeśli executor jest uszkodzony lub None.
+        """
+        if not self.executor:
+            return True
+        
+        # Sprawdź czy executor ma właściwość _broken
+        if hasattr(self.executor, '_broken') and self.executor._broken:
+            return True
+            
+        return False
+
+    async def _setup_image_processing_workers(self):
+        """Przygotuj executor z ograniczoną liczbą procesów."""
         try:
             # Zamknij poprzedni executor jeśli istnieje
             if self.executor:
-                self.executor.shutdown(wait=True)
+                try:
+                    self.executor.shutdown(wait=True)
+                except Exception:
+                    pass  # Ignoruj błędy przy zamykaniu
+                finally:
+                    self.executor = None
 
-            # Utwórz nowy executor
-            self.executor = ProcessPoolExecutor(
-                max_workers=len(self.postprocess_configuration)
-            )
+            # Sprawdź czy mamy konfigurację
+            if not self.postprocess_configuration:
+                debug("Brak konfiguracji postprocess, executor nie zostanie utworzony", self._message_logger)
+                return True
 
-            # Przygotuj workery (ale nie uruchamiaj jeszcze!)
+            # Utwórz nowy executor z ograniczoną liczbą workerów dla stabilności
+            max_workers = min(len(self.postprocess_configuration), 4)  # Maksymalnie 4 procesy
+            self.executor = ProcessPoolExecutor(max_workers=max_workers)
+
+            # Przygotuj workery
             self.image_processing_workers = []
             for config_key, config_value in self.postprocess_configuration.items():
-                debug(
-                    f"config_key: {config_key}, config_value: {config_value}",  # , postprocess: {self.postprocess_configuration}, typ: {type(self.postprocess_configuration)}",
-                    self._message_logger,
-                )
+                debug(f"config_key: {config_key}, config_value: {config_value}", self._message_logger)
                 worker_info = {
                     "detector": self.detector,
                     "config": config_value,
-                    # "config_mode": config_value["mode"],
-                    # "config_name": config_key,
                 }
                 self.image_processing_workers.append(worker_info)
 
-            # debug(
-            #     f"Utworzono {len(self.image_processing_workers)} workerów do przetwarzania obrazów: detector: '{self.detector}' postprocess configuration: {', '.join(config['config']['mode'] for config in self.image_processing_workers)}",
-            #     self._message_logger,
-            # )
-
+            debug(f"Utworzono executor z {max_workers} workerami dla {len(self.image_processing_workers)} konfiguracji", self._message_logger)
             return True
 
         except Exception as e:
             error(f"Błąd podczas tworzenia workerów: {e}", self._message_logger)
+            self.executor = None
             return False
 
     async def _run(self, pipe_in):

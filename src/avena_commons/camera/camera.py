@@ -109,15 +109,15 @@ class Camera(EventListener):
         #     detector="box_detector",
         #     configuration=self.__pipelines_config["box_detector"],
         # )
-        # await self._analyze_event(
-        #     Event(
-        #         event_type="take_photo_qr",
-        #         source=self.name,
-        #         source_port=9999,
-        #         destination_port=9998,
-        #         is_processing=True,
-        #     )
-        # )
+        await self._analyze_event(
+            Event(
+                event_type="take_photo_qr",
+                source=self.name,
+                source_port=9999,
+                destination_port=9998,
+                is_processing=True,
+            )
+        )
 
         # self.camera.start()
 
