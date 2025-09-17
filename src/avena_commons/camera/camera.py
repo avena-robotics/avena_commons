@@ -10,6 +10,7 @@ from avena_commons.camera.driver.orbec_335le import OrbecGemini335Le
 from avena_commons.event_listener import Event, EventListener, EventListenerState
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error
+from avena_commons.util.timing_stats import global_timing_stats
 
 load_dotenv(override=True)
 
@@ -152,10 +153,12 @@ class Camera(EventListener):
                     debug(f" Nieznany event {event.event_type}", self._message_logger)
                     return False
         self._add_to_processing(event)
-        debug(f"analiz event setup time: {t.t:.5f} s", self._message_logger)
+        global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
+        debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
         with Catchtime() as t2:
             self.camera.start()
-        debug(f"camera start time: {t2.t:.5f} s", self._message_logger)
+        global_timing_stats.add_measurement("camera_start", t2.ms)
+        debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
 
     async def _handle_event(self, event):
         match event.event_type:
@@ -189,6 +192,7 @@ class Camera(EventListener):
                 # Przykład zapisywania ramek (dla demonstracji)
                 with Catchtime() as lt:
                     last_frame = self.camera.get_last_frame()
+                global_timing_stats.add_measurement("camera_get_last_frame", lt.ms)
                 debug(f"Get last frame time: {lt.ms:.5f}ms", self._message_logger)
                 # pass
                 if last_frame is not None:
@@ -200,6 +204,9 @@ class Camera(EventListener):
                     )
                     with Catchtime() as ct:
                         result = self.camera.run_postprocess_workers(last_frame)
+                    global_timing_stats.add_measurement(
+                        "camera_run_postprocess_workers", ct.ms
+                    )
                     debug(
                         f"result type: {type(result)}, result: {result}",
                         self._message_logger,
