@@ -487,7 +487,6 @@ class Sequence(BaseModel):
             message_logger (MessageLogger, optional): Logger for recording messages. Defaults to None.
         """
         step_status = self.status.get_current_step_status
-        self._do_done(step_status, message_logger)
 
         # Sprawdź czy to jest ostatni krok i czy powinniśmy zrestartować
         if self.status.current_step == len(self.status.steps):
@@ -499,8 +498,9 @@ class Sequence(BaseModel):
                 self.restart_sequence(message_logger)
                 return  # Nie przechodzimy do next_step, bo zrestartowaliśmy
 
+        self._do_done(step_status, message_logger)
         # Jeśli nie restartujemy, kontynuuj normalnie
-        self.next_step(message_logger)
+        # self.next_step(message_logger)
 
     def next_step(self, message_logger: MessageLogger | None = None) -> None:
         """Advances to the next step in the sequence.
