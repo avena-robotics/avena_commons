@@ -12,6 +12,7 @@ Eksponuje:
 import copy
 import importlib
 import json
+import time
 import traceback
 from typing import Any, Dict, Optional
 
@@ -181,6 +182,7 @@ class IO_server(EventListener):
                     if vdata.get("__fsm") == "ERROR":
                         vdata["__fsm"] = "IDLE"
         self.update_state()
+        self._execute_before_shutdown()
 
         # Resetuj lokalny stan błędu IO
         self._error = False
@@ -859,19 +861,31 @@ class IO_server(EventListener):
                         # Spróbuj zatrzymać wątki urządzenia (jeśli występują) i poczekać na ich zakończenie
                         try:
                             # Ustawie sygnały stop
+                            stop_events_set = 0
                             if hasattr(dev, "_di_stop_event"):
                                 getattr(dev, "_di_stop_event").set()
+                                stop_events_set += 1
                             if hasattr(dev, "_do_stop_event"):
                                 getattr(dev, "_do_stop_event").set()
+                                stop_events_set += 1
                             if hasattr(dev, "_stop_event"):
                                 getattr(dev, "_stop_event").set()
+                                stop_events_set += 1
+                            
+                            if stop_events_set > 0 and self._debug:
+                                debug(
+                                    f"physical_device {dname}: set {stop_events_set} stop events",
+                                    message_logger=self._message_logger,
+                                )
 
                             # Dołącz do znanych wątków jeśli żyją
+                            threads_joined = 0
                             for thread_attr in (
                                 "_di_thread",
                                 "_do_thread",
                                 "_jog_thread",
                                 "_status_thread",
+                                "_thread",  # Główny wątek komunikacyjny urządzenia
                             ):
                                 try:
                                     if hasattr(dev, thread_attr):
@@ -879,8 +893,19 @@ class IO_server(EventListener):
                                         if t is not None and getattr(t, "is_alive")():
                                             getattr(t, "join")(timeout=1.0)
                                             setattr(dev, thread_attr, None)
+                                            threads_joined += 1
                                 except Exception:
                                     pass
+                            
+                            if threads_joined > 0 and self._debug:
+                                debug(
+                                    f"physical_device {dname}: joined {threads_joined} threads",
+                                    message_logger=self._message_logger,
+                                )
+                            
+                            # Krótka pauza po zatrzymaniu wątków, by dać im czas na zakończenie
+                            if threads_joined > 0:
+                                time.sleep(0.1)
                         except Exception:
                             pass
                         # Jeżeli urządzenie jest Connector'em - spróbuj wysłać STOP do procesu i go zakończyć

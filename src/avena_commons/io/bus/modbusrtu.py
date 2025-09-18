@@ -658,7 +658,6 @@ class ModbusRTU(Connector):
 
     def __del__(self):
         """Zamyka proces potomny i kanały IPC przy usuwaniu obiektu."""
-        self.message_logger = None
         self.__execute_command(["STOP"])
         self.pipe_out.close()
         # self.process.join()
@@ -667,6 +666,7 @@ class ModbusRTU(Connector):
             f"{self.device_name} - ModbusRTU Connector subprocess stopped.",
             message_logger=self.message_logger,
         )
+        self.message_logger = None
 
     # === Interfejs dla IO_server (health-check i monitoring) ===
     def check_device_connection(self):
