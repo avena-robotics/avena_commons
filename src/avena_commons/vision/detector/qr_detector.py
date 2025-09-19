@@ -43,11 +43,11 @@ def _initialize_detector_safely() -> Optional[Any]:
         }
 
         _DETECTOR_CACHE = Detector(families="tag36h11", **config_detector)
-        debug("QR DETECTOR: Detector initialized successfully")
+        # debug("QR DETECTOR: Detector initialized successfully")
         return _DETECTOR_CACHE
 
     except Exception as e:
-        error(f"QR DETECTOR: Failed to initialize detector: {e}")
+        # error(f"QR DETECTOR: Failed to initialize detector: {e}")
         return None
 
 
@@ -74,11 +74,11 @@ def _load_tag_image_safely() -> Optional[np.ndarray]:
         if _TAG_IMAGE_CACHE is None:
             raise ValueError(f"Failed to load tag image from {tag_path}")
 
-        debug("QR DETECTOR: Tag image loaded successfully")
+        # debug("QR DETECTOR: Tag image loaded successfully")
         return _TAG_IMAGE_CACHE
 
     except Exception as e:
-        error(f"QR DETECTOR: Failed to load tag image: {e}")
+        # error(f"QR DETECTOR: Failed to load tag image: {e}")
         return None
 
 
@@ -109,26 +109,26 @@ def qr_detector(
         try:
             # Walidacja wejść
             if not frame or "color" not in frame:
-                error("QR DETECTOR: Invalid frame data - missing 'color' key")
+                # error("QR DETECTOR: Invalid frame data - missing 'color' key")
                 return None, debug_data
 
             if not camera_config or "camera_params" not in camera_config:
-                error("QR DETECTOR: Invalid camera_config - missing 'camera_params'")
+                # error("QR DETECTOR: Invalid camera_config - missing 'camera_params'")
                 return None, debug_data
 
             if not config or "mode" not in config:
-                error("QR DETECTOR: Invalid config - missing 'mode'")
+                # error("QR DETECTOR: Invalid config - missing 'mode'")
                 return None, debug_data
 
             # Bezpieczna inicjalizacja detectora
             with Catchtime() as t:
                 detector = _initialize_detector_safely()
                 if detector is None:
-                    error("QR DETECTOR: Failed to initialize detector")
+                    # error("QR DETECTOR: Failed to initialize detector")
                     return None, debug_data
 
             global_timing_stats.add_measurement("qr_detector_initialization", t.ms)
-            debug(f"QR DETECTOR: Detector ready in {t.ms:.4f} ms")
+            # debug(f"QR DETECTOR: Detector ready in {t.ms:.4f} ms")
 
             # Przygotowanie parametrów kamery
             try:
@@ -146,7 +146,7 @@ def qr_detector(
                     camera_config["distortion_coefficients"]
                 )
             except (KeyError, IndexError, TypeError) as e:
-                error(f"QR DETECTOR: Invalid camera parameters: {e}")
+                # error(f"QR DETECTOR: Invalid camera parameters: {e}")
                 return None, debug_data
 
             # Preprocessing obrazu
@@ -174,7 +174,7 @@ def qr_detector(
                 )
 
             except Exception as e:
-                error(f"QR DETECTOR: Image preprocessing failed: {e}")
+                # error(f"QR DETECTOR: Image preprocessing failed: {e}")
                 return None, debug_data
 
             # Wykrywanie według trybu
@@ -229,7 +229,7 @@ def qr_detector(
                         )
 
                     else:
-                        error(f"QR DETECTOR: Invalid mode: {mode}")
+                        # error(f"QR DETECTOR: Invalid mode: {mode}")
                         return None, debug_data
 
                 global_timing_stats.add_measurement(
@@ -237,17 +237,17 @@ def qr_detector(
                 )
 
             except Exception as e:
-                error(f"QR DETECTOR: Detection failed in mode '{mode}': {e}")
+                # error(f"QR DETECTOR: Detection failed in mode '{mode}': {e}")
                 return None, debug_data
 
-            debug(
-                f"QR DETECTOR: Successfully processed mode '{mode}', found {len(detections) if detections else 0} detections"
-            )
+            # debug(
+            #     f"QR DETECTOR: Successfully processed mode '{mode}', found {len(detections) if detections else 0} detections"
+            # )
             return detections, debug_data
 
         except Exception as e:
-            error(f"QR DETECTOR: Unexpected error: {e}")
-            error(f"QR DETECTOR: Traceback: {traceback.format_exc()}")
+            # error(f"QR DETECTOR: Unexpected error: {e}")
+            # error(f"QR DETECTOR: Traceback: {traceback.format_exc()}")
             return None, debug_data
 
     # Zapisz całkowity czas wykonywania funkcji
@@ -289,7 +289,7 @@ def _process_gray_mode(
         return detector.detect(image_clahe, True, camera_params, qr_size)
 
     except Exception as e:
-        error(f"QR DETECTOR: Gray mode processing failed: {e}")
+        # error(f"QR DETECTOR: Gray mode processing failed: {e}")
         return None
 
 
@@ -342,7 +342,7 @@ def _process_gray_with_binarization_mode(
         return detector.detect(blended_image, True, camera_params, qr_size)
 
     except Exception as e:
-        error(f"QR DETECTOR: Gray with binarization mode processing failed: {e}")
+        # error(f"QR DETECTOR: Gray with binarization mode processing failed: {e}")
         return None
 
 
@@ -381,7 +381,7 @@ def _process_saturation_mode(
         return detector.detect(image_clahe, True, camera_params, qr_size)
 
     except Exception as e:
-        error(f"QR DETECTOR: Saturation mode processing failed: {e}")
+        # error(f"QR DETECTOR: Saturation mode processing failed: {e}")
         return None
 
 
@@ -434,7 +434,7 @@ def _process_saturation_with_binarization_mode(
         return detector.detect(preprocessed_image, True, camera_params, qr_size)
 
     except Exception as e:
-        error(f"QR DETECTOR: Saturation with binarization mode processing failed: {e}")
+        # error(f"QR DETECTOR: Saturation with binarization mode processing failed: {e}")
         return None
 
 
@@ -461,7 +461,7 @@ def _process_tag_reconstruction_mode(
         # Bezpieczne załadowanie obrazu tagu
         tag_image = _load_tag_image_safely()
         if tag_image is None:
-            error("QR DETECTOR: Failed to load tag image for reconstruction")
+            # error("QR DETECTOR: Failed to load tag image for reconstruction")
             return None
 
         # Tag reconstruction
@@ -477,6 +477,6 @@ def _process_tag_reconstruction_mode(
         return detector.detect(gray_image, True, camera_params, qr_size)
 
     except Exception as e:
-        error(f"QR DETECTOR: Tag reconstruction mode processing failed: {e}")
-        error(f"QR DETECTOR: Tag reconstruction traceback: {traceback.format_exc()}")
+        # error(f"QR DETECTOR: Tag reconstruction mode processing failed: {e}")
+        # error(f"QR DETECTOR: Tag reconstruction traceback: {traceback.format_exc()}")
         return None
