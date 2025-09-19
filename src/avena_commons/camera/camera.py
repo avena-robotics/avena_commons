@@ -220,7 +220,7 @@ class Camera(EventListener):
                             )
                             event.result = Result(result="success")
                             event.data = result
-                            await self._reply(event)
+                            # await self._reply(event)
 
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms

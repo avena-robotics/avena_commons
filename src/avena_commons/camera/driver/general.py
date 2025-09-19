@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import importlib
 import threading
 import traceback
@@ -400,22 +401,6 @@ class GeneralCameraWorker(Worker):
                             timeout=10.0
                         )  # Zwiększony timeout na pojedynczy wynik
                         if result is not None:
-                            # Konwersja result[0] (lista Detection objects) na słownik z kluczami 1-4
-                            result_dict = {}
-                            if result[0]:  # Sprawdź czy lista nie jest pusta
-                                for idx, detection in enumerate(result[0], start=1):
-                                    if (
-                                        idx <= 4
-                                    ):  # Ograniczenie do maksymalnie 4 elementów
-                                        result_dict[idx] = detection
-                                    else:
-                                        break  # Przerwij jeśli mamy już 4 elementy
-
-                            # Użyj result_dict zamiast result[0] w dalszej części kodu
-                            debug(
-                                f"Otrzymano wynik z config_{config_id}, result_dict type: {type(result_dict)}, result_dict len: {len(result_dict)}, result_dict: {result_dict}",
-                                self._message_logger,
-                            )
                             # result[0] to Detection object list
                             # result[1] to debug data dict
                             debug(
@@ -430,41 +415,12 @@ class GeneralCameraWorker(Worker):
                                 f"Otrzymano wynik z config_{config_id}, sorted_detections type: {type(sorted_detections)}, sorted_detections len: {len(sorted_detections) if sorted_detections else 0}, sorted_detections: {sorted_detections}",
                                 self._message_logger,
                             )
-                            results_merge = merge.merge_qr_detections_with_confidence(
+                            results = merge.merge_qr_detections_with_confidence(
                                 sorted_detections,
-                                result_dict,
+                                results,
                             )
                             debug(
-                                f"results po merge: {results_merge}",
-                                self._message_logger,
-                            )
-                            # Konwersja Detection objektów na proste pozycje QR kodów
-                            qr_positions = {}
-                            for position_id, detection in results_merge.items():
-                                if detection:
-                                    debug(
-                                        f"Otrzymano detekcję z config_{config_id}, position_id: {position_id}, detection: {detection}",
-                                        self._message_logger,
-                                    )
-                                    qr_positions[position_id] = calculate_pose_pnp(
-                                        corners=detection.corners,
-                                        a=self.postprocess_configuration["a"]["qr_size"]
-                                        * 1000,
-                                        b=self.postprocess_configuration["a"]["qr_size"]
-                                        * 1000,
-                                        z=0,
-                                        camera_matrix=create_camera_matrix(
-                                            self.camera_configuration["camera_params"]
-                                        ),
-                                    )
-                                else:
-                                    qr_positions[position_id] = None
-
-                            # Zastąp results uproszczoną strukturą
-                            results = qr_positions
-
-                            debug(
-                                f"Otrzymano wynik z config_{config_id}, qr_positions type: {type(qr_positions)}, qr_positions: {qr_positions}",
+                                f"results po merge: {results}",
                                 self._message_logger,
                             )
 
@@ -539,7 +495,31 @@ class GeneralCameraWorker(Worker):
                 f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
                 self._message_logger,
             )
-            return results
+            # Konwersja Detection objektów na proste pozycje QR kodów
+            qr_positions = {}
+            for position_id, detection in results.items():
+                if detection:
+                    debug(
+                        f"Otrzymano detekcję z config_{config_id}, position_id: {position_id}, detection: {detection}",
+                        self._message_logger,
+                    )
+                    qr_positions[position_id] = calculate_pose_pnp(
+                        corners=detection.corners,
+                        a=self.postprocess_configuration["a"]["qr_size"] * 1000,
+                        b=self.postprocess_configuration["a"]["qr_size"] * 1000,
+                        z=0,
+                        camera_matrix=create_camera_matrix(
+                            self.camera_configuration["camera_params"]
+                        ),
+                    )
+                else:
+                    qr_positions[position_id] = None
+
+            debug(
+                f"Otrzymano wynik z config_{config_id}, qr_positions type: {type(qr_positions)}, qr_positions: {qr_positions}",
+                self._message_logger,
+            )
+            return qr_positions
 
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
