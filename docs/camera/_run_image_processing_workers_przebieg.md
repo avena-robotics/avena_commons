@@ -1,8 +1,39 @@
-# Przebieg metody `_run_image_processing_workers`
+# Przebieg procesu przetwarzania obrazów QR kodów i boxów
 
 ## Opracowanie
 
-Metoda `_run_image_processing_workers` w klasie `GeneralCameraWorker` zarządza równoległym przetwarzaniem obrazów w wielu procesach z wykorzystaniem `ProcessPoolExecutor`. Głównym celem jest wykonanie detekcji QR kodów na podstawie przekazanych ramek obrazu oraz scalenie wyników z różnych konfiguracji detektorów.
+Dokument opisuje kompletny proces przetwarzania obrazów w systemie kamer, obejmujący wykrywanie QR kodów oraz boxów (kontenerów). Główną metodą odpowiedzialną za ten proces jest `_run_image_processing_workers` w klasie `GeneralCameraWorker`, która zarządza równoległym przetwarzaniem obrazów w wielu procesach z wykorzystaniem `ProcessPoolExecutor`.
+
+## Architektura systemu przetwarzania
+
+### Komponenty systemu
+
+**1. GeneralCameraWorker**
+- Główna klasa zarządzająca cyklem życia kamery
+- Odpowiedzialna za pobieranie ramek i koordynację przetwarzania
+- Zarządza ProcessPoolExecutor dla równoległego przetwarzania
+
+**2. Detektory obrazów**
+- Moduły z `avena_commons.vision.detector`
+- Specjalizowane funkcje do wykrywania QR kodów i boxów
+- Wykonywane w oddzielnych procesach roboczych
+
+**3. System scalania wyników**
+- Moduły `merge` i `sorter` z `avena_commons.vision`
+- Łączenie wyników z różnych konfiguracji detektorów
+- Sortowanie według pozycji i pewności detekcji
+
+### Typy przetwarzanych obiektów
+
+#### QR kody
+- Używane do identyfikacji pozycji w systemie
+- Maksymalnie 4 QR kody na scenie
+- Każdy QR kod ma przypisaną pozycję (1-4)
+- Zwracane jako pozycje 3D (x, y, z, rx, ry, rz)
+
+#### Boxy (kontenery)
+- **TODO**: Implementacja wykrywania boxów w trakcie rozwoju
+
 
 ### Przebieg wykonania
 
@@ -74,6 +105,8 @@ future = self.executor.submit(
 
 #### 5. Przetwarzanie wyników detekcji
 
+##### 5.1 Przetwarzanie QR kodów
+
 **Sortowanie detekcji:**
 - Funkcja: `sorter.sort_qr_by_center_position(expected_count=4, detections=result[0])`
 - Dane wejściowe:
@@ -92,9 +125,15 @@ future = self.executor.submit(
 - Warunek: `actual_detections == 4`
 - Akcja: anulowanie pozostałych zadań przez `self._cancel_pending_futures(futures)`
 
-#### 6. Konwersja na pozycje QR kodów
+##### 5.2 Przetwarzanie boxów
 
-**Iteracja przez wyniki:**
+**TODO**: Implementacja w trakcie rozwoju
+
+#### 6. Konwersja na pozycje obiektów
+
+##### 6.1 Konwersja pozycji QR kodów
+
+**Iteracja przez wyniki QR:**
 - Źródło: `results` (dict position_id -> Detection)
 
 **Obliczanie pozycji przestrzennej:**
@@ -106,6 +145,11 @@ future = self.executor.submit(
   - `z`: float (0 - wysokość referencyjnej płaszczyzny)
   - `camera_matrix`: macierz kamery z `create_camera_matrix(self.camera_configuration["camera_params"])`
 - Zwracane: dict z pozycją 3D (x, y, z, rx, ry, rz)
+
+##### 6.2 Konwersja pozycji boxów
+
+**TODO**: Implementacja w trakcie rozwoju
+
 
 #### 7. Obsługa błędów podczas przetwarzania
 
@@ -150,6 +194,8 @@ async def _run_image_processing_workers(self, frame: dict)
 
 ### Dane zwracane przez metodę
 
+#### Struktura wyników dla QR kodów
+
 **W przypadku powodzenia:**
 - Typ: `dict`
 - Struktura: `{position_id: pose_dict}`
@@ -158,10 +204,17 @@ async def _run_image_processing_workers(self, frame: dict)
 {
     1: {'x': 100.5, 'y': 200.3, 'z': 0.0, 'rx': 0.1, 'ry': 0.2, 'rz': 1.57},
     2: {'x': 150.2, 'y': 250.8, 'z': 0.0, 'rx': 0.0, 'ry': 0.1, 'rz': 1.60},
-    3: {'x': 80.1, 'y': 180.5, 'z': 0.0, 'rx': -0.1, 'ry': 0.0, 'rz': 1.55}
+    3: {'x': 80.1, 'y': 180.5, 'z': 0.0, 'rx': -0.1, 'ry': 0.0, 'rz': 1.55},
     4: None,  # nie wykryto QR kodu na tej pozycji
 }
 ```
+
+#### Struktura wyników dla boxów
+
+**TODO**: Struktura w trakcie projektowania
+
+
+#### Przypadki błędów
 
 **W przypadku błędu:**
 - Typ: `None`
@@ -171,21 +224,63 @@ async def _run_image_processing_workers(self, frame: dict)
 - Typ: `None`
 - Przyczyna: `self.postprocess_configuration` jest None
 
+**W przypadku częściowego sukcesu:**
+- Typ: `dict` z mieszanymi wynikami
+- QR kody: pozycje tam gdzie wykryto, None gdzie nie wykryto
+- Boxy: **TODO** 
+
 ### Kluczowe zależności
 
-**Zewnętrzne moduły:**
+#### Zewnętrzne moduły - QR kody (aktualnie zaimplementowane)
 - `avena_commons.vision.merge.merge_qr_detections_with_confidence`
 - `avena_commons.vision.sorter.sort_qr_by_center_position`
 - `avena_commons.vision.vision.calculate_pose_pnp`
 - `avena_commons.vision.camera.create_camera_matrix`
+- `avena_commons.vision.detector` - funkcje detektorów QR
 
-**Wewnętrzne właściwości:**
+#### Zewnętrzne moduły - Boxy (TODO - do implementacji)
+
+
+#### Wewnętrzne właściwości
 - `self.executor`: ProcessPoolExecutor
 - `self.image_processing_workers`: lista konfiguracji workerów
 - `self.camera_configuration`: konfiguracja kamery
-- `self.postprocess_configuration`: konfiguracja postprocessingu
+- `self.postprocess_configuration`: konfiguracja postprocessingu (QR + boxy)
 - `self._message_logger`: logger komunikatów
+
+#### Konfiguracja postprocessingu
+
+**Aktualna struktura (tylko QR):**
+```python
+postprocess_configuration = {
+    "a": {"qr_size": 0.05, "detector_params": {...}},
+    "b": {"qr_size": 0.05, "detector_params": {...}},
+    # więcej konfiguracji QR...
+}
+```
+
 
 ## Podsumowanie
 
-Metoda `_run_image_processing_workers` implementuje zaawansowany system równoległego przetwarzania obrazów z wykrywaniem QR kodów. Wykorzystuje wieloprocesowość do równoczesnego uruchamiania różnych konfiguracji detektorów, automatycznie zarządza uszkodzonymi procesami oraz scala wyniki w spójną strukturę pozycji przestrzennych QR kodów. Zwraca słownik z pozycjami 3D wykrytych QR kodów lub None w przypadku błędów.
+Dokument opisuje kompletny system przetwarzania obrazów obejmujący wykrywanie QR kodów i boxów (kontenerów). Aktualnie system w pełni obsługuje detekcję QR kodów z równoległym przetwarzaniem w wielu procesach, automatycznym zarządzaniem uszkodzonymi procesami oraz scalaniem wyników w spójną strukturę pozycji przestrzennych.
+
+### Aktualny stan implementacji
+
+**QR kody - ZAIMPLEMENTOWANE:**
+- Równoległe przetwarzanie z wieloma konfiguracjami detektorów
+- Sortowanie i scalanie detekcji według pozycji i pewności
+- Konwersja na pozycje 3D z wykorzystaniem kalibracji kamery
+- Robust error handling z odtwarzaniem uszkodzonych procesów
+- Optymalizacja z early termination przy pełnym zestawie detekcji
+
+**Boxy - TODO:**
+
+### Zalety architektury
+
+1. **Modularność** - łatwe dodawanie nowych typów detektorów
+2. **Równoległość** - wykorzystanie wielu procesów dla wydajności  
+3. **Odporność** - automatyczne zarządzanie błędami procesów
+4. **Skalowalność** - elastyczna konfiguracja liczby workerów
+5. **Rozszerzalność** - przygotowana struktura dla funkcji boxów
+
+System zapewnia solidną podstawę do rozbudowy o funkcjonalności wykrywania boxów przy zachowaniu istniejącej wydajności i niezawodności dla QR kodów.
