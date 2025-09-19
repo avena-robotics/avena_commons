@@ -10,9 +10,13 @@ from concurrent.futures import (
 from enum import Enum
 from typing import Optional
 
+import avena_commons.vision.merge as merge
+import avena_commons.vision.sorter as sorter
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.worker import Connector, Worker
+from avena_commons.vision.camera import create_camera_matrix
+from avena_commons.vision.vision import calculate_pose_pnp
 
 # Dodać import kompatybilny z różnymi wersjami Pythona
 try:
@@ -21,7 +25,9 @@ except ImportError:
     # Kompatybilność z Python 3.8/3.9
     class BrokenProcessPool(RuntimeError):
         """Zastępczy wyjątek dla starszych wersji Pythona."""
+
         pass
+
     ProcessLookupError = OSError
 
 
@@ -294,7 +300,7 @@ class GeneralCameraWorker(Worker):
             # Submit zadań z wykrywaniem uszkodzonego pool-a
             futures = {}
             failed_submits = 0
-            
+
             for i, worker in enumerate(self.image_processing_workers):
                 try:
                     # Dodaj timeout dla submit operacji
@@ -305,16 +311,29 @@ class GeneralCameraWorker(Worker):
                         config=worker.get("config"),
                     )
                     futures[future] = i
-                    
+
                 except (BrokenProcessPool, RuntimeError) as e:
-                    if any(keyword in str(e).lower() for keyword in ["process pool", "terminated abruptly", "child process"]):
-                        error(f"Process pool uszkodzony podczas submit worker_{i}: {e}", self._message_logger)
+                    if any(
+                        keyword in str(e).lower()
+                        for keyword in [
+                            "process pool",
+                            "terminated abruptly",
+                            "child process",
+                        ]
+                    ):
+                        error(
+                            f"Process pool uszkodzony podczas submit worker_{i}: {e}",
+                            self._message_logger,
+                        )
                         failed_submits += 1
-                        
+
                         # Jeśli pierwszy submit kończy się błędem pool-a, spróbuj odtworzyć
                         if len(futures) == 0:
                             if await self._recreate_executor_if_broken():
-                                debug("Odtworzono executor, ponawianie submit", self._message_logger)
+                                debug(
+                                    "Odtworzono executor, ponawianie submit",
+                                    self._message_logger,
+                                )
                                 try:
                                     future = self.executor.submit(
                                         worker.get("detector"),
@@ -325,29 +344,43 @@ class GeneralCameraWorker(Worker):
                                     futures[future] = i
                                     failed_submits -= 1
                                 except Exception as retry_e:
-                                    error(f"Ponowny submit worker_{i} nieudany: {retry_e}", self._message_logger)
+                                    error(
+                                        f"Ponowny submit worker_{i} nieudany: {retry_e}",
+                                        self._message_logger,
+                                    )
                             else:
                                 break  # Nie udało się odtworzyć, przerwij
                         continue
                     else:
-                        error(f"Błąd podczas submit worker_{i}: {e}", self._message_logger)
+                        error(
+                            f"Błąd podczas submit worker_{i}: {e}", self._message_logger
+                        )
                         continue
-                        
+
                 except Exception as e:
-                    error(f"Nieoczekiwany błąd podczas submit worker_{i}: {e}", self._message_logger)
+                    error(
+                        f"Nieoczekiwany błąd podczas submit worker_{i}: {e}",
+                        self._message_logger,
+                    )
                     continue
 
             if not futures:
                 if failed_submits > 0:
-                    error(f"Wszystkie {failed_submits} submit-y nieudane z powodu uszkodzonego pool-a", self._message_logger)
+                    error(
+                        f"Wszystkie {failed_submits} submit-y nieudane z powodu uszkodzonego pool-a",
+                        self._message_logger,
+                    )
                 else:
                     debug("Brak aktywnych zadań do wykonania", self._message_logger)
                 return []
 
-            debug(f"Submitted {len(futures)} tasks (failed: {failed_submits})", self._message_logger)
+            debug(
+                f"Submitted {len(futures)} tasks (failed: {failed_submits})",
+                self._message_logger,
+            )
 
             # Zbieranie wyników z rozszerzonym timeout handling
-            results = []
+            results = {}
             completed_count = 0
 
             try:
@@ -357,48 +390,137 @@ class GeneralCameraWorker(Worker):
 
                     try:
                         if future.cancelled():
-                            debug(f"Task config_{config_id} został anulowany", self._message_logger)
+                            debug(
+                                f"Task config_{config_id} został anulowany",
+                                self._message_logger,
+                            )
                             continue
 
-                        result = future.result(timeout=10.0)  # Zwiększony timeout na pojedynczy wynik
+                        result = future.result(
+                            timeout=10.0
+                        )  # Zwiększony timeout na pojedynczy wynik
                         if result is not None:
-                            results.append(result)
-                            debug(f"Otrzymano wynik z config_{config_id}", self._message_logger)
+                            # result[0] to Detection object list
+                            # result[1] to debug data dict
+                            debug(
+                                f"Otrzymano wynik z config_{config_id}, result type: {type(result[0])}, result len: {len(result[0]) if result[0] else 0}",
+                                self._message_logger,
+                            )
+                            sorted_detections = sorter.sort_qr_by_center_position(
+                                expected_count=4,  # Max zwracanych detekcji
+                                detections=result[0],
+                            )
+                            debug(
+                                f"Otrzymano wynik z config_{config_id}, sorted_detections type: {type(sorted_detections)}, sorted_detections len: {len(sorted_detections) if sorted_detections else 0}, sorted_detections: {sorted_detections}",
+                                self._message_logger,
+                            )
+                            results = merge.merge_qr_detections_with_confidence(
+                                sorted_detections,
+                                results,
+                            )
+
+                            # Konwersja Detection objektów na proste pozycje QR kodów
+                            qr_positions = {}
+                            for position_id, detection in results.items():
+                                if detection is not None:
+                                    qr_positions[position_id] = calculate_pose_pnp(
+                                        corners=detection.corners,
+                                        a=self.postprocess_configuration["a"]["qr_size"]
+                                        * 1000,
+                                        b=self.postprocess_configuration["a"]["qr_size"]
+                                        * 1000,
+                                        z=0,
+                                        camera_matrix=create_camera_matrix(
+                                            self.camera_configuration["camera_params"]
+                                        ),
+                                    )
+                                else:
+                                    qr_positions[position_id] = None
+
+                            # Zastąp results uproszczoną strukturą
+                            results = qr_positions
+
+                            debug(
+                                f"Otrzymano wynik z config_{config_id}, qr_positions type: {type(qr_positions)}, qr_positions: {qr_positions}",
+                                self._message_logger,
+                            )
+
+                            actual_detections = sum(
+                                1 for v in results.values() if v is not None
+                            )
+                            if actual_detections == 4:
+                                debug(
+                                    f"Otrzymano pełny zestaw detekcji z config_{config_id}",
+                                    self._message_logger,
+                                )
+                                # Anuluj pozostałe zadania, gdy mamy już wszystkie 4 QR
+                                self._cancel_pending_futures(futures)
+                                break
                         else:
-                            debug(f"Pusty wynik z config_{config_id}", self._message_logger)
+                            debug(
+                                f"Pusty wynik z config_{config_id}",
+                                self._message_logger,
+                            )
 
                     except ProcessLookupError as e:
-                        error(f"Proces config_{config_id} został zakończony: {e}", self._message_logger)
+                        error(
+                            f"Proces config_{config_id} został zakończony: {e}",
+                            self._message_logger,
+                        )
                         continue
                     except BrokenProcessPool as e:
-                        error(f"Process pool uszkodzony przy config_{config_id}: {e}", self._message_logger)
+                        error(
+                            f"Process pool uszkodzony przy config_{config_id}: {e}",
+                            self._message_logger,
+                        )
                         await self._recreate_executor_if_broken()
                         break
                     except TimeoutError:
-                        error(f"Timeout przy pobieraniu wyniku config_{config_id}", self._message_logger)
+                        error(
+                            f"Timeout przy pobieraniu wyniku config_{config_id}",
+                            self._message_logger,
+                        )
                         continue
                     except RuntimeError as e:
-                        if any(keyword in str(e).lower() for keyword in ["process", "pool", "terminated abruptly"]):
-                            error(f"Process issue przy config_{config_id}: {e}", self._message_logger)
+                        if any(
+                            keyword in str(e).lower()
+                            for keyword in ["process", "pool", "terminated abruptly"]
+                        ):
+                            error(
+                                f"Process issue przy config_{config_id}: {e}",
+                                self._message_logger,
+                            )
                             await self._recreate_executor_if_broken()
                             break
                         else:
-                            error(f"Runtime error w config_{config_id}: {e}", self._message_logger)
+                            error(
+                                f"Runtime error w config_{config_id}: {e}",
+                                self._message_logger,
+                            )
                             continue
                     except Exception as e:
-                        error(f"Nieoczekiwany błąd w config_{config_id}: {e}", self._message_logger)
+                        error(
+                            f"Nieoczekiwany błąd w config_{config_id}: {e}",
+                            self._message_logger,
+                        )
                         continue
 
             except TimeoutError:
-                error("Timeout podczas oczekiwania na zakończenie zadań", self._message_logger)
+                error(
+                    "Timeout podczas oczekiwania na zakończenie zadań",
+                    self._message_logger,
+                )
                 self._cancel_pending_futures(futures)
 
-            debug(f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań", self._message_logger)
+            debug(
+                f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
+                self._message_logger,
+            )
             return results
 
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
-            if 'futures' in locals():
+            if "futures" in locals():
                 self._cancel_pending_futures(futures)
             return None
 
@@ -450,17 +572,17 @@ class GeneralCameraWorker(Worker):
 
     def _is_executor_broken(self) -> bool:
         """Sprawdź czy executor jest uszkodzony.
-        
+
         Returns:
             bool: True jeśli executor jest uszkodzony lub None.
         """
         if not self.executor:
             return True
-        
+
         # Sprawdź czy executor ma właściwość _broken
-        if hasattr(self.executor, '_broken') and self.executor._broken:
+        if hasattr(self.executor, "_broken") and self.executor._broken:
             return True
-            
+
         return False
 
     async def _setup_image_processing_workers(self):
@@ -477,24 +599,35 @@ class GeneralCameraWorker(Worker):
 
             # Sprawdź czy mamy konfigurację
             if not self.postprocess_configuration:
-                debug("Brak konfiguracji postprocess, executor nie zostanie utworzony", self._message_logger)
+                debug(
+                    "Brak konfiguracji postprocess, executor nie zostanie utworzony",
+                    self._message_logger,
+                )
                 return True
 
             # Utwórz nowy executor z ograniczoną liczbą workerów dla stabilności
-            max_workers = min(len(self.postprocess_configuration), 4)  # Maksymalnie 4 procesy
+            max_workers = min(
+                len(self.postprocess_configuration), 4
+            )  # Maksymalnie 4 procesy
             self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
             # Przygotuj workery
             self.image_processing_workers = []
             for config_key, config_value in self.postprocess_configuration.items():
-                debug(f"config_key: {config_key}, config_value: {config_value}", self._message_logger)
+                debug(
+                    f"config_key: {config_key}, config_value: {config_value}",
+                    self._message_logger,
+                )
                 worker_info = {
                     "detector": self.detector,
                     "config": config_value,
                 }
                 self.image_processing_workers.append(worker_info)
 
-            debug(f"Utworzono executor z {max_workers} workerami dla {len(self.image_processing_workers)} konfiguracji", self._message_logger)
+            debug(
+                f"Utworzono executor z {max_workers} workerami dla {len(self.image_processing_workers)} konfiguracji",
+                self._message_logger,
+            )
             return True
 
         except Exception as e:
