@@ -1,3 +1,4 @@
+import copy
 from typing import Any, Dict, List
 
 
@@ -65,7 +66,7 @@ def merge_qr_detections_with_confidence(
         raise ValueError("expected_count must be between 1 and 4")
 
     # Inicjalizuj wynik z aktualnym stanem
-    merged_state = current_state.copy()
+    merged_state = copy.deepcopy(current_state)
 
     # Upewnij się, że wszystkie pozycje są zainicjalizowane
     for i in range(1, expected_count + 1):

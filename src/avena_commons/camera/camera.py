@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 
 from avena_commons.camera.driver.general import CameraState
 from avena_commons.camera.driver.orbec_335le import OrbecGemini335Le
-from avena_commons.event_listener import Event, EventListener, EventListenerState
+from avena_commons.event_listener import (
+    Event,
+    EventListener,
+    EventListenerState,
+    Result,
+)
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error
 from avena_commons.util.timing_stats import global_timing_stats
@@ -151,6 +156,7 @@ class Camera(EventListener):
                 case _:
                     debug(f" Nieznany event {event.event_type}", self._message_logger)
                     return False
+        self._current_event = event
         self._add_to_processing(event)
         global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
         debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
@@ -169,7 +175,7 @@ class Camera(EventListener):
                     pass
             case _:
                 debug(f"Nieznany event {event.event_type}", self._message_logger)
-        self._find_and_remove_processing_event(event=event)
+        # self._find_and_remove_processing_event(event=event)
         return True
 
     async def _check_local_data(self):
@@ -203,11 +209,24 @@ class Camera(EventListener):
                     )
                     with Catchtime() as ct:
                         result = self.camera.run_postprocess_workers(last_frame)
+                        if result is not None:
+                            debug(
+                                f"Otrzymano wynik z run_postprocess_workers",
+                                self._message_logger,
+                            )
+                            self.camera.stop()
+                            event: Event = self._find_and_remove_processing_event(
+                                event=self._current_event
+                            )
+                            event.result = Result(result="success")
+                            event.data = result
+                            await self._reply(event)
+
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms
                     )
                     debug(
-                        f"result type: {type(result)}, result: {result}",
+                        f"result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",
                         self._message_logger,
                     )
                     debug(
