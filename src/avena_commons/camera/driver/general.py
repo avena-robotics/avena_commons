@@ -400,7 +400,7 @@ class GeneralCameraWorker(Worker):
                         result = future.result(
                             timeout=10.0
                         )  # Zwiększony timeout na pojedynczy wynik
-                        if result is not None:
+                        if result is not None:  # MARK: QR DETECTION
                             # result[0] to Detection object list
                             # result[1] to debug data dict
                             debug(
@@ -409,15 +409,15 @@ class GeneralCameraWorker(Worker):
                             )
                             sorted_detections = sorter.sort_qr_by_center_position(
                                 expected_count=4,  # Max zwracanych detekcji
-                                detections=result[0],
+                                detections=result[0],  # list detekcji
                             )
                             debug(
                                 f"Otrzymano wynik z config_{config_id}, sorted_detections type: {type(sorted_detections)}, sorted_detections len: {len(sorted_detections) if sorted_detections else 0}, sorted_detections: {sorted_detections}",
                                 self._message_logger,
                             )
                             results = merge.merge_qr_detections_with_confidence(
-                                sorted_detections,
-                                results,
+                                sorted_detections,  # dict z posortowanymi detekcjami
+                                results,  # już wcześniej zmergowane detekcje
                             )
                             debug(
                                 f"results po merge: {results}",
@@ -426,7 +426,7 @@ class GeneralCameraWorker(Worker):
 
                             actual_detections = sum(
                                 1 for v in results.values() if v is not None
-                            )
+                            )  # sprawdzamy ile mamy wykrytych QR kodów
                             if actual_detections == 4:
                                 debug(
                                     f"Otrzymano pełny zestaw detekcji z config_{config_id}",
@@ -496,7 +496,7 @@ class GeneralCameraWorker(Worker):
                 self._message_logger,
             )
             # Konwersja Detection objektów na proste pozycje QR kodów
-            qr_positions = {}
+            qr_positions = {}  # Zwrotny dict z pozycjami QR kodów jako {1:(x,y,z,rx,ry,rz), 2:..., 3:..., 4:None} jeśli nie wykryto jest None
             for position_id, detection in results.items():
                 if detection:
                     debug(
@@ -504,13 +504,15 @@ class GeneralCameraWorker(Worker):
                         self._message_logger,
                     )
                     qr_positions[position_id] = calculate_pose_pnp(
-                        corners=detection.corners,
-                        a=self.postprocess_configuration["a"]["qr_size"] * 1000,
-                        b=self.postprocess_configuration["a"]["qr_size"] * 1000,
+                        corners=detection.corners,  # Pobranie listy narożników z list obiektów detekcji
+                        a=self.postprocess_configuration["a"]["qr_size"]
+                        * 1000,  # rozmiar QR w mm na m
+                        b=self.postprocess_configuration["a"]["qr_size"]
+                        * 1000,  # rozmiar QR w mm na m
                         z=0,
                         camera_matrix=create_camera_matrix(
                             self.camera_configuration["camera_params"]
-                        ),
+                        ),  # macierz kamery
                     )
                 else:
                     qr_positions[position_id] = None
