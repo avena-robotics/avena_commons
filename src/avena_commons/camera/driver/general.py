@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import importlib
 import threading
 import traceback
@@ -14,7 +13,13 @@ from typing import Optional
 import avena_commons.vision.merge as merge
 import avena_commons.vision.sorter as sorter
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.logger import (
+    LoggerPolicyPeriod,
+    MessageLogger,
+    debug,
+    error,
+    info,
+)
 from avena_commons.util.worker import Connector, Worker
 from avena_commons.vision.camera import create_camera_matrix
 from avena_commons.vision.vision import calculate_pose_pnp
@@ -99,6 +104,10 @@ class GeneralCameraWorker(Worker):
 
         self.last_frame = None
         self.postprocess_configuration = None
+        self.detector = None
+        self.detector_name = (
+            None  # Nazwa aktywnego detektora ('qr_detector' lub 'box_detector')
+        )
         self.executor = None
         self.image_processing_workers = []
 
@@ -286,8 +295,8 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run_image_processing_workers(self, frame: dict):
-        """Uruchom zadania przetwarzania obrazu w procesach z robust error handling."""
-        if not self.executor:
+        """Uruchom zadania przetwarzania obrazu w procesach z obsługą QR i BOX."""
+        if not self.executor or not self.detector_name:
             return None
 
         # Sprawdź czy executor jest uszkodzony przed użyciem
@@ -298,13 +307,12 @@ class GeneralCameraWorker(Worker):
                 return None
 
         try:
-            # Submit zadań z wykrywaniem uszkodzonego pool-a
+            # Submit zadań
             futures = {}
             failed_submits = 0
 
             for i, worker in enumerate(self.image_processing_workers):
                 try:
-                    # Dodaj timeout dla submit operacji
                     future = self.executor.submit(
                         worker.get("detector"),
                         frame=frame,
@@ -328,7 +336,6 @@ class GeneralCameraWorker(Worker):
                         )
                         failed_submits += 1
 
-                        # Jeśli pierwszy submit kończy się błędem pool-a, spróbuj odtworzyć
                         if len(futures) == 0:
                             if await self._recreate_executor_if_broken():
                                 debug(
@@ -350,7 +357,7 @@ class GeneralCameraWorker(Worker):
                                         self._message_logger,
                                     )
                             else:
-                                break  # Nie udało się odtworzyć, przerwij
+                                break
                         continue
                     else:
                         error(
@@ -373,161 +380,285 @@ class GeneralCameraWorker(Worker):
                     )
                 else:
                     debug("Brak aktywnych zadań do wykonania", self._message_logger)
-                return []
+                return None
 
             debug(
-                f"Submitted {len(futures)} tasks (failed: {failed_submits})",
+                f"Submitted {len(futures)} tasks (failed: {failed_submits}) dla detektora: {self.detector_name}",
                 self._message_logger,
             )
 
-            # Zbieranie wyników z rozszerzonym timeout handling
-            results = {}
-            completed_count = 0
-
-            try:
-                for future in as_completed(futures, timeout=30.0):  # Zwiększony timeout
-                    config_id = futures[future]
-                    completed_count += 1
-
-                    try:
-                        if future.cancelled():
-                            debug(
-                                f"Task config_{config_id} został anulowany",
-                                self._message_logger,
-                            )
-                            continue
-
-                        result = future.result(
-                            timeout=10.0
-                        )  # Zwiększony timeout na pojedynczy wynik
-                        if result is not None:  # MARK: QR DETECTION
-                            # result[0] to Detection object list
-                            # result[1] to debug data dict
-                            debug(
-                                f"Otrzymano wynik z config_{config_id}, result[0] type: {type(result[0])}, result[0] len: {len(result[0]) if result[0] else 0}, result[0]: {result[0]}",
-                                self._message_logger,
-                            )
-                            sorted_detections = sorter.sort_qr_by_center_position(
-                                expected_count=4,  # Max zwracanych detekcji
-                                detections=result[0],  # list detekcji
-                            )
-                            debug(
-                                f"Otrzymano wynik z config_{config_id}, sorted_detections type: {type(sorted_detections)}, sorted_detections len: {len(sorted_detections) if sorted_detections else 0}, sorted_detections: {sorted_detections}",
-                                self._message_logger,
-                            )
-                            results = merge.merge_qr_detections_with_confidence(
-                                sorted_detections,  # dict z posortowanymi detekcjami
-                                results,  # już wcześniej zmergowane detekcje
-                            )
-                            debug(
-                                f"results po merge: {results}",
-                                self._message_logger,
-                            )
-
-                            actual_detections = sum(
-                                1 for v in results.values() if v is not None
-                            )  # sprawdzamy ile mamy wykrytych QR kodów
-                            if actual_detections == 4:
-                                debug(
-                                    f"Otrzymano pełny zestaw detekcji z config_{config_id}",
-                                    self._message_logger,
-                                )
-                                # Anuluj pozostałe zadania, gdy mamy już wszystkie 4 QR
-                                self._cancel_pending_futures(futures)
-                                break
-                        else:
-                            debug(
-                                f"Pusty wynik z config_{config_id}",
-                                self._message_logger,
-                            )
-
-                    except ProcessLookupError as e:
-                        error(
-                            f"Proces config_{config_id} został zakończony: {e}",
-                            self._message_logger,
-                        )
-                        continue
-                    except BrokenProcessPool as e:
-                        error(
-                            f"Process pool uszkodzony przy config_{config_id}: {e}",
-                            self._message_logger,
-                        )
-                        await self._recreate_executor_if_broken()
-                        break
-                    except TimeoutError:
-                        error(
-                            f"Timeout przy pobieraniu wyniku config_{config_id}",
-                            self._message_logger,
-                        )
-                        continue
-                    except RuntimeError as e:
-                        if any(
-                            keyword in str(e).lower()
-                            for keyword in ["process", "pool", "terminated abruptly"]
-                        ):
-                            error(
-                                f"Process issue przy config_{config_id}: {e}",
-                                self._message_logger,
-                            )
-                            await self._recreate_executor_if_broken()
-                            break
-                        else:
-                            error(
-                                f"Runtime error w config_{config_id}: {e}",
-                                self._message_logger,
-                            )
-                            continue
-                    except Exception as e:
-                        error(
-                            f"Nieoczekiwany błąd w config_{config_id}: {e}",
-                            self._message_logger,
-                        )
-                        continue
-
-            except TimeoutError:
-                error(
-                    "Timeout podczas oczekiwania na zakończenie zadań",
-                    self._message_logger,
-                )
-                self._cancel_pending_futures(futures)
-
-            debug(
-                f"Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
-                self._message_logger,
-            )
-            # Konwersja Detection objektów na proste pozycje QR kodów
-            qr_positions = {}  # Zwrotny dict z pozycjami QR kodów jako {1:(x,y,z,rx,ry,rz), 2:..., 3:..., 4:None} jeśli nie wykryto jest None
-            for position_id, detection in results.items():
-                if detection:
-                    debug(
-                        f"Otrzymano detekcję z config_{config_id}, position_id: {position_id}, detection: {detection}",
-                        self._message_logger,
-                    )
-                    qr_positions[position_id] = calculate_pose_pnp(
-                        corners=detection.corners,  # Pobranie listy narożników z list obiektów detekcji
-                        a=self.postprocess_configuration["a"]["qr_size"]
-                        * 1000,  # rozmiar QR w mm na m
-                        b=self.postprocess_configuration["a"]["qr_size"]
-                        * 1000,  # rozmiar QR w mm na m
-                        z=0,
-                        camera_matrix=create_camera_matrix(
-                            self.camera_configuration["camera_params"]
-                        ),  # macierz kamery
-                    )
-                else:
-                    qr_positions[position_id] = None
-
-            debug(
-                f"Otrzymano wynik z config_{config_id}, qr_positions type: {type(qr_positions)}, qr_positions: {qr_positions}",
-                self._message_logger,
-            )
-            return qr_positions
+            # Zbieranie wyników w zależności od typu detektora
+            if self.detector_name == "qr_detector":
+                return await self._process_qr_detection_results(futures)
+            elif self.detector_name == "box_detector":
+                return await self._process_box_detection_results(futures)
+            else:
+                error(f"Nieznany detektor: {self.detector_name}", self._message_logger)
+                return None
 
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
             if "futures" in locals():
                 self._cancel_pending_futures(futures)
             return None
+
+    # MARK: Przetwarzanie QR
+    async def _process_qr_detection_results(self, futures: dict) -> dict:
+        """Przetwórz wyniki detekcji QR kodów.
+
+        Args:
+            futures: Słownik zadań do przetworzenia.
+
+        Returns:
+            dict: Pozycje QR kodów {1:(x,y,z,rx,ry,rz), 2:..., 3:..., 4:None}.
+        """
+        results = {}
+        completed_count = 0
+
+        try:
+            for future in as_completed(futures, timeout=30.0):
+                config_id = futures[future]
+                completed_count += 1
+
+                try:
+                    if future.cancelled():
+                        debug(
+                            f"QR Task config_{config_id} został anulowany",
+                            self._message_logger,
+                        )
+                        continue
+
+                    result = future.result(timeout=10.0)
+                    if result is not None:
+                        # result[0] to Detection object list
+                        # result[1] to debug data dict
+                        debug(
+                            f"QR: Otrzymano wynik z config_{config_id}, detekcji: {len(result[0]) if result[0] else 0}",
+                            self._message_logger,
+                        )
+
+                        sorted_detections = sorter.sort_qr_by_center_position(
+                            expected_count=4,
+                            detections=result[0],
+                        )
+
+                        results = merge.merge_qr_detections_with_confidence(
+                            sorted_detections,
+                            results,
+                        )
+
+                        actual_detections = sum(
+                            1 for v in results.values() if v is not None
+                        )
+                        if actual_detections == 4:
+                            debug(
+                                f"QR: Otrzymano pełny zestaw detekcji z config_{config_id}",
+                                self._message_logger,
+                            )
+                            self._cancel_pending_futures(futures)
+                            break
+                    else:
+                        debug(
+                            f"QR: Pusty wynik z config_{config_id}",
+                            self._message_logger,
+                        )
+
+                except (
+                    ProcessLookupError,
+                    BrokenProcessPool,
+                    TimeoutError,
+                    RuntimeError,
+                ) as e:
+                    if isinstance(e, ProcessLookupError):
+                        error(
+                            f"QR: Proces config_{config_id} został zakończony: {e}",
+                            self._message_logger,
+                        )
+                    elif isinstance(e, BrokenProcessPool):
+                        error(
+                            f"QR: Process pool uszkodzony przy config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                        await self._recreate_executor_if_broken()
+                    elif isinstance(e, TimeoutError):
+                        error(
+                            f"QR: Timeout przy pobieraniu wyniku config_{config_id}",
+                            self._message_logger,
+                        )
+                    elif isinstance(e, RuntimeError) and any(
+                        keyword in str(e).lower()
+                        for keyword in ["process", "pool", "terminated abruptly"]
+                    ):
+                        error(
+                            f"QR: Process issue przy config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                        await self._recreate_executor_if_broken()
+                    else:
+                        error(
+                            f"QR: Runtime error w config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                    continue
+                except Exception as e:
+                    error(f"QR: Błąd w config_{config_id}: {e}", self._message_logger)
+                    continue
+
+        except TimeoutError:
+            error(
+                "QR: Timeout podczas oczekiwania na zakończenie zadań",
+                self._message_logger,
+            )
+            self._cancel_pending_futures(futures)
+
+        debug(
+            f"QR: Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
+            self._message_logger,
+        )
+
+        # Konwersja Detection objektów na pozycje QR kodów
+        qr_positions = {}
+        for position_id, detection in results.items():
+            if detection:
+                try:
+                    qr_positions[position_id] = calculate_pose_pnp(
+                        corners=detection.corners,
+                        a=self.postprocess_configuration["a"]["qr_size"] * 1000,
+                        b=self.postprocess_configuration["a"]["qr_size"] * 1000,
+                        z=0,
+                        camera_matrix=create_camera_matrix(
+                            self.camera_configuration["camera_params"]
+                        ),
+                    )
+                except Exception as e:
+                    error(
+                        f"QR: Błąd konwersji pozycji {position_id}: {e}",
+                        self._message_logger,
+                    )
+                    qr_positions[position_id] = None
+            else:
+                qr_positions[position_id] = None
+
+        debug(f"QR: Finalne pozycje: {qr_positions}", self._message_logger)
+        return qr_positions
+
+    # MARK: Przetwarzanie Box
+    async def _process_box_detection_results(self, futures: dict) -> dict:
+        """Przetwórz wyniki detekcji pudełek.
+
+        Args:
+            futures: Słownik zadań do przetworzenia.
+
+        Returns:
+            dict: Dane pudełka {center, corners, angle, z} lub None.
+        """
+
+        completed_count = 0
+        best_result = None
+
+        try:
+            for future in as_completed(futures, timeout=30.0):
+                config_id = futures[future]
+                completed_count += 1
+
+                try:
+                    if future.cancelled():
+                        debug(
+                            f"BOX Task config_{config_id} został anulowany",
+                            self._message_logger,
+                        )
+                        continue
+
+                    result = future.result(timeout=10.0)
+                    if result is not None:
+                        # result to (center, sorted_corners, angle, z, detect_image, debug_data)
+                        center, sorted_corners, angle, z, detect_image, debug_data = (
+                            result
+                        )
+
+                        if center is not None:
+                            debug(
+                                f"BOX: Otrzymano wynik z config_{config_id}, center: {center}",
+                                self._message_logger,
+                            )
+
+                            best_result = {
+                                "center": center,
+                                "sorted_corners": sorted_corners,
+                                "angle": angle,
+                                "z": z,
+                                "detect_image": detect_image,
+                                "debug_data": debug_data,
+                            }
+
+                            # Dla BOX zatrzymaj po pierwszym udanym wyniku
+                            self._cancel_pending_futures(futures)
+                            break
+                        else:
+                            debug(
+                                f"BOX: Brak wykrycia w config_{config_id}",
+                                self._message_logger,
+                            )
+                    else:
+                        debug(
+                            f"BOX: Pusty wynik z config_{config_id}",
+                            self._message_logger,
+                        )
+
+                except (
+                    ProcessLookupError,
+                    BrokenProcessPool,
+                    TimeoutError,
+                    RuntimeError,
+                ) as e:
+                    if isinstance(e, ProcessLookupError):
+                        error(
+                            f"BOX: Proces config_{config_id} został zakończony: {e}",
+                            self._message_logger,
+                        )
+                    elif isinstance(e, BrokenProcessPool):
+                        error(
+                            f"BOX: Process pool uszkodzony przy config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                        await self._recreate_executor_if_broken()
+                    elif isinstance(e, TimeoutError):
+                        error(
+                            f"BOX: Timeout przy pobieraniu wyniku config_{config_id}",
+                            self._message_logger,
+                        )
+                    elif isinstance(e, RuntimeError) and any(
+                        keyword in str(e).lower()
+                        for keyword in ["process", "pool", "terminated abruptly"]
+                    ):
+                        error(
+                            f"BOX: Process issue przy config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                        await self._recreate_executor_if_broken()
+                    else:
+                        error(
+                            f"BOX: Runtime error w config_{config_id}: {e}",
+                            self._message_logger,
+                        )
+                    continue
+                except Exception as e:
+                    error(f"BOX: Błąd w config_{config_id}: {e}", self._message_logger)
+                    continue
+
+        except TimeoutError:
+            error(
+                "BOX: Timeout podczas oczekiwania na zakończenie zadań",
+                self._message_logger,
+            )
+            self._cancel_pending_futures(futures)
+
+        debug(
+            f"BOX: Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
+            self._message_logger,
+        )
+
+        return best_result
 
     def _cancel_pending_futures(self, futures: dict):
         """Anuluj pending futures w przypadku błędu.
@@ -662,7 +793,6 @@ class GeneralCameraWorker(Worker):
         See Also:
             - `GeneralCameraConnector._run`: metoda tworząca instancję workera.
         """
-        from avena_commons.util.logger import LoggerPolicyPeriod, MessageLogger
 
         # Utwórz lokalny logger dla tego procesu
         self._message_logger = MessageLogger(
@@ -762,6 +892,9 @@ class GeneralCameraWorker(Worker):
 
                                 # Dynamiczny import funkcji detektora z avena_commons.vision.detector
                                 detector_name = data[1]
+                                self.detector_name = (
+                                    detector_name  # Zapisz nazwę detektora
+                                )
                                 if detector_name:
                                     try:
                                         # Import modułu detector z avena_commons.vision
@@ -784,22 +917,26 @@ class GeneralCameraWorker(Worker):
                                                 self._message_logger,
                                             )
                                             self.detector = None
+                                            self.detector_name = None
                                     except ImportError as ie:
                                         error(
                                             f"{self.device_name} - Failed to import avena_commons.vision.detector: {ie}",
                                             self._message_logger,
                                         )
                                         self.detector = None
+                                        self.detector_name = None
                                     except Exception as de:
                                         error(
                                             f"{self.device_name} - Error importing detector '{detector_name}': {de}",
                                             self._message_logger,
                                         )
                                         self.detector = None
+                                        self.detector_name = None
                                 else:
                                     self.detector = None
+                                    self.detector_name = None
                                     debug(
-                                        f"{self.device_name} - No detector name provided, detector set to None",
+                                        f"{self.device_name} - No detector name provided",
                                         self._message_logger,
                                     )
 
@@ -810,7 +947,7 @@ class GeneralCameraWorker(Worker):
                                     "postprocessors"
                                 ]  # ustawienie konfiguracji postprocess
                                 debug(
-                                    f"{self.device_name} - Detector: {self.detector} Postprocess configuration: {len(self.postprocess_configuration)}",
+                                    f"{self.device_name} - Detector: {self.detector_name}, Postprocess configs: {len(self.postprocess_configuration)}",
                                     message_logger=self._message_logger,
                                 )
                                 await self._setup_image_processing_workers()
@@ -825,7 +962,7 @@ class GeneralCameraWorker(Worker):
                         case "RUN_POSTPROCESS":
                             try:
                                 debug(
-                                    f"{self.device_name} - Received RUN_POSTPROCESS with frames",
+                                    f"{self.device_name} - Received RUN_POSTPROCESS with detector: {self.detector_name}",
                                     self._message_logger,
                                 )
                                 frames = data[1]
@@ -858,9 +995,9 @@ class GeneralCameraWorker(Worker):
                         self._message_logger,
                     )
                     # przetwarzanie wizyjne
-                    if self.postprocess_configuration:
+                    if self.postprocess_configuration and self.detector_name:
                         debug(
-                            f"{self.device_name} - Postprocess configuration: {len(self.postprocess_configuration)}",
+                            f"{self.device_name} - Postprocess available for detector: {self.detector_name}, with {len(self.postprocess_configuration)} configurations",
                             message_logger=self._message_logger,
                         )
 
