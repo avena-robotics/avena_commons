@@ -489,14 +489,13 @@ class Sequence(BaseModel):
         step_status = self.status.get_current_step_status
 
         # Sprawdź czy to jest ostatni krok i czy powinniśmy zrestartować
-        if self.status.current_step == len(self.status.steps):
-            if self.should_restart(message_logger=message_logger):
-                info(
-                    f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu ostatniego kroku",
-                    message_logger=message_logger,
-                )
-                self.restart_sequence(message_logger)
-                return  # Nie przechodzimy do next_step, bo zrestartowaliśmy
+        if self.should_restart(message_logger=message_logger):
+            info(
+                f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu ostatniego kroku",
+                message_logger=message_logger,
+            )
+            self.restart_sequence(message_logger)
+            return  # Nie przechodzimy do next_step, bo zrestartowaliśmy
 
         self._do_done(step_status, message_logger)
         # Jeśli nie restartujemy, kontynuuj normalnie
@@ -512,21 +511,19 @@ class Sequence(BaseModel):
         Args:
             message_logger (MessageLogger, optional): Logger for recording messages. Defaults to None.
         """
-        if self.status.current_step < len(self.status.steps):
+        if self.should_restart(message_logger=message_logger):
+            info(
+                f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu wszystkich kroków",
+                message_logger=message_logger,
+            )
+            self.restart_sequence(message_logger)
+        elif self.status.current_step < len(self.status.steps):
             self.status.current_step += 1
             self._do_prepare(
                 self.status.steps[self.status.current_step], message_logger
             )
         else:
-            # Ostatni krok - sprawdź czy restart
-            if self.should_restart(message_logger=message_logger):
-                info(
-                    f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu wszystkich kroków",
-                    message_logger=message_logger,
-                )
-                self.restart_sequence(message_logger)
-            else:
-                self.status.finished = True
+            self.status.finished = True
 
     def go_to_step(
         self, step_id: int, message_logger: MessageLogger | None = None
