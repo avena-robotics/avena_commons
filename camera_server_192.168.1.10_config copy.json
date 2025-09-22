@@ -48,7 +48,7 @@
             "postprocessors": {
                 "a": {
                     "center_point": [
-                        1050,
+                        600,
                         550
                     ],
                     "depth": {
@@ -119,7 +119,7 @@
                 },
                 "b": {
                     "center_point": [
-                        1050,
+                        600,
                         550
                     ],
                     "depth": {
@@ -190,7 +190,7 @@
                 },
                 "c": {
                     "center_point": [
-                        1050,
+                        600,
                         550
                     ],
                     "depth": {
@@ -444,8 +444,5 @@
                 }
             }
         }
-    },
-    "save_configuration": {
-        "base_path": "temp/photos"
     }
 }
