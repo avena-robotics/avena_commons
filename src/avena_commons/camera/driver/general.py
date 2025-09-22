@@ -596,7 +596,7 @@ class GeneralCameraWorker(Worker):
                                 ),
                             )
 
-                            # Dla BOX zatrzymaj po pierwszym udanym wyniku
+                            # BOX znaleziony - zatrzymaj dalsze przetwarzanie
                             self._cancel_pending_futures(futures)
                             break
                         else:

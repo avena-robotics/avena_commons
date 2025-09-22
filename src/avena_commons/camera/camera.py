@@ -221,6 +221,18 @@ class Camera(EventListener):
                             event.result = Result(result="success")
                             event.data = result
                             # await self._reply(event)
+                        else:
+                            debug(
+                                f"Brak wyniku z run_postprocess_workers",
+                                self._message_logger,
+                            )
+                            self.camera.stop()
+                            event: Event = self._find_and_remove_processing_event(
+                                event=self._current_event
+                            )
+                            event.result = Result(result="failure")
+                            event.data = {}
+                            # await self._reply(event)
 
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms
