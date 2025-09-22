@@ -39,7 +39,7 @@ def validate_rectangle(rect, box, image, config):  # MARK: VALIDATE RECT
         short = rect[1][0]
 
     # 0. check if box is not too small or too big
-    if long < 800 or long > 1050 or short < 500 or short > 800:
+    if long < 400 or long > 850 or short < 300 or short > 500:
         return False
 
     ratio = long / short

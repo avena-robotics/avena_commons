@@ -550,11 +550,11 @@ class GeneralCameraWorker(Worker):
             futures: Słownik zadań do przetworzenia.
 
         Returns:
-            dict: Dane pudełka {center, corners, angle, z} lub None.
+            dict: Dane środka pudełka {x,y,z,rx,ry,rz} lub None.
         """
 
         completed_count = 0
-        best_result = None
+        box_result = None
 
         try:
             for future in as_completed(futures, timeout=30.0):
@@ -571,6 +571,10 @@ class GeneralCameraWorker(Worker):
 
                     result = future.result(timeout=10.0)
                     if result is not None:
+                        debug(
+                            f"BOX: Otrzymano wynik z config_{config_id}, result type: {type(result)}, result len: {len(result) if isinstance(result, (list, tuple)) else 'N/A'}, types of result data: {[type(r) for r in result]}",
+                            self._message_logger,
+                        )
                         # result to (center, sorted_corners, angle, z, detect_image, debug_data)
                         center, sorted_corners, angle, z, detect_image, debug_data = (
                             result
@@ -582,14 +586,15 @@ class GeneralCameraWorker(Worker):
                                 self._message_logger,
                             )
 
-                            best_result = {
-                                "center": center,
-                                "sorted_corners": sorted_corners,
-                                "angle": angle,
-                                "z": z,
-                                "detect_image": detect_image,
-                                "debug_data": debug_data,
-                            }
+                            box_result = calculate_pose_pnp(
+                                corners=sorted_corners,
+                                a=400,
+                                b=300,
+                                z=z,
+                                camera_matrix=create_camera_matrix(
+                                    self.camera_configuration["camera_params"]
+                                ),
+                            )
 
                             # Dla BOX zatrzymaj po pierwszym udanym wyniku
                             self._cancel_pending_futures(futures)
@@ -657,8 +662,8 @@ class GeneralCameraWorker(Worker):
             f"BOX: Zakończono przetwarzanie: {completed_count}/{len(futures)} zadań",
             self._message_logger,
         )
-
-        return best_result
+        debug(f"BOX: Finalny wynik: {box_result}", self._message_logger)
+        return box_result
 
     def _cancel_pending_futures(self, futures: dict):
         """Anuluj pending futures w przypadku błędu.

@@ -4,7 +4,6 @@ import avena_commons.vision.camera as camera
 import avena_commons.vision.image_preprocess as preprocess
 import avena_commons.vision.validation as validation
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import debug
 from avena_commons.vision.vision import (
     create_box_color_mask,
     create_box_depth_mask,
@@ -58,7 +57,8 @@ def box_detector(*, frame, camera_config, config):
 
     if np.max(mask_combined) <= 0:
         detect_image = mask_combined
-        return None, None, None, None, detect_image
+        print("DEBUG: Brak pikseli w combined mask - zwracam None")
+        return None, None, None, None, detect_image, debug_data
 
     with Catchtime() as t6:
         mask_preprocessed = preprocess_mask(mask_combined, config["preprocess"])
@@ -99,7 +99,8 @@ def box_detector(*, frame, camera_config, config):
 
     if len(hit_contours) == 0:
         detect_image = mask_combined
-        return None, None, None, None, detect_image
+        print("DEBUG: Brak konturów po filtracji - zwracam None")
+        return None, None, None, None, detect_image, debug_data
 
     with Catchtime() as t12:
         rect, box = rectangle_from_contours(hit_contours)
@@ -120,7 +121,7 @@ def box_detector(*, frame, camera_config, config):
         debug_data["box_detect_image"] = detect_image
 
     if not valid:
-        return None, None, None, None, detect_image
+        return None, None, None, None, detect_image, debug_data
 
     with Catchtime() as t15:
         center, sorted_corners, angle, z = prepare_box_output(  # wynik glowny
