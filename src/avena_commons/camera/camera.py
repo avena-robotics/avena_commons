@@ -211,28 +211,31 @@ class Camera(EventListener):
                         result = self.camera.run_postprocess_workers(last_frame)
                         if result is not None:
                             debug(
-                                f"Otrzymano wynik z run_postprocess_workers",
+                                f"Otrzymano wynik z run_postprocess_workers {result}",
                                 self._message_logger,
                             )
                             self.camera.stop()
                             event: Event = self._find_and_remove_processing_event(
                                 event=self._current_event
                             )
-                            event.result = Result(result="success")
-                            event.data = result
-                            # await self._reply(event)
-                        else:
-                            debug(
-                                f"Brak wyniku z run_postprocess_workers",
-                                self._message_logger,
-                            )
-                            self.camera.stop()
-                            event: Event = self._find_and_remove_processing_event(
-                                event=self._current_event
-                            )
-                            event.result = Result(result="failure")
-                            event.data = {}
-                            # await self._reply(event)
+                            if isinstance(result, dict) and all(
+                                v is not None for v in result.values()
+                            ):
+                                event.result = Result(result="success")
+                                event.data = result
+                                # await self._reply(event)
+                            elif isinstance(result, list) and len(result) > 0:
+                                event.result = Result(result="success")
+                                event.data = result
+                                # await self._reply(event)
+                            else:
+                                debug(
+                                    f"Brak detekcji w wyniku.",
+                                    self._message_logger,
+                                )
+                                event.result = Result(result="failure")
+                                event.data = {}
+                                # await self._reply(event)
 
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms

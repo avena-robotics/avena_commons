@@ -109,6 +109,7 @@ class GeneralCameraWorker(Worker):
             None  # Nazwa aktywnego detektora ('qr_detector' lub 'box_detector')
         )
         self.executor = None
+        self.last_result = None
         self.image_processing_workers = []
 
     @property
@@ -554,7 +555,7 @@ class GeneralCameraWorker(Worker):
         """
 
         completed_count = 0
-        box_result = None
+        box_result = ()
 
         try:
             for future in as_completed(futures, timeout=30.0):
@@ -886,6 +887,17 @@ class GeneralCameraWorker(Worker):
                                 )
                                 pipe_in.send(None)
 
+                        case "GET_LAST_RESULT":
+                            try:
+                                pipe_in.send(self.last_result)
+                                self.last_result = None  # wyczyść po wysłaniu
+                            except Exception as e:
+                                error(
+                                    f"{self.device_name} - Error getting last result: {e}",
+                                    message_logger=self._message_logger,
+                                )
+                                pipe_in.send(None)
+
                         case "SET_POSTPROCESS_CONFIGURATION":
                             try:
                                 debug(
@@ -973,6 +985,11 @@ class GeneralCameraWorker(Worker):
                                     frames
                                 )
                                 pipe_in.send(results)
+                                # run_thread = threading.Thread(target=asyncio.run, args=(self._run_image_processing_workers(frames),))
+                                # self.state = CameraState.RUNNING
+                                # run_thread.start()
+
+                                # pipe_in.send(True)
                             except Exception as e:
                                 error(
                                     f"{self.device_name} - Error running postprocess: {e}",
@@ -1196,4 +1213,18 @@ class GeneralCameraConnector(Connector):
                 self._pipe_out,
                 ["RUN_POSTPROCESS", frame],
             )
+            return value
+
+    def get_last_result(self):
+        """Pobierz ostatni wynik postprocessu.
+
+        Returns:
+            Any: Wyniki postprocessu lub None.
+
+        Przykład:
+            >>> GeneralCameraConnector().get_last_result() is None
+            True
+        """
+        with self.__lock:
+            value = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_RESULT"])
             return value
