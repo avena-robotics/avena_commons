@@ -747,9 +747,7 @@ class GeneralCameraWorker(Worker):
                 return True
 
             # Utwórz nowy executor z ograniczoną liczbą workerów dla stabilności
-            max_workers = min(
-                len(self.postprocess_configuration), 4
-            )  # Maksymalnie 4 procesy
+            max_workers = len(self.postprocess_configuration)
             self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
             # Przygotuj workery
