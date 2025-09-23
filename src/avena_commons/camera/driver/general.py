@@ -59,6 +59,7 @@ class CameraState(Enum):
     STOPPING = 6  # stop camera pipeline
     STOPPED = 7  # stop camera pipeline
     SHUTDOWN = 8  # stop camera pipeline
+    RUNNING = 9  # running
     ERROR = 255  # error
 
 
@@ -298,14 +299,14 @@ class GeneralCameraWorker(Worker):
     async def _run_image_processing_workers(self, frame: dict):
         """Uruchom zadania przetwarzania obrazu w procesach z obsługą QR i BOX."""
         if not self.executor or not self.detector_name:
-            return None
+            self.last_result = None
 
         # Sprawdź czy executor jest uszkodzony przed użyciem
         if self._is_executor_broken():
             debug("Executor uszkodzony, próba odtworzenia", self._message_logger)
             if not await self._recreate_executor_if_broken():
                 error("Nie udało się odtworzyć executor-a", self._message_logger)
-                return None
+                self.last_result = None
 
         try:
             # Submit zadań
@@ -381,7 +382,7 @@ class GeneralCameraWorker(Worker):
                     )
                 else:
                     debug("Brak aktywnych zadań do wykonania", self._message_logger)
-                return None
+                self.last_result = None
 
             debug(
                 f"Submitted {len(futures)} tasks (failed: {failed_submits}) dla detektora: {self.detector_name}",
@@ -390,18 +391,24 @@ class GeneralCameraWorker(Worker):
 
             # Zbieranie wyników w zależności od typu detektora
             if self.detector_name == "qr_detector":
-                return await self._process_qr_detection_results(futures)
+                with Catchtime() as t:
+                    self.last_result = await self._process_qr_detection_results(futures)
+                debug(f"QR detection took {t.ms} ms", self._message_logger)
             elif self.detector_name == "box_detector":
-                return await self._process_box_detection_results(futures)
+                with Catchtime() as t:
+                    self.last_result = await self._process_box_detection_results(
+                        futures
+                    )
+                debug(f"Box detection took {t.ms} ms", self._message_logger)
             else:
                 error(f"Nieznany detektor: {self.detector_name}", self._message_logger)
-                return None
+                self.last_result = None
 
         except Exception as e:
             error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
             if "futures" in locals():
                 self._cancel_pending_futures(futures)
-            return None
+            self.last_result = None
 
     # MARK: Przetwarzanie QR
     async def _process_qr_detection_results(self, futures: dict) -> dict:
@@ -890,7 +897,8 @@ class GeneralCameraWorker(Worker):
                         case "GET_LAST_RESULT":
                             try:
                                 pipe_in.send(self.last_result)
-                                self.last_result = None  # wyczyść po wysłaniu
+                                if self.last_result is not None:
+                                    self.last_result = None  # wyczyść po wysłaniu
                             except Exception as e:
                                 error(
                                     f"{self.device_name} - Error getting last result: {e}",
@@ -981,15 +989,18 @@ class GeneralCameraWorker(Worker):
                                     self._message_logger,
                                 )
                                 frames = data[1]
-                                results = await self._run_image_processing_workers(
-                                    frames
+                                # results = await self._run_image_processing_workers(
+                                #     frames
+                                # )
+                                # pipe_in.send(results)
+                                run_thread = threading.Thread(
+                                    target=asyncio.run,
+                                    args=(self._run_image_processing_workers(frames),),
                                 )
-                                pipe_in.send(results)
-                                # run_thread = threading.Thread(target=asyncio.run, args=(self._run_image_processing_workers(frames),))
-                                # self.state = CameraState.RUNNING
-                                # run_thread.start()
+                                self.state = CameraState.RUNNING
+                                run_thread.start()
 
-                                # pipe_in.send(True)
+                                pipe_in.send(True)
                             except Exception as e:
                                 error(
                                     f"{self.device_name} - Error running postprocess: {e}",
