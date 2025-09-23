@@ -23,10 +23,14 @@ def propagate(depth, mask, direction):
         >>> mask = np.array([[0, 255, 0], [255, 255, 255], [0, 255, 0]])
         >>> filled = propagate(depth, mask, "horizontal")
     """
+    # Wczesne sprawdzenie czy są dziury - główna optymalizacja wydajnościowa
+    if not np.any(mask == 255):
+        return depth.copy()
+
     def propagate_logic(
         depth: np.ndarray, mask: np.ndarray, direction: str = "left"
     ) -> np.ndarray:
-        """Wewnętrzna funkcja propagacji w jednym kierunku."""
+        """Wewnętrzna funkcja propagacji w jednym kierunku z podstawowymi optymalizacjami."""
         if direction not in {"left", "right", "up", "down"}:
             raise ValueError("direction must be 'left', 'right', 'up', or 'down'")
 
@@ -35,9 +39,14 @@ def propagate(depth, mask, direction):
         holes_equal = mask == 255  # pre-compute for speed
 
         if direction in {"left", "right"}:
+            # Optymalizacja: znajdź rzędy z dziurami raz na początku
+            rows_with_holes = np.any(holes_equal, axis=1)
+            if not np.any(rows_with_holes):
+                return painted  # nie ma dziur w rzędach
+
             for y in range(h):
-                if not holes_equal[y].any():
-                    continue  # no hole in this row
+                if not rows_with_holes[y]:
+                    continue  # skip rows without holes
 
                 row = depth[y]
                 if direction == "left":
@@ -62,7 +71,15 @@ def propagate(depth, mask, direction):
                     painted[y, holes_equal[y]] = val
 
         else:  # "up" or "down"
+            # Optymalizacja: znajdź kolumny z dziurami raz na początku
+            cols_with_holes = np.any(holes_equal, axis=0)
+            if not np.any(cols_with_holes):
+                return painted  # nie ma dziur w kolumnach
+
             for x in range(w):
+                if not cols_with_holes[x]:
+                    continue  # skip columns without holes
+
                 col_mask = holes_equal[:, x]
                 if not col_mask.any():
                     continue  # no hole in this column

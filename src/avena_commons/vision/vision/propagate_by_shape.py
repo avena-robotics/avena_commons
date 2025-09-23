@@ -8,6 +8,7 @@ def propagate_by_shape(depth, mask, r_wide=2.0, r_tall=0.5):
 
     Funkcja analizuje kształt obszaru dziury (stosunek szerokości do wysokości)
     i wybiera odpowiedni kierunek propagacji dla optymalnego wypełnienia.
+    Optymalizowana wersja z wczesnym sprawdzeniem dziur i efektywnym obliczaniem boundingu box.
 
     Args:
         depth: Obraz głębi z dziurami do wypełnienia
@@ -23,10 +24,28 @@ def propagate_by_shape(depth, mask, r_wide=2.0, r_tall=0.5):
         >>> mask = np.array([[0, 255, 0], [255, 255, 255], [0, 255, 0]])
         >>> filled = propagate_by_shape(depth, mask, r_wide=2.0, r_tall=0.5)
     """
-    ys, xs = np.where(mask)
+    # Wczesne sprawdzenie czy są w ogóle dziury do wypełnienia
+    if not np.any(mask == 255):
+        return depth.copy()
 
-    h = ys.max() - ys.min() + 1
-    w = xs.max() - xs.min() + 1
+    # Efektywne obliczanie bounding box bez np.where
+    # Znajdź rzędy i kolumny zawierające dziury
+    rows_with_holes = np.any(mask == 255, axis=1)
+    cols_with_holes = np.any(mask == 255, axis=0)
+
+    # Jeśli nie ma dziur, zwróć kopię
+    if not np.any(rows_with_holes) or not np.any(cols_with_holes):
+        return depth.copy()
+
+    # Znajdź granice bounding box
+    y_indices = np.where(rows_with_holes)[0]
+    x_indices = np.where(cols_with_holes)[0]
+
+    y_min, y_max = y_indices[0], y_indices[-1]
+    x_min, x_max = x_indices[0], x_indices[-1]
+
+    h = y_max - y_min + 1
+    w = x_max - x_min + 1
     ratio = w / h
 
     if ratio > r_wide:
