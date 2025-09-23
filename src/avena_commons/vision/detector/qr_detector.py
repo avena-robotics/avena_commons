@@ -240,6 +240,65 @@ def qr_detector(
                 # error(f"QR DETECTOR: Detection failed in mode '{mode}': {e}")
                 return None, debug_data
 
+            # Dodaj pole z (głębia) do wykrytych tagów
+            if detections and len(detections) > 0 and "depth" in frame:
+                try:
+                    depth_original = frame["depth"]
+                    for detection in detections:
+                        min_x, min_y = (
+                            int(np.min(detection.corners[:, 0], axis=0)),
+                            int(np.min(detection.corners[:, 1], axis=0)),
+                        )
+                        max_x, max_y = (
+                            int(np.max(detection.corners[:, 0], axis=0)),
+                            int(np.max(detection.corners[:, 1], axis=0)),
+                        )
+                        
+                        # Sprawdź czy współrzędne są w granicach obrazu
+                        height, width = depth_original.shape[:2]
+                        min_x = max(0, min_x)
+                        min_y = max(0, min_y)
+                        max_x = min(width, max_x)
+                        max_y = min(height, max_y)
+                        
+                        if max_x > min_x and max_y > min_y:
+                            cropped_depth_array = depth_original[min_y:max_y, min_x:max_x]
+                            # Usuń wartości zerowe z macierzy głębi przed obliczeniem mediany
+                            valid_depths = cropped_depth_array[cropped_depth_array > 0]
+                            if len(valid_depths) > 0:
+                                z = np.median(valid_depths) / 1000
+                            else:
+                                z = 0.0
+                        else:
+                            z = 0.0
+                        
+                        # Dodaj pole z do obiektu detection
+                        detection.z = z
+                        
+                except Exception as depth_error:
+                    error(f"QR DETECTOR: Błąd podczas obliczania głębi: {depth_error}")
+                    # Ustaw z = 0.0 dla wszystkich wykryć w przypadku błędu
+                    for detection in detections:
+                        detection.z = 0.0
+
+            # Stwórz wizualizację wykrytych tagów
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                debug_dir = "temp/debug_frames"
+                os.makedirs(debug_dir, exist_ok=True)
+
+                if detections and len(detections) > 0:
+                    detection_visualization = create_qr_detection_visualization(
+                        frame["color"], detections, timestamp, debug_dir
+                    )
+                    debug_data["qr_detection_visualization"] = detection_visualization
+                    print(f"DEBUG: Stworzono wizualizację dla {len(detections)} tagów")
+                else:
+                    print("DEBUG: Brak tagów do wizualizacji")
+
+            except Exception as viz_error:
+                print(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
+
             # debug(
             #     f"QR DETECTOR: Successfully processed mode '{mode}', found {len(detections) if detections else 0} detections"
             # )

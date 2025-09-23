@@ -19,7 +19,7 @@ def calculate_pose_pnp(
     Args:
         corners: Lista 4 punktów narożnych w współrzędnych obrazu (x, y)
         a: Szerokość obiektu w jednostkach rzeczywistych
-        b: Wysokość obiektu w jednostkach rzeczywistych  
+        b: Wysokość obiektu w jednostkach rzeczywistych
         z: Wartość głębi (odległość) obiektu
         camera_matrix: Macierz parametrów wewnętrznych kamery (3x3)
 
@@ -62,12 +62,21 @@ def calculate_pose_pnp(
     ]).flatten()  # Upewnij się, że rot_vec jest jednowymiarowy
     rotation = R.from_rotvec(rot_vec_flat)
     euler_angles = rotation.as_euler("xyz", degrees=True)
-
-    return (
-        translation[0],
-        translation[1],
-        translation[2],
-        0.0,  # euler_angles[0],
-        0.0,  # euler_angles[1],
-        euler_angles[2],
-    )
+    if z is not None:
+        return (
+            translation[0],
+            translation[1],
+            z * 1000,
+            0.0,  # euler_angles[0],
+            0.0,  # euler_angles[1],
+            euler_angles[2],
+        )
+    else:
+        return (
+            translation[0],
+            translation[1],
+            translation[2],
+            0.0,  # euler_angles[0],
+            0.0,  # euler_angles[1],
+            euler_angles[2],
+        )

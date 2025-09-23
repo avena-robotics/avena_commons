@@ -533,7 +533,7 @@ class GeneralCameraWorker(Worker):
                         corners=detection.corners,
                         a=self.postprocess_configuration["a"]["qr_size"] * 1000,
                         b=self.postprocess_configuration["a"]["qr_size"] * 1000,
-                        z=0,
+                        z=detection.z,
                         camera_matrix=create_camera_matrix(
                             self.camera_configuration["camera_params"]
                         ),
@@ -590,7 +590,7 @@ class GeneralCameraWorker(Worker):
 
                         if center is not None:
                             debug(
-                                f"BOX: Otrzymano wynik z config_{config_id}, center: {center}",
+                                f"BOX: Otrzymano wynik z config_{config_id}, center: {center}, z: {z}",
                                 self._message_logger,
                             )
 
