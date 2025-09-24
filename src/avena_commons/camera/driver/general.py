@@ -297,6 +297,33 @@ class GeneralCameraWorker(Worker):
             return False
 
     async def _run_image_processing_workers(self, frame: dict):
+        """Asynchronicznie uruchamia workery przetwarzania obrazu w oddzielnych procesach z obsługą QR i BOX.
+
+        Metoda zarządza wykonywaniem zadań przetwarzania obrazu za pomocą executora puli procesów.
+        Obsługuje awarie executora, wysyłanie zadań i przetwarzanie wyników dla różnych typów detektorów.
+
+        Args:
+            frame (dict): Słownik zawierający dane ramek przetwarzanych przez workery.
+                Oczekiwane zawartość danych obrazu i metadanych wymaganych przez detektory.
+
+        Raises:
+            BrokenProcessPool: Gdy pula procesów zostanie uszkodzona podczas wysyłania zadań.
+            RuntimeError: Gdy wystąpią błędy runtime podczas wykonywania workerów.
+            Exception: Dla innych nieoczekiwanych błędów podczas przetwarzania workerów.
+
+        Side Effects:
+            - Aktualizuje self.last_result wynikami przetwarzania lub None przy błędzie
+            - Może odtworzyć executor jeśli zostanie uszkodzony
+            - Loguje komunikaty debug i błędów przez self._message_logger
+            - Anuluje oczekujące futures przy wyjątkach
+
+        Notes:
+            - Obsługuje dwa typy detektorów: "qr_detector" i "box_detector"
+            - Automatycznie próbuje odzyskać uszkodzone pule procesów
+            - Śledzi nieudane wysyłki i zapewnia szczegółowe logowanie
+            - Używa pomiarów czasu do monitorowania wydajności
+            - Wraca wcześnie jeśli brak executora lub detector_name
+        """
         """Uruchom zadania przetwarzania obrazu w procesach z obsługą QR i BOX."""
         if not self.executor or not self.detector_name:
             self.last_result = None

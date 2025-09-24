@@ -136,6 +136,11 @@ class Camera(EventListener):
         self.fsm_state = EventListenerState.STARTING
 
     def _clear_before_shutdown(self):
+        """Czyści zasoby przed zamknięciem kamery.
+
+        Ustawia logger na None aby inne wątki nie próbowały z niego korzystać
+        podczas procesu zamykania.
+        """
         __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
         # Ustaw na None aby inne wątki nie próbowały używać
         self._message_logger = None

@@ -21,6 +21,37 @@ from avena_commons.vision.vision import (
 
 
 def box_detector(*, frame, camera_config, config):
+    """Detektor pudełek wykorzystujący kombinację masek kolorowej i głębi.
+
+    Analizuje ramki kolorowe i głębi aby wykryć prostokątne pudełka na podstawie
+    konfiguracji HSV i parametrów głębi. Zwraca pozycję, narożniki, kąt i głębię
+    wykrytego pudełka wraz z danymi debugowania.
+
+    Args:
+        frame (dict): Słownik zawierający ramki 'color' i 'depth'.
+        camera_config (dict): Konfiguracja kamery z parametrami i współczynnikami dystorsji.
+        config (dict): Konfiguracja detektora zawierająca ustawienia HSV, głębi, filtrowania
+                    konturów, walidacji i innych parametrów.
+
+    Returns:
+        tuple: Krotka zawierająca:
+            - center (tuple | None): Współrzędne środka pudełka (x, y).
+            - sorted_corners (list | None): Lista 4 narożników pudełka [(x1,y1), ...].
+            - angle (float | None): Kąt obrotu pudełka w stopniach.
+            - z (float | None): Głębość środka pudełka w mm.
+            - detect_image (numpy.ndarray): Obraz wizualizacyjny z wykrytymi elementami.
+            - debug_data (dict): Słownik z danymi debugowania z każdego etapu przetwarzania.
+
+    Raises:
+        Exception: Może wystąpić przy błędach przetwarzania obrazu lub konfiguracji.
+
+    Przykład:
+        >>> frame = {"color": color_img, "depth": depth_img}
+        >>> camera_cfg = {"camera_params": {...}, "distortion_coefficients": [...]}
+        >>> config = {"hsv": {...}, "depth": {...}, "center_point": (640, 480)}
+        >>> center, corners, angle, z, viz, debug = box_detector(
+        ...     frame=frame, camera_config=camera_cfg, config=config)
+    """
     color_image = frame["color"]
     depth_image = frame["depth"]
 

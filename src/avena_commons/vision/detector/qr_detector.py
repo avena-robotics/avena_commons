@@ -253,16 +253,18 @@ def qr_detector(
                             int(np.max(detection.corners[:, 0], axis=0)),
                             int(np.max(detection.corners[:, 1], axis=0)),
                         )
-                        
+
                         # Sprawdź czy współrzędne są w granicach obrazu
                         height, width = depth_original.shape[:2]
                         min_x = max(0, min_x)
                         min_y = max(0, min_y)
                         max_x = min(width, max_x)
                         max_y = min(height, max_y)
-                        
+
                         if max_x > min_x and max_y > min_y:
-                            cropped_depth_array = depth_original[min_y:max_y, min_x:max_x]
+                            cropped_depth_array = depth_original[
+                                min_y:max_y, min_x:max_x
+                            ]
                             # Usuń wartości zerowe z macierzy głębi przed obliczeniem mediany
                             valid_depths = cropped_depth_array[cropped_depth_array > 0]
                             if len(valid_depths) > 0:
@@ -271,10 +273,10 @@ def qr_detector(
                                 z = 0.0
                         else:
                             z = 0.0
-                        
+
                         # Dodaj pole z do obiektu detection
                         detection.z = z
-                        
+
                 except Exception as depth_error:
                     error(f"QR DETECTOR: Błąd podczas obliczania głębi: {depth_error}")
                     # Ustaw z = 0.0 dla wszystkich wykryć w przypadku błędu
