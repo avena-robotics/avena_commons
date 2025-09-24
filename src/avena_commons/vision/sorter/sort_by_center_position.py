@@ -4,20 +4,27 @@ from typing import Any, Dict, List
 def sort_qr_by_center_position(
     expected_count: int,
     detections: List[Any],  # Lista detekcji AprilTag
+    middle_point_y: int = 540,
 ) -> Dict[int, Any]:
-    """Sortuje kody QR według pozycji centrum i zwraca słownik z kluczami 1-4.
+    """Organizuje kody QR w siatce 2x2 na podstawie pozycji Y i kąta rotacji Z.
 
-    Funkcja sortuje detekcje kodów QR według ich pozycji centrum, używając
-    współrzędnych Y (wysokość) jako głównego kryterium sortowania, a następnie
-    X (szerokość) jako kryterium pomocniczego. Wynik jest mapowany na pozycje
-    numeryczne 1-4 zgodnie z kolejnością sortowania.
+    Funkcja organizuje detekcje kodów QR w siatce 2x2 używając:
+    - Pozycji Y względem middle_point_y (górny/dolny rząd)
+    - Kąta rotacji Z dla określenia lewej/prawej strony
+
+    Mapowanie pozycji:
+    - 1: Górny lewy (Y < middle_point_y, rot_z < 0)
+    - 2: Dolny lewy (Y >= middle_point_y, rot_z < 0)
+    - 3: Górny prawy (Y < middle_point_y, rot_z >= 0)
+    - 4: Dolny prawy (Y >= middle_point_y, rot_z >= 0)
 
     Args:
         expected_count: Liczba spodziewanych kodów QR (1-4)
-        detections: Lista detekcji AprilTag (musi mieć atrybut .center)
+        detections: Lista detekcji AprilTag (musi mieć atrybuty .center i .pose_R lub rot_z)
+        middle_point_y: Punkt podziału Y dla górnego i dolnego rzędu (domyślnie 540)
 
     Returns:
-        Dict[int, Any]: Słownik z kluczami 1-4 zawierający posortowane detekcje.
+        Dict[int, Any]: Słownik z kluczami 1-4 zawierający detekcje w pozycjach siatki.
             Brakujące pozycje mają wartość None.
 
     Raises:
@@ -25,9 +32,9 @@ def sort_qr_by_center_position(
 
     Example:
         >>> detections = [detection1, detection2, detection3]
-        >>> result = sort_qr_by_center_position(3, detections)
-        >>> print(f"Pozycja 1: {result[1]}")
-        >>> print(f"Pozycja 2: {result[2]}")
+        >>> result = sort_qr_by_center_position(3, detections, middle_point_y=500)
+        >>> print(f"Górny lewy: {result[1]}")
+        >>> print(f"Dolny lewy: {result[2]}")
     """
     if expected_count < 1 or expected_count > 4:
         raise ValueError("expected_count must be between 1 and 4")
@@ -35,23 +42,45 @@ def sort_qr_by_center_position(
     if not detections:
         return {1: None, 2: None, 3: None, 4: None}
 
-    # Wyciągnij centery
-    qr_centers = [
-        (detection.center[0], detection.center[1]) for detection in detections
-    ]
-
-    # Sortuj po y (wysokość), potem po x (lewo/prawo)
-    # W OpenCV: y rośnie w dół, x rośnie w prawo
-    sorted_indices = sorted(
-        range(len(qr_centers)), key=lambda i: (qr_centers[i][1], qr_centers[i][0])
-    )
-
     # Inicjalizuj wynik
     result = {1: None, 2: None, 3: None, 4: None}
 
-    # Przypisz posortowane detekcje do kluczy 1,2,3,4
-    for i, sorted_idx in enumerate(sorted_indices[:expected_count]):
-        result[i + 1] = detections[sorted_idx]
+    for detection in detections:
+        y = detection.center[1]
+
+        # Pobierz kąt rotacji Z - sprawdź różne możliwe atrybuty
+        rot_z = 0
+        if hasattr(detection, "pose_R") and detection.pose_R is not None:
+            # Jeśli mamy macierz rotacji, wyciągnij kąt Z
+            try:
+                from avena_commons.util.utils import rotation_matrix_to_euler_angles
+
+                rot_z = rotation_matrix_to_euler_angles(detection.pose_R)[2]
+            except (ImportError, AttributeError):
+                # Fallback - użyj współrzędnej X jako przybliżenia kierunku
+                rot_z = 1 if detection.center[0] > (1280 // 2) else -1
+        elif hasattr(detection, "rot_z"):
+            rot_z = detection.rot_z
+        elif hasattr(detection, "rotation_z"):
+            rot_z = detection.rotation_z
+        else:
+            # Fallback - użyj pozycji X jako przybliżenia kierunku
+            # Jeśli X > połowa szerokości, zakładamy prawą stronę (rot_z >= 0)
+            rot_z = 1 if detection.center[0] > (1280 // 2) else -1
+
+        # Określ pozycję w siatce 2x2
+        if y < middle_point_y:
+            # Górny rząd
+            if rot_z < 0:
+                result[1] = detection  # Górny lewy
+            else:
+                result[3] = detection  # Górny prawy
+        else:
+            # Dolny rząd
+            if rot_z < 0:
+                result[2] = detection  # Dolny lewy
+            else:
+                result[4] = detection  # Dolny prawy
 
     return result
 
@@ -129,5 +158,3 @@ def merge_qr_detections(
             # W przeciwnym razie zachowujemy aktualną detekcję
 
     return merged_state
-
-

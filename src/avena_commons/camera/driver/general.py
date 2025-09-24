@@ -22,7 +22,7 @@ from avena_commons.util.logger import (
 )
 from avena_commons.util.worker import Connector, Worker
 from avena_commons.vision.camera import create_camera_matrix
-from avena_commons.vision.vision import calculate_pose_pnp, qr_output_process
+from avena_commons.vision.vision import calculate_pose_pnp
 
 # Dodać import kompatybilny z różnymi wersjami Pythona
 try:
@@ -477,15 +477,8 @@ class GeneralCameraWorker(Worker):
                             detections=result[0],
                         )
 
-                        positioned_qr = qr_output_process(
-                            detection_list=sorted_detections,
-                            middle_point_y=self.postprocess_configuration.get(
-                                "a", {}
-                            ).get("middle_point_y", 540),
-                        )
-
                         results = merge.merge_qr_detections_with_confidence(
-                            positioned_qr,
+                            sorted_detections,
                             results,
                         )
 
