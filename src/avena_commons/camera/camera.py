@@ -1,3 +1,16 @@
+"""Moduł kamery do obsługi zdjęć w systemie event-driven.
+
+Odpowiedzialność:
+- Obsługa zdarzeń zdjęciowych (take_photo_box, take_photo_qr)
+- Zarządzanie try_number i kontrolą oświetlenia
+- Wysyłanie zdarzeń świetlnych do supervisora na podstawie try_number
+- Przetwarzanie ramek i wyników detekcji
+
+Eksponuje:
+- Klasa `Camera` (główny event listener kamery)
+"""
+
+import os
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +27,7 @@ from avena_commons.event_listener import (
     Result,
 )
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import MessageLogger, debug, error
+from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.timing_stats import global_timing_stats
 
 load_dotenv(override=True)
@@ -22,7 +35,18 @@ load_dotenv(override=True)
 
 class Camera(EventListener):
     """
-    Main logic class for handling events and managing the state of the Munchies system.
+    Główna klasa logiki kamery do obsługi zdarzeń zdjęciowych.
+
+    Odpowiada za przetwarzanie zdarzeń take_photo_box i take_photo_qr,
+    zarządzanie try_number, kontrolę oświetlenia oraz komunikację z supervisorem.
+
+    Atrybuty:
+        camera_address (str): Adres IP kamery.
+        camera_running (bool): Status działania kamery.
+        latest_color_frame: Ostatnia ramka kolorowa.
+        latest_depth_frame: Ostatnia ramka głębi.
+        current_try_number (int): Aktualny numer próby dla light control.
+        current_supervisor_number (int): Numer supervisora do komunikacji świetlnej.
     """
 
     def __init__(
@@ -81,6 +105,11 @@ class Camera(EventListener):
         self.last_depth_timestamp = 0
         self.frame_sync_timeout = 500  # ms - maksymalna różnica czasowa między ramkami (zwiększone dla stabilności)
 
+        # Try number management for light control
+        self.current_try_number = 0
+        self.current_supervisor_number = 1
+        self.current_product_id = 0
+
         debug(
             f"EVENT_LISTENER_INIT: Event listener kamery został zainicjalizowany dla ip {self.camera_address}",
             self._message_logger,
@@ -114,15 +143,15 @@ class Camera(EventListener):
         #     detector="box_detector",
         #     configuration=self.__pipelines_config["box_detector"],
         # )
-        await self._analyze_event(
-            Event(
-                event_type="take_photo_box",
-                source=self.name,
-                source_port=9999,
-                destination_port=9998,
-                is_processing=True,
-            )
-        )
+        # await self._analyze_event(
+        #     Event(
+        #         event_type="take_photo_box",
+        #         source=self.name,
+        #         source_port=9999,
+        #         destination_port=9998,
+        #         is_processing=True,
+        #     )
+        # )
 
         # self.camera.start()
 
@@ -146,7 +175,34 @@ class Camera(EventListener):
         self._message_logger = None
 
     async def _analyze_event(self, event):
+        """Analizuje przychodzące zdarzenia i obsługuje logikę try_number z kontrolą światła.
+
+        Args:
+            event: Zdarzenie do przetworzenia (take_photo_box, take_photo_qr)
+
+        Returns:
+            bool: True jeśli zdarzenie zostało poprawnie przetworzone
+        """
         with Catchtime() as t:
+            # Extract try_number and supervisor info from event data
+            if hasattr(event, "data") and event.data:
+                self.current_try_number = event.data.get("try_number", 0)
+                self.current_supervisor_number = event.data.get("supervisor_number", 1)
+                self.current_product_id = event.id
+
+                # Calculate light intensity based on try_number: [0,10,20,30,...,100] with %11
+                light_intensity = (self.current_try_number % 11) * 10
+                if light_intensity > 100:
+                    light_intensity = 100
+
+                info(
+                    f"Camera: try_number={self.current_try_number}, light_intensity={light_intensity}%, supervisor={self.current_supervisor_number}",
+                    self._message_logger,
+                )
+
+                # Send light control event to supervisor
+                await self._send_light_event_to_supervisor(light_intensity)
+
             match event.event_type:
                 case "take_photo_box":
                     self.camera.set_postprocess_configuration(
@@ -159,7 +215,7 @@ class Camera(EventListener):
                         configuration=self.__pipelines_config["qr_detector"],
                     )
                 case _:
-                    debug(f" Nieznany event {event.event_type}", self._message_logger)
+                    debug(f"Nieznany event {event.event_type}", self._message_logger)
                     return False
         self._current_event = event
         self._add_to_processing(event)
@@ -169,6 +225,51 @@ class Camera(EventListener):
             self.camera.start()
         global_timing_stats.add_measurement("camera_start", t2.ms)
         debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
+
+    async def _send_light_event_to_supervisor(self, light_intensity: float):
+        """Wysyła zdarzenie kontroli światła do supervisora.
+
+        Args:
+            light_intensity (float): Intensywność światła (0.0-100.0)
+        """
+        try:
+            if light_intensity > 0:
+                # Send light_on event to supervisor
+                await self._event(
+                    destination=f"supervisor_{self.current_supervisor_number}",
+                    destination_address=os.getenv(
+                        f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_ADDRESS"
+                    ),
+                    destination_port=os.getenv(
+                        f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_PORT"
+                    ),
+                    event_type="light_on",
+                    data={"intensity": light_intensity},
+                )
+                info(
+                    f"Wysłano event light_on z intensywnością {light_intensity}% do supervisor_{self.current_supervisor_number}",
+                    self._message_logger,
+                )
+            else:
+                # Send light_off event to supervisor
+                await self._event(
+                    destination=f"supervisor_{self.current_supervisor_number}",
+                    destination_address=os.getenv(
+                        f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_ADDRESS"
+                    ),
+                    destination_port=os.getenv(
+                        f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_PORT"
+                    ),
+                    event_type="light_off",
+                    id=self.current_product_id,
+                    data={},
+                )
+                info(
+                    f"Wysłano event light_off do supervisor_{self.current_supervisor_number}",
+                    self._message_logger,
+                )
+        except Exception as e:
+            error(f"Błąd podczas wysyłania light_on event: {e}", self._message_logger)
 
     # async def _handle_event(self, event):
     #     match event.event_type:
@@ -220,13 +321,14 @@ class Camera(EventListener):
                                 self._message_logger,
                             )
                             self.camera.stop()
+                            await self._send_light_event_to_supervisor(0)
                             event: Event = self._find_and_remove_processing_event(
                                 event=self._current_event
                             )
                             event.result = Result(
                                 result="error", error_message="Postprocess error"
                             )
-                            # await self._reply(event)
+                            await self._reply(event)
                             self.set_state(EventListenerState.ON_ERROR)
 
                     global_timing_stats.add_measurement(
@@ -250,19 +352,45 @@ class Camera(EventListener):
                         self._message_logger,
                     )
                     self.camera.stop()
+
+                    # Turn off light after photo processing
+                    await self._send_light_event_to_supervisor(0)
+
                     event: Event = self._find_and_remove_processing_event(
                         event=self._current_event
                     )
                     if isinstance(result, dict) and all(
                         v is not None for v in result.values()
                     ):
-                        event.result = Result(result="success")
-                        event.data = result
-                        # await self._reply(event)
+                        # For QR photos, extract specific QR based on event data
+                        requested_qr = event.data.get("qr", 0)
+                        if requested_qr in result:
+                            qr_result = result[
+                                requested_qr
+                            ].copy()  # Make a copy to avoid modifying original
+
+                            # Check qr_rotation and modify result if needed
+                            qr_rotation = event.data.get("qr_rotation", False)
+                            if not qr_rotation:
+                                qr_result[3:6] = [0.0, 0.0, 0.0]  # Set rotation to zero
+                            event.result = Result(result="success")
+                            event.data = qr_result
+                            debug(
+                                f"Zwrócono wynik dla QR {requested_qr}: {qr_result}",
+                                self._message_logger,
+                            )
+                        else:
+                            debug(
+                                f"Brak detekcji dla QR {requested_qr} w wyniku",
+                                self._message_logger,
+                            )
+                            event.result = Result(result="failure")
+                            event.data = {}
+                        await self._reply(event)
                     elif isinstance(result, list) and len(result) > 0:
                         event.result = Result(result="success")
                         event.data = result
-                        # await self._reply(event)
+                        await self._reply(event)
                     else:
                         debug(
                             f"Brak detekcji w wyniku.",
@@ -270,21 +398,4 @@ class Camera(EventListener):
                         )
                         event.result = Result(result="failure")
                         event.data = {}
-                        # await self._reply(event)
-
-            # case CameraState.STOPPED:
-            #     await self._analyze_event(
-            #         Event(
-            #             event_type="take_photo_qr",
-            #             source=self.name,
-            #             source_port=9999,
-            #             destination_port=9998,
-            #             is_processing=True,
-            #         )
-            #     )
-            case _:
-                pass
-                # debug(
-                #     f"EVENT_LISTENER_CHECK_LOCAL_DATA: {camera_state}",
-                #     self._message_logger,
-                # )
+                        await self._reply(event)
