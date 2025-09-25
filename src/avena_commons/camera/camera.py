@@ -98,6 +98,8 @@ class Camera(EventListener):
         self.camera_address = self.__camera_config["camera_ip"]
 
         self.camera_running = False
+        self._port = port
+        self._address = address
         self.supervisor_position = [
             177.5,
             -780.0,
@@ -157,7 +159,7 @@ class Camera(EventListener):
         #         source=self.name,
         #         source_port=9999,
         #         destination_port=9998,
-        #         is_processing=True,
+        #         to_be_processed=True,
         #     )
         # )
 
@@ -193,36 +195,40 @@ class Camera(EventListener):
         """
         with Catchtime() as t:
             # Extract try_number and supervisor info from event data
-            if hasattr(event, "data") and event.data:
-                self.current_try_number = event.data.get("try_number", 0)
-                self.current_supervisor_number = event.data.get("supervisor_number", 1)
-                self.current_product_id = event.id
-
-                # Calculate light intensity based on try_number: [0,10,20,30,...,100] with %11
-                light_intensity = (self.current_try_number % 11) * 10
-                if light_intensity > 100:
-                    light_intensity = 100
-
-                info(
-                    f"Camera: try_number={self.current_try_number}, light_intensity={light_intensity}%, supervisor={self.current_supervisor_number}",
-                    self._message_logger,
-                )
-
-                # Send light control event to supervisor
-                await self._send_light_event_to_supervisor(light_intensity)
 
             match event.event_type:
                 case "take_photo_box":
+                    light_intensity = self._calculate_light_intensity(event)
+                    # Send light control event to supervisor
+                    await self._send_light_event_to_supervisor(light_intensity)
+                    # Request current position for accurate transformation
+                    # await self._get_current_position_of_supervisor()
                     self.camera.set_postprocess_configuration(
                         detector="box_detector",
                         configuration=self.__pipelines_config["box_detector"],
                     )
                 case "take_photo_qr":
+                    light_intensity = self._calculate_light_intensity(event)
+                    await self._send_light_event_to_supervisor(light_intensity)
+                    # Request current position for accurate transformation
+                    # await self._get_current_position_of_supervisor()
                     self.camera.set_postprocess_configuration(
                         detector="qr_detector",
                         configuration=self.__pipelines_config["qr_detector"],
                     )
+                case "current_position":
+                    if event.result and event.result.result == "success" and event.data:
+                        # Zapisz otrzymaną pozycję
+                        self.supervisor_position = event.data.get(
+                            "current_position", self.supervisor_position
+                        )
+                        debug(
+                            f"Updated supervisor position: {self.supervisor_position}",
+                            self._message_logger,
+                        )
                 case _:
+                    if event.result is not None:
+                        return True
                     debug(f"Nieznany event {event.event_type}", self._message_logger)
                     return False
         self._current_event = event
@@ -233,6 +239,32 @@ class Camera(EventListener):
             self.camera.start()
         global_timing_stats.add_measurement("camera_start", t2.ms)
         debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
+        return True
+
+    def _calculate_light_intensity(self, event: Event) -> int:
+        """Oblicza intensywność światła na podstawie try_number.
+
+        Args:
+            event (Event): Zdarzenie zawierające dane try_number i supervisor_number
+
+        Returns:
+            int: Intensywność światła (0-100)
+        """
+        if hasattr(event, "data") and event.data:
+            self.current_try_number = event.data.get("try_number", 0)
+            self.current_supervisor_number = event.data.get("supervisor_number", 1)
+            self.current_product_id = event.id
+
+            # Calculate light intensity based on try_number: [0,10,20,30,...,100] with %11
+            light_intensity = (self.current_try_number % 11) * 10
+            if light_intensity > 100:
+                light_intensity = 100
+
+            debug(
+                f"Camera: try_number={self.current_try_number}, light_intensity={light_intensity}%, supervisor={self.current_supervisor_number}",
+                self._message_logger,
+            )
+        return light_intensity
 
     async def _send_light_event_to_supervisor(self, light_intensity: float):
         """Wysyła zdarzenie kontroli światła do supervisora.
@@ -252,8 +284,10 @@ class Camera(EventListener):
                         f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_PORT"
                     ),
                     event_type="light_on",
+                    id=self.current_product_id,
                     data={"intensity": light_intensity},
-                    is_processing=False,
+                    to_be_processed=False,
+                    maximum_processing_time=2.0,
                 )
                 info(
                     f"Wysłano event light_on z intensywnością {light_intensity}% do supervisor_{self.current_supervisor_number}",
@@ -272,7 +306,8 @@ class Camera(EventListener):
                     event_type="light_off",
                     id=self.current_product_id,
                     data={},
-                    is_processing=False,
+                    to_be_processed=False,
+                    maximum_processing_time=2.0,
                 )
                 info(
                     f"Wysłano event light_off do supervisor_{self.current_supervisor_number}",
@@ -280,8 +315,9 @@ class Camera(EventListener):
                 )
         except Exception as e:
             error(f"Błąd podczas wysyłania light_on event: {e}", self._message_logger)
+        return True
 
-    async def _get_current_position_to_supervisor(self):
+    async def _get_current_position_of_supervisor(self):
         """Wysyła zapytania o aktualną pozycję supervisora."""
         try:
             await self._event(
@@ -293,6 +329,10 @@ class Camera(EventListener):
                     f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_PORT"
                 ),
                 event_type="current_position",
+                id=self.current_product_id,
+                data={},
+                to_be_processed=True,
+                maximum_processing_time=35.0,
             )
             info(
                 f"Wysłano event z zapytaniem current_position do supervisor_{self.current_supervisor_number}",
@@ -347,9 +387,7 @@ class Camera(EventListener):
                         self._message_logger,
                     )
                     with Catchtime() as ct:
-                        self.supervisor_position = (
-                            await self._get_current_position_to_supervisor()
-                        )
+                        debug(f"Supervisor position: {self.supervisor_position}")
                         confirmed = self.camera.run_postprocess_workers(last_frame)
                         if not confirmed:
                             error(
@@ -394,15 +432,15 @@ class Camera(EventListener):
                     event: Event = self._find_and_remove_processing_event(
                         event=self._current_event
                     )
-                    if isinstance(result, dict) and all(
+                    if isinstance(result, dict) and any(
                         v is not None for v in result.values()
                     ):
                         # For QR photos, extract specific QR based on event data
                         requested_qr = event.data.get("qr", 0)
                         if requested_qr in result:
-                            qr_result = result[
+                            qr_result = result.get(
                                 requested_qr
-                            ].copy()  # Make a copy to avoid modifying original
+                            ).copy()  # Make a copy to avoid modifying original
 
                             # Check qr_rotation and modify result if needed
                             qr_rotation = event.data.get("qr_rotation", False)
