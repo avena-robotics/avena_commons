@@ -371,7 +371,7 @@ class Camera(EventListener):
         # )
         match camera_state:
             case CameraState.ERROR:
-                self.set_state(EventListenerState.ON_ERROR)
+                self._change_fsm_state(EventListenerState.ON_ERROR)
             case CameraState.STARTED:
                 # Przykład zapisywania ramek (dla demonstracji)
                 with Catchtime() as lt:
@@ -403,7 +403,7 @@ class Camera(EventListener):
                                 result="error", error_message="Postprocess error"
                             )
                             await self._reply(event)
-                            self.set_state(EventListenerState.ON_ERROR)
+                            self._change_fsm_state(EventListenerState.ON_ERROR)
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms
                     )
@@ -438,9 +438,7 @@ class Camera(EventListener):
                         # For QR photos, extract specific QR based on event data
                         requested_qr = event.data.get("qr", 0)
                         if requested_qr in result:
-                            qr_result = result.get(
-                                requested_qr
-                            ).copy()  # Make a copy to avoid modifying original
+                            qr_result = result.get(requested_qr)
 
                             # Check qr_rotation and modify result if needed
                             qr_rotation = event.data.get("qr_rotation", False)
