@@ -1,3 +1,4 @@
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
@@ -9,6 +10,8 @@ def transform_camera_to_base(
     Args:
         item_pose (list): [x, y, z, rx, ry, rz] Position and orientation of item in camera frame
         current_tcp (list): [x, y, z, rx, ry, rz] Current TCP position in base frame
+        camera_tool_offset (list): [x, y, z, rx, ry, rz] Camera offset from TCP
+        is_rotation (bool): If True, rotate item around Z axis by 180 degrees
 
     Returns:
         list: Transformed target position in robot base coordinates [x, y, z, rx, ry, rz]
@@ -62,9 +65,6 @@ def transform_camera_to_base(
     pos = T_goal[:3, 3]
 
     return [pos[0], pos[1], pos[2], rx, ry, rz]
-
-
-import numpy as np
 
 
 def normalize_angle(angle):

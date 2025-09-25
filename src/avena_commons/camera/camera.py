@@ -201,7 +201,7 @@ class Camera(EventListener):
                     # Send light control event to supervisor
                     await self._send_light_event_to_supervisor(light_intensity)
                     # Request current position for accurate transformation
-                    # await self._get_current_position_of_supervisor()
+                    await self._get_current_position_of_supervisor()
                     self.camera.set_postprocess_configuration(
                         detector="box_detector",
                         configuration=self.__pipelines_config["box_detector"],
@@ -210,7 +210,7 @@ class Camera(EventListener):
                     light_intensity = self._calculate_light_intensity(event)
                     await self._send_light_event_to_supervisor(light_intensity)
                     # Request current position for accurate transformation
-                    # await self._get_current_position_of_supervisor()
+                    await self._get_current_position_of_supervisor()
                     self.camera.set_postprocess_configuration(
                         detector="qr_detector",
                         configuration=self.__pipelines_config["qr_detector"],
@@ -225,6 +225,7 @@ class Camera(EventListener):
                             f"Updated supervisor position: {self.supervisor_position}",
                             self._message_logger,
                         )
+                        return True
                 case _:
                     if event.result is not None:
                         return True
@@ -447,15 +448,15 @@ class Camera(EventListener):
                             # Check qr_rotation and modify result if needed
                             qr_rotation = event.data.get("qr_rotation", False)
                             position = transform_camera_to_base(
+                                list(qr_result),  # Convert tuple to list
                                 self.supervisor_position,
-                                qr_result,
                                 self.__camera_config["camera_tool_offset"],
                                 is_rotation=qr_rotation,
                             )
                             event.result = Result(result="success")
                             event.data = position
                             debug(
-                                f"Zwrócono wynik dla QR {requested_qr}: {qr_result}",
+                                f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
                                 self._message_logger,
                             )
                         else:
@@ -469,8 +470,8 @@ class Camera(EventListener):
                     elif isinstance(result, list) and len(result) > 0:
                         event.result = Result(result="success")
                         position = transform_camera_to_base(
-                            self.supervisor_position,
                             result,
+                            self.supervisor_position,
                             self.__camera_config["camera_tool_offset"],
                         )
                         event.data = position
