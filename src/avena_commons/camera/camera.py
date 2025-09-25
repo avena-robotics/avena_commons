@@ -97,7 +97,6 @@ class Camera(EventListener):
             raise ValueError(f"Brak konfiguracji CAMERA_IP dla kamery")
         self.camera_address = self.__camera_config["camera_ip"]
 
-        self.camera_running = False
         self._port = port
         self._address = address
         self.supervisor_position = [
@@ -236,7 +235,12 @@ class Camera(EventListener):
         global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
         debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
         with Catchtime() as t2:
-            self.camera.start()
+            if self.camera.get_state() not in [
+                CameraState.STARTING,
+                CameraState.STARTED,
+                CameraState.RUNNING,
+            ]:
+                self.camera.start()
         global_timing_stats.add_measurement("camera_start", t2.ms)
         debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
         return True
