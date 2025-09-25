@@ -29,6 +29,7 @@ from avena_commons.event_listener import (
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.util.timing_stats import global_timing_stats
+from avena_commons.vision.validation.transfor_to_base import transform_camera_to_base
 
 load_dotenv(override=True)
 
@@ -97,6 +98,14 @@ class Camera(EventListener):
         self.camera_address = self.__camera_config["camera_ip"]
 
         self.camera_running = False
+        self.supervisor_position = [
+            177.5,
+            -780.0,
+            510.0,
+            180.0,
+            0.0,
+            180.0,
+        ]  # Domyślna pozycja supervisora
 
         # Bufory dla synchronizacji ramek
         self.latest_color_frame = None
@@ -134,7 +143,6 @@ class Camera(EventListener):
         """Metoda wywoływana podczas przejścia w stan STARTING.
         Tu komponent przygotowuje się do uruchomienia głównych operacji."""
         # Uruchom kamerę
-        # TODO: Odpowiedź na eventy aby wiedzieć, który postprocess użyć
         # self.camera.set_postprocess_configuration(
         #     detector="qr_detector",
         #     configuration=self.__pipelines_config["qr_detector"],
@@ -245,6 +253,7 @@ class Camera(EventListener):
                     ),
                     event_type="light_on",
                     data={"intensity": light_intensity},
+                    is_processing=False,
                 )
                 info(
                     f"Wysłano event light_on z intensywnością {light_intensity}% do supervisor_{self.current_supervisor_number}",
@@ -263,6 +272,7 @@ class Camera(EventListener):
                     event_type="light_off",
                     id=self.current_product_id,
                     data={},
+                    is_processing=False,
                 )
                 info(
                     f"Wysłano event light_off do supervisor_{self.current_supervisor_number}",
@@ -270,6 +280,29 @@ class Camera(EventListener):
                 )
         except Exception as e:
             error(f"Błąd podczas wysyłania light_on event: {e}", self._message_logger)
+
+    async def _get_current_position_to_supervisor(self):
+        """Wysyła zapytania o aktualną pozycję supervisora."""
+        try:
+            await self._event(
+                destination=f"supervisor_{self.current_supervisor_number}",
+                destination_address=os.getenv(
+                    f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_ADDRESS"
+                ),
+                destination_port=os.getenv(
+                    f"SUPERVISOR_{self.current_supervisor_number}_LISTENER_PORT"
+                ),
+                event_type="current_position",
+            )
+            info(
+                f"Wysłano event z zapytaniem current_position do supervisor_{self.current_supervisor_number}",
+                self._message_logger,
+            )
+        except Exception as e:
+            error(
+                f"Błąd podczas wysyłania current_position event: {e}",
+                self._message_logger,
+            )
 
     # async def _handle_event(self, event):
     #     match event.event_type:
@@ -314,6 +347,9 @@ class Camera(EventListener):
                         self._message_logger,
                     )
                     with Catchtime() as ct:
+                        self.supervisor_position = (
+                            await self._get_current_position_to_supervisor()
+                        )
                         confirmed = self.camera.run_postprocess_workers(last_frame)
                         if not confirmed:
                             error(
@@ -330,7 +366,6 @@ class Camera(EventListener):
                             )
                             await self._reply(event)
                             self.set_state(EventListenerState.ON_ERROR)
-
                     global_timing_stats.add_measurement(
                         "camera_run_postprocess_workers", ct.ms
                     )
@@ -371,10 +406,14 @@ class Camera(EventListener):
 
                             # Check qr_rotation and modify result if needed
                             qr_rotation = event.data.get("qr_rotation", False)
-                            if not qr_rotation:
-                                qr_result[3:6] = [0.0, 0.0, 0.0]  # Set rotation to zero
+                            position = transform_camera_to_base(
+                                self.supervisor_position,
+                                qr_result,
+                                self.__camera_config["camera_tool_offset"],
+                                is_rotation=qr_rotation,
+                            )
                             event.result = Result(result="success")
-                            event.data = qr_result
+                            event.data = position
                             debug(
                                 f"Zwrócono wynik dla QR {requested_qr}: {qr_result}",
                                 self._message_logger,
@@ -389,7 +428,12 @@ class Camera(EventListener):
                         await self._reply(event)
                     elif isinstance(result, list) and len(result) > 0:
                         event.result = Result(result="success")
-                        event.data = result
+                        position = transform_camera_to_base(
+                            self.supervisor_position,
+                            result,
+                            self.__camera_config["camera_tool_offset"],
+                        )
+                        event.data = position
                         await self._reply(event)
                     else:
                         debug(
