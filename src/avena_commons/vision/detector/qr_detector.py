@@ -1,4 +1,6 @@
+import os
 import traceback
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
@@ -272,6 +274,23 @@ def qr_detector(
                     # Ustaw z = 0.0 dla wszystkich wykryć w przypadku błędu
                     for detection in detections:
                         detection.z = 0.0
+            # Stwórz wizualizację wykrytych tagów
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                debug_dir = "temp/debug_frames"
+                os.makedirs(debug_dir, exist_ok=True)
+
+                if detections and len(detections) > 0:
+                    detection_visualization = create_qr_detection_visualization(
+                        frame["color"], detections, timestamp, debug_dir
+                    )
+                    debug_data["qr_detection_visualization"] = detection_visualization
+                    print(f"DEBUG: Stworzono wizualizację dla {len(detections)} tagów")
+                else:
+                    print("DEBUG: Brak tagów do wizualizacji")
+
+            except Exception as viz_error:
+                print(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
 
             # debug(
             #     f"QR DETECTOR: Successfully processed mode '{mode}', found {len(detections) if detections else 0} detections"
@@ -510,3 +529,95 @@ def _process_tag_reconstruction_mode(
         # error(f"QR DETECTOR: Tag reconstruction mode processing failed: {e}")
         # error(f"QR DETECTOR: Tag reconstruction traceback: {traceback.format_exc()}")
         return None
+
+
+def create_qr_detection_visualization(color_image, detections, timestamp, debug_dir):
+    """Tworzy wizualizację wykrytych QR/AprilTag z numerami pozycji w siatce.
+
+    Rysuje krawędzie wykrytych tagów i ich numery pozycji w siatce sortującej.
+
+    Args:
+        color_image: Obraz kolorowy z kamery
+        detections: Lista wykrytych tagów AprilTag
+        timestamp: Znacznik czasu dla nazwy pliku
+        debug_dir: Katalog do zapisu plików debug
+
+    Returns:
+        numpy.ndarray: Obraz z naniesioną wizualizacją zawierającą:
+            - Krawędzie tagów (niebieskie linie)
+            - Centrum tagów (czerwone kółko)
+            - Numery pozycji w siatce (zielony tekst)
+    """
+    # Import funkcji sortującej
+    from avena_commons.vision.sorter import sort_qr_by_center_position
+
+    # Skopiuj obraz kolorowy aby nie modyfikować oryginału
+    vis_image = color_image.copy()
+
+    if not detections:
+        print("DEBUG: Brak wykrytych tagów do wizualizacji")
+        return vis_image
+
+    print(f"DEBUG: Wizualizacja {len(detections)} wykrytych tagów")
+
+    # Posortuj wykrycia według pozycji w siatce
+    sorted_detections = sort_qr_by_center_position(4, detections)
+
+    # Stwórz mapę detection -> pozycja dla łatwiejszego wyszukiwania
+    detection_to_position = {}
+    for position, detection in sorted_detections.items():
+        if detection is not None:
+            detection_to_position[id(detection)] = position
+
+    # Kolory dla wizualizacji (BGR format dla OpenCV)
+    line_color = (255, 0, 0)  # Niebieski dla linii krawędzi
+    center_color = (0, 0, 255)  # Czerwony dla centrum
+    text_color = (0, 255, 0)  # Zielony dla tekstu pozycji
+
+    for detection in detections:
+        # Pobierz dane z wykrycia
+        center = detection.center
+        corners = detection.corners
+
+        # Konwertuj do int
+        center_int = (int(center[0]), int(center[1]))
+        corners_int = [(int(corner[0]), int(corner[1])) for corner in corners]
+
+        # Znajdź pozycję tego wykrycia w siatce
+        position = detection_to_position.get(id(detection), "?")
+
+        print(
+            f"DEBUG: Tag {detection.tag_id} - Center: {center_int}, Pozycja: {position}, Corners: {corners_int}"
+        )
+
+        # Narysuj centrum jako wypełnione koło
+        cv2.circle(vis_image, center_int, 5, center_color, -1)
+
+        # Połącz corners liniami aby stworzyć prostokąt
+        for i in range(len(corners_int)):
+            start_point = corners_int[i]
+            end_point = corners_int[
+                (i + 1) % len(corners_int)
+            ]  # Następny punkt (z wraparound)
+            cv2.line(vis_image, start_point, end_point, line_color, 2)
+
+        # Dodaj numer pozycji w siatce obok centrum
+        text_position = (center_int[0] + 15, center_int[1] - 15)
+        cv2.putText(
+            vis_image,
+            str(position),
+            text_position,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,  # Rozmiar czcionki
+            text_color,
+            3,  # Grubość
+            cv2.LINE_AA,
+        )
+
+    # Zapisz wizualizację
+    vis_filename = f"{debug_dir}/qr_detection_visualization_{timestamp}.jpg"
+    cv2.imwrite(vis_filename, vis_image)
+
+    print(f"DEBUG: Wizualizacja QR z numerami pozycji zapisana do {vis_filename}")
+
+    return vis_image
