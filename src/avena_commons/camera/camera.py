@@ -242,7 +242,6 @@ class Camera(EventListener):
         if event.event_type in ["take_photo_box", "take_photo_qr"]:
             self._current_event = event
             self._add_to_processing(event)
-            debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
 
             if self.camera.get_state() not in [
                 CameraState.STARTING,
@@ -343,8 +342,8 @@ class Camera(EventListener):
                 event_type="current_position",
                 id=self.current_product_id,
                 data={},
-                to_be_processed=True,
-                maximum_processing_time=35.0,
+                to_be_processed=False,
+                maximum_processing_time=5.0,
             )
             info(
                 f"Wysłano event z zapytaniem current_position do supervisor_{self.current_supervisor_number}",
@@ -484,7 +483,8 @@ class Camera(EventListener):
                         )
                         event.data = position
                         debug(
-                            f"Zwrócono wynik: position{position}", self._message_logger
+                            f"Zwrócono wynik dla BOX: position{position}, result: {result}",
+                            self._message_logger,
                         )
                         await self._reply(event)
                     else:

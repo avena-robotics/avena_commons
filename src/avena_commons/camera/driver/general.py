@@ -267,6 +267,7 @@ class GeneralCameraWorker(Worker):
         try:
             self.state = CameraState.STARTING
             await self.start()
+            self.last_frame = None
             self.state = CameraState.STARTED
             return True
         except Exception as e:
@@ -289,6 +290,7 @@ class GeneralCameraWorker(Worker):
         try:
             self.state = CameraState.STOPPING
             await self.stop()
+            self.last_frame = None
             self.state = CameraState.STOPPED
             return True
         except Exception as e:
