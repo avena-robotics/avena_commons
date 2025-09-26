@@ -56,16 +56,20 @@ class Camera(EventListener):
         address: str,
         port: str,
         message_logger: MessageLogger | None = None,
-        do_not_load_state: bool = False,
+        load_state: bool = False,
     ):
         """
-        Initializes the Camera with necessary configurations and state.
+        Inicjalizuje kamerę z niezbędną konfiguracją i stanem.
 
         Args:
-            message_logger (Optional[MessageLogger]): Logger for logging messages.
+            name (str): Nazwa event listenera kamery.
+            address (str): Adres IP event listenera kamery.
+            port (str): Port event listenera kamery.
+            message_logger (MessageLogger | None): Logger do zapisywania wiadomości; domyślnie None.
+            load_state (bool): Flaga ładowania stanu (obecnie nieużywana); domyślnie False.
 
         Raises:
-            ValueError: If required environment variables are missing.
+            ValueError: Gdy brak wymaganej zmiennej środowiskowej CAMERA_LISTENER_PORT lub CAMERA_IP.
         """
 
         if not port:
