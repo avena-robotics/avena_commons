@@ -546,7 +546,6 @@ async def _check_local_data(self):
 # Logowanie z pomiarami czasu
 with Catchtime() as t:
     last_frame = self.camera.get_last_frame()
-global_timing_stats.add_measurement("camera_get_last_frame", t.ms)
 debug(f"Get last frame time: {t.ms:.5f}ms", self._message_logger)
 
 # Logowanie błędów z kontekstem
@@ -554,13 +553,6 @@ error(f"Błąd podczas uruchamiania workerów: {e}", self._message_logger)
 error(f"Traceback: {traceback.format_exc()}", self._message_logger)
 ```
 
-#### Statystyki Wydajności
-```python
-# Globalne pomiary czasu
-global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
-global_timing_stats.add_measurement("camera_start", t2.ms) 
-global_timing_stats.add_measurement("camera_run_postprocess_workers", ct.ms)
-```
 
 ## Konfiguracja i Zmienne Środowiskowe
 

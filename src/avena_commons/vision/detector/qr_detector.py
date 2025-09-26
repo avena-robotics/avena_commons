@@ -11,7 +11,6 @@ import avena_commons.vision.tag_reconstruction as tag_reconstruction
 import avena_commons.vision.vision as vision
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import debug, error
-from avena_commons.util.timing_stats import global_timing_stats
 
 # Global detector cache dla optymalizacji
 _DETECTOR_CACHE = None
@@ -127,7 +126,6 @@ def qr_detector(
                     # error("QR DETECTOR: Failed to initialize detector")
                     return None, debug_data
 
-            global_timing_stats.add_measurement("qr_detector_initialization", t.ms)
             # debug(f"QR DETECTOR: Detector ready in {t.ms:.4f} ms")
 
             # Przygotowanie parametrów kamery
@@ -168,10 +166,6 @@ def qr_detector(
                     debug_data["qr_image_undistorted_darkened"] = (
                         qr_image_undistorted_darkened
                     )
-
-                global_timing_stats.add_measurement(
-                    "qr_detector_preprocessing", preprocess_time.ms
-                )
 
             except Exception as e:
                 # error(f"QR DETECTOR: Image preprocessing failed: {e}")
@@ -231,10 +225,6 @@ def qr_detector(
                     else:
                         # error(f"QR DETECTOR: Invalid mode: {mode}")
                         return None, debug_data
-
-                global_timing_stats.add_measurement(
-                    f"qr_detector_mode_{mode}", detection_time.ms
-                )
 
             except Exception as e:
                 # error(f"QR DETECTOR: Detection failed in mode '{mode}': {e}")
@@ -310,9 +300,6 @@ def qr_detector(
             # error(f"QR DETECTOR: Unexpected error: {e}")
             # error(f"QR DETECTOR: Traceback: {traceback.format_exc()}")
             return None, debug_data
-
-    # Zapisz całkowity czas wykonywania funkcji
-    global_timing_stats.add_measurement("qr_detector_total", total_time.ms)
 
 
 def _process_gray_mode(
