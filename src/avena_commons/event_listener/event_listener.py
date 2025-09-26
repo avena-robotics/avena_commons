@@ -1207,7 +1207,10 @@ class EventListener:
                     try:
                         await self._check_local_data()
                     except Exception as e:
-                        error(f"Error in check_local_data: {e}")
+                        error(
+                            f"Error in check_local_data: {e}",
+                            message_logger=self._message_logger,
+                        )
                         self._change_fsm_state(EventListenerState.ON_ERROR)
 
                     if (
