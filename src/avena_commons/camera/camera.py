@@ -120,6 +120,9 @@ class Camera(EventListener):
         self.current_supervisor_number = 1
         self.current_product_id = 0
 
+        # Photo processing state management
+        self._is_processing_photo = False
+
         debug(
             f"EVENT_LISTENER_INIT: Event listener kamery został zainicjalizowany dla ip {self.camera_address}",
             self._message_logger,
@@ -166,6 +169,12 @@ class Camera(EventListener):
 
     async def on_stopping(self):
         self.camera.stop()
+        # Reset processing flag when stopping
+        self._is_processing_photo = False
+        debug(
+            "Camera stopping, reset processing flag",
+            self._message_logger,
+        )
 
     async def on_stopped(self):
         self.fsm_state = EventListenerState.INITIALIZING
@@ -196,25 +205,47 @@ class Camera(EventListener):
             # Extract try_number and supervisor info from event data
 
             match event.event_type:
-                case "take_photo_box":
-                    light_intensity = self._calculate_light_intensity(event)
-                    # Send light control event to supervisor
-                    await self._send_light_event_to_supervisor(light_intensity)
-                    # Request current position for accurate transformation
-                    await self._get_current_position_of_supervisor()
-                    self.camera.set_postprocess_configuration(
-                        detector="box_detector",
-                        configuration=self.__pipelines_config["box_detector"],
+                case "take_photo_box" | "take_photo_qr":
+                    # Sprawdź czy kamera już przetwarza zdjęcie
+                    if self._is_processing_photo:
+                        debug(
+                            f"Camera is already processing photo, rejecting event {event.event_type}",
+                            self._message_logger,
+                        )
+                        event.result = Result(
+                            result="failure",
+                            error_message="Camera is already processing photo. Please wait for current processing to complete.",
+                        )
+                        await self._reply(event)
+                        return True
+
+                    # Ustaw flagę przetwarzania
+                    self._is_processing_photo = True
+                    debug(
+                        f"Starting photo processing for event {event.event_type}",
+                        self._message_logger,
                     )
-                case "take_photo_qr":
+
                     light_intensity = self._calculate_light_intensity(event)
-                    await self._send_light_event_to_supervisor(light_intensity)
-                    # Request current position for accurate transformation
-                    await self._get_current_position_of_supervisor()
-                    self.camera.set_postprocess_configuration(
-                        detector="qr_detector",
-                        configuration=self.__pipelines_config["qr_detector"],
-                    )
+
+                    if event.event_type == "take_photo_box":
+                        # Send light control event to supervisor
+                        await self._send_light_event_to_supervisor(light_intensity)
+                        # Request current position for accurate transformation
+                        await self._get_current_position_of_supervisor()
+                        self.camera.set_postprocess_configuration(
+                            detector="box_detector",
+                            configuration=self.__pipelines_config["box_detector"],
+                        )
+                    else:  # take_photo_qr
+                        await self._send_light_event_to_supervisor(light_intensity)
+                        # Request current position for accurate transformation
+                        await self._get_current_position_of_supervisor()
+                        self.camera.set_postprocess_configuration(
+                            detector="qr_detector",
+                            configuration=self.__pipelines_config["qr_detector"],
+                        )
+
                 case "current_position":
                     if event.result and event.result.result == "success" and event.data:
                         # Zapisz otrzymaną pozycję
@@ -231,19 +262,23 @@ class Camera(EventListener):
                         return True
                     debug(f"Nieznany event {event.event_type}", self._message_logger)
                     return False
-        self._current_event = event
-        self._add_to_processing(event)
-        global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
-        debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
-        with Catchtime() as t2:
-            if self.camera.get_state() not in [
-                CameraState.STARTING,
-                CameraState.STARTED,
-                CameraState.RUNNING,
-            ]:
-                self.camera.start()
-        global_timing_stats.add_measurement("camera_start", t2.ms)
-        debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
+
+        # Kontynuuj tylko dla eventów fotograficznych
+        if event.event_type in ["take_photo_box", "take_photo_qr"]:
+            self._current_event = event
+            self._add_to_processing(event)
+            global_timing_stats.add_measurement("camera_analyze_event_setup", t.ms)
+            debug(f"analiz event setup time: {t.ms:.5f} s", self._message_logger)
+            with Catchtime() as t2:
+                if self.camera.get_state() not in [
+                    CameraState.STARTING,
+                    CameraState.STARTED,
+                    CameraState.RUNNING,
+                ]:
+                    self.camera.start()
+            global_timing_stats.add_measurement("camera_start", t2.ms)
+            debug(f"camera start time: {t2.ms:.5f} s", self._message_logger)
+
         return True
 
     def _calculate_light_intensity(self, event: Event) -> int:
@@ -401,6 +436,14 @@ class Camera(EventListener):
                             )
                             self.camera.stop()
                             await self._send_light_event_to_supervisor(0)
+
+                            # Reset processing flag on error
+                            self._is_processing_photo = False
+                            debug(
+                                f"Photo processing failed, reset processing flag",
+                                self._message_logger,
+                            )
+
                             event: Event = self._find_and_remove_processing_event(
                                 event=self._current_event
                             )
@@ -437,6 +480,14 @@ class Camera(EventListener):
                     event: Event = self._find_and_remove_processing_event(
                         event=self._current_event
                     )
+
+                    # Reset processing flag before sending response
+                    self._is_processing_photo = False
+                    debug(
+                        f"Photo processing completed, reset processing flag",
+                        self._message_logger,
+                    )
+
                     if isinstance(result, dict) and any(
                         v is not None for v in result.values()
                     ):
@@ -445,20 +496,29 @@ class Camera(EventListener):
                         if requested_qr in result:
                             qr_result = result.get(requested_qr)
 
-                            # Check qr_rotation and modify result if needed
-                            qr_rotation = event.data.get("qr_rotation", False)
-                            position = transform_camera_to_base(
-                                list(qr_result),  # Convert tuple to list
-                                self.supervisor_position,
-                                self.__camera_config["camera_tool_offset"],
-                                is_rotation=qr_rotation,
-                            )
-                            event.result = Result(result="success")
-                            event.data = position
-                            debug(
-                                f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
-                                self._message_logger,
-                            )
+                            # Check if qr_result is not None
+                            if qr_result is not None:
+                                # Check qr_rotation and modify result if needed
+                                qr_rotation = event.data.get("qr_rotation", False)
+                                position = transform_camera_to_base(
+                                    list(qr_result),  # Convert tuple to list
+                                    self.supervisor_position,
+                                    self.__camera_config["camera_tool_offset"],
+                                    is_rotation=qr_rotation,
+                                )
+                                event.result = Result(result="success")
+                                event.data = position
+                                debug(
+                                    f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
+                                    self._message_logger,
+                                )
+                            else:
+                                debug(
+                                    f"Wartość dla QR {requested_qr} jest None",
+                                    self._message_logger,
+                                )
+                                event.result = Result(result="failure")
+                                event.data = {}
                         else:
                             debug(
                                 f"Brak detekcji dla QR {requested_qr} w wyniku",
@@ -467,14 +527,17 @@ class Camera(EventListener):
                             event.result = Result(result="failure")
                             event.data = {}
                         await self._reply(event)
-                    elif isinstance(result, list) and len(result) > 0:
+                    elif isinstance(result, tuple) and len(result) > 0:
                         event.result = Result(result="success")
                         position = transform_camera_to_base(
-                            result,
+                            list(result),
                             self.supervisor_position,
                             self.__camera_config["camera_tool_offset"],
                         )
                         event.data = position
+                        debug(
+                            f"Zwrócono wynik: position{position}", self._message_logger
+                        )
                         await self._reply(event)
                     else:
                         debug(

@@ -4,24 +4,22 @@ from typing import Any, Dict, List
 def sort_qr_by_center_position(
     expected_count: int,
     detections: List[Any],  # Lista detekcji AprilTag
-    middle_point_y: int = 540,
 ) -> Dict[int, Any]:
-    """Organizuje kody QR w siatce 2x2 na podstawie pozycji Y i kąta rotacji Z.
+    """Organizuje kody QR w siatce 2x2 na podstawie dynamicznych punktów podziału.
 
     Funkcja organizuje detekcje kodów QR w siatce 2x2 używając:
-    - Pozycji Y względem middle_point_y (górny/dolny rząd)
-    - Kąta rotacji Z dla określenia lewej/prawej strony
+    - Dynamicznej mediany pozycji Y dla podziału na górny/dolny rząd
+    - Dynamicznej mediany pozycji X dla podziału na lewą/prawą stronę
 
     Mapowanie pozycji:
-    - 1: Górny lewy (Y < middle_point_y, rot_z < 0)
-    - 2: Dolny lewy (Y >= middle_point_y, rot_z < 0)
-    - 3: Górny prawy (Y < middle_point_y, rot_z >= 0)
-    - 4: Dolny prawy (Y >= middle_point_y, rot_z >= 0)
+    - 1: Górny lewy (Y < middle_point_y, X < middle_point_x)
+    - 2: Dolny lewy (Y >= middle_point_y, X < middle_point_x)
+    - 3: Górny prawy (Y < middle_point_y, X >= middle_point_x)
+    - 4: Dolny prawy (Y >= middle_point_y, X >= middle_point_x)
 
     Args:
         expected_count: Liczba spodziewanych kodów QR (1-4)
-        detections: Lista detekcji AprilTag (musi mieć atrybuty .center i .pose_R lub rot_z)
-        middle_point_y: Punkt podziału Y dla górnego i dolnego rzędu (domyślnie 540)
+        detections: Lista detekcji AprilTag (musi mieć atrybuty .center)
 
     Returns:
         Dict[int, Any]: Słownik z kluczami 1-4 zawierający detekcje w pozycjach siatki.
@@ -32,7 +30,7 @@ def sort_qr_by_center_position(
 
     Example:
         >>> detections = [detection1, detection2, detection3]
-        >>> result = sort_qr_by_center_position(3, detections, middle_point_y=500)
+        >>> result = sort_qr_by_center_position(3, detections)
         >>> print(f"Górny lewy: {result[1]}")
         >>> print(f"Dolny lewy: {result[2]}")
     """
@@ -45,41 +43,44 @@ def sort_qr_by_center_position(
     # Inicjalizuj wynik
     result = {1: None, 2: None, 3: None, 4: None}
 
-    for detection in detections:
+    # Oblicz dynamiczne punkty podziału X i Y dla wszystkich tagów
+    if len(detections) <= 1:
+        # Dla pojedynczego tagu użyj centrum obrazu
+        middle_point_x = 1280 // 2  # 640
+        middle_point_y = 800 // 2  # 400 dla obrazu 800p
+    else:
+        # Oblicz medianę pozycji X wszystkich tagów
+        x_positions = [det.center[0] for det in detections]
+        x_positions.sort()
+        middle_point_x = x_positions[len(x_positions) // 2]
+
+        # Oblicz medianę pozycji Y wszystkich tagów
+        y_positions = [det.center[1] for det in detections]
+        y_positions.sort()
+        middle_point_y = y_positions[len(y_positions) // 2]
+    for i, detection in enumerate(detections):
         y = detection.center[1]
+        x = detection.center[0]
 
-        # Pobierz kąt rotacji Z - sprawdź różne możliwe atrybuty
-        rot_z = 0
-        if hasattr(detection, "pose_R") and detection.pose_R is not None:
-            # Jeśli mamy macierz rotacji, wyciągnij kąt Z
-            try:
-                from avena_commons.util.utils import rotation_matrix_to_euler_angles
+        is_left = x < middle_point_x
+        is_top = y < middle_point_y
 
-                rot_z = rotation_matrix_to_euler_angles(detection.pose_R)[2]
-            except (ImportError, AttributeError):
-                # Fallback - użyj współrzędnej X jako przybliżenia kierunku
-                rot_z = 1 if detection.center[0] > (1280 // 2) else -1
-        elif hasattr(detection, "rot_z"):
-            rot_z = detection.rot_z
-        elif hasattr(detection, "rotation_z"):
-            rot_z = detection.rotation_z
-        else:
-            # Fallback - użyj pozycji X jako przybliżenia kierunku
-            # Jeśli X > połowa szerokości, zakładamy prawą stronę (rot_z >= 0)
-            rot_z = 1 if detection.center[0] > (1280 // 2) else -1
-
-        # Określ pozycję w siatce 2x2
-        if y < middle_point_y:
+        # Określ pozycję w siatce 2x2 na podstawie Y (góra/dół) i X (lewy/prawy)
+        if is_top:
             # Górny rząd
-            if rot_z < 0:
+            if is_left:
+                position = 1
                 result[1] = detection  # Górny lewy
             else:
+                position = 3
                 result[3] = detection  # Górny prawy
         else:
             # Dolny rząd
-            if rot_z < 0:
+            if is_left:
+                position = 2
                 result[2] = detection  # Dolny lewy
             else:
+                position = 4
                 result[4] = detection  # Dolny prawy
 
     return result
