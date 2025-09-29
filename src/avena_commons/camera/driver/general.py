@@ -43,8 +43,8 @@ class CameraState(Enum):
     Enum odzwierciedla cykl życia urządzenia od bezczynności po błąd.
 
     Przykład:
-        >>> state = CameraState.IDLE
-        >>> state.name
+        state = CameraState.IDLE
+        state.name
         'IDLE'
 
     See Also:
@@ -71,9 +71,9 @@ class GeneralCameraWorker(Worker):
     procesach poprzez `ProcessPoolExecutor`.
 
     Przykład:
-        >>> import asyncio
-        >>> from avena_commons.util.logger import MessageLogger
-        >>> worker = GeneralCameraWorker(message_logger=MessageLogger())
+        import asyncio
+        from avena_commons.util.logger import MessageLogger
+        worker = GeneralCameraWorker(message_logger=MessageLogger())
         >>> async def demo():
         ...     await worker.init({})
         ...     await worker.start()
@@ -1011,6 +1011,7 @@ class GeneralCameraWorker(Worker):
                                     message_logger=self._message_logger,
                                 )
                                 pipe_in.send(False)
+                                
                         case "RUN_POSTPROCESS":
                             try:
                                 debug(
@@ -1080,7 +1081,7 @@ class GeneralCameraWorker(Worker):
                 f"{self.device_name} - Worker has shut down",
                 message_logger=self._message_logger,
             )
-
+            
 
 class GeneralCameraConnector(Connector):
     """Wątkowo-bezpieczny łącznik do `GeneralCameraWorker`.
@@ -1089,15 +1090,15 @@ class GeneralCameraConnector(Connector):
     przez pipe do procesu workera.
 
     Przykład:
-        >>> connector = GeneralCameraConnector()
-        >>> hasattr(connector, 'init') and hasattr(connector, 'start')
+        connector = GeneralCameraConnector()
+        hasattr(connector, 'init') and hasattr(connector, 'start')
         True
 
     See Also:
         - `GeneralCameraWorker`: implementacja logiki asynchronicznej.
     """
 
-    def __init__(self, message_logger: Optional[MessageLogger] = None):
+    def __init__(self, core, message_logger: Optional[MessageLogger] = None):
         """Utwórz konektor z opcjonalnym loggerem.
 
         Args:
@@ -1111,25 +1112,9 @@ class GeneralCameraConnector(Connector):
             True
         """
         self.__lock = threading.Lock()
+        super().__init__(core=core, message_logger=message_logger)
+        super()._connect()
         self._local_message_logger = message_logger
-
-    def _run(self, pipe_in):
-        """Uruchom pętlę workera w tym procesie.
-
-        Tworzy instancję `GeneralCameraWorker` i wykonuje jego pętlę.
-
-        Args:
-            pipe_in: Końcówka pipe do komunikacji z workerem.
-
-        Returns:
-            None
-
-        Przykład:
-            Metoda wykorzystywana przez infrastrukturę `Connector`.
-        """
-        self.__lock = threading.Lock()
-        worker = GeneralCameraWorker(message_logger=None)
-        asyncio.run(worker._run(pipe_in))
 
     def init(self, configuration: dict = {}):
         """

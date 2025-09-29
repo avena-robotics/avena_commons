@@ -69,11 +69,10 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             True
         """
         self.__camera_ip = camera_ip
-        # NIE przechowuj MessageLogger - zostanie przekazany przez args w _run
+        # NIE przechowuj MessageLogger - zostanie przekazany przez args w _run, jako lokalny dla workera
         self._message_logger = None
         self.device_name = f"OrbecGemini335Le_{camera_ip}"
-        # Przekaż None do super() - logger zostanie ustawiony w _run
-        super().__init__(message_logger=message_logger)
+        super().__init__(message_logger=None)
 
         self.align_filter = None
         self.spatial_filter = None
@@ -625,7 +624,7 @@ class OrbecGemini335Le(GeneralCameraConnector):
     See Also:
         - `OrbecGemini335LeWorker`: logika asynchroniczna i przetwarzanie ramek.
     """
-    def __init__(self, camera_ip: str, message_logger: Optional[MessageLogger] = None):
+    def __init__(self, camera_ip: str, core: int = 8, message_logger: Optional[MessageLogger] = None):
         """Utwórz konektor i uruchom proces workera.
 
         Args:
@@ -640,14 +639,9 @@ class OrbecGemini335Le(GeneralCameraConnector):
             True
         """
         self.camera_ip = camera_ip
-        super().__init__(message_logger=message_logger)
-        self._pipe_out, _pipe_in = multiprocessing.Pipe()
-        self._process = multiprocessing.Process(
-            target=self._run, args=(_pipe_in, camera_ip, None)
-        )
-        self._process.start()
+        super().__init__(core=core, message_logger=message_logger)
 
-    def _run(self, pipe_in, camera_ip, message_logger=None):
+    def _run(self, pipe_in, message_logger=None):
         """Uruchom pętlę workera Orbbec w procesie potomnym.
 
         Args:
@@ -662,6 +656,6 @@ class OrbecGemini335Le(GeneralCameraConnector):
             Metoda wykorzystywana przez proces — nie wywołuj bezpośrednio.
         """
         worker = OrbecGemini335LeWorker(
-            camera_ip=camera_ip, message_logger=message_logger
+            camera_ip=self.camera_ip, message_logger=message_logger
         )
         asyncio.run(worker._run(pipe_in))
