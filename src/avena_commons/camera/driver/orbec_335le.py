@@ -503,11 +503,16 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             True
         """
         try:
+            def _sync_grab_frames():
+                return self.camera_pipeline.wait_for_frames(3)
+            
+            # Wykonaj synchroniczną operację w thread pool
+            loop = asyncio.get_event_loop()
             # Pobierz oryginalne ramki (zawsze FrameSet)
-            frames = self.camera_pipeline.wait_for_frames(3)
+            frames = await loop.run_in_executor(None, _sync_grab_frames)
+            
             if frames is None:
                 return None
-    
 
             # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
             frame_color = frames.get_color_frame()
@@ -518,7 +523,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 return None
 
             self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
-            debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
+            # debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
 
             # Zastosuj filtry na kopii
             if self.align_filter:

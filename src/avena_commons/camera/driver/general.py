@@ -12,6 +12,7 @@ from typing import Optional
 
 import avena_commons.vision.merge as merge
 import avena_commons.vision.sorter as sorter
+from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import (
     LoggerPolicyPeriod,
@@ -810,9 +811,18 @@ class GeneralCameraWorker(Worker):
             error(f"Błąd podczas tworzenia workerów: {e}", self._message_logger)
             self.executor = None
             return False
+    
+    def _run(self, pipe_in):
+        """Synchroniczna pętla pipe"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_run(pipe_in))
+        finally:
+            loop.close()
 
-    async def _run(self, pipe_in):
-        """Główna pętla workera nasłuchująca komend przez pipe.
+    async def _async_run(self, pipe_in):
+        """Główna pętla workera ASYNCHRONICZNA nasłuchująca komend przez pipe.
 
         Odpowiada za obsługę komend kontrolnych oraz cykliczne
         pobieranie ramek i ewentualny postprocess.
@@ -842,6 +852,8 @@ class GeneralCameraWorker(Worker):
             files_count=10,
             colors=False,
         )
+        
+        # loop = ControlLoop(name=f"{self.device_name}_main_loop", period=1 / 500)
 
         debug(
             f"{self.device_name} - Worker started with local logger",
@@ -850,7 +862,7 @@ class GeneralCameraWorker(Worker):
 
         try:
             while True:
-                if pipe_in.poll(0.0005):
+                if pipe_in.poll(0.0001):
                     data = pipe_in.recv()
                     response = None
                     match data[0]:
@@ -1019,17 +1031,9 @@ class GeneralCameraWorker(Worker):
                                     self._message_logger,
                                 )
                                 frames = data[1]
-                                # results = await self._run_image_processing_workers(
-                                #     frames
-                                # )
-                                # pipe_in.send(results)
-                                run_thread = threading.Thread(
-                                    target=asyncio.run,
-                                    args=(self._run_image_processing_workers(frames),),
-                                )
+                                # Użyj current event loop zamiast tworzenia nowego
+                                task = asyncio.create_task(self._run_image_processing_workers(frames))
                                 self.state = CameraState.RUNNING
-                                run_thread.start()
-
                                 pipe_in.send(True)
                             except Exception as e:
                                 error(
@@ -1115,6 +1119,11 @@ class GeneralCameraConnector(Connector):
         super().__init__(core=core, message_logger=message_logger)
         super()._connect()
         self._local_message_logger = message_logger
+        
+    def _run(self, pipe_in, message_logger=None):
+        """Uruchom worker w osobnym procesie."""
+        worker = GeneralCameraWorker(message_logger=message_logger)
+        asyncio.run(worker._run(pipe_in))
 
     def init(self, configuration: dict = {}):
         """
