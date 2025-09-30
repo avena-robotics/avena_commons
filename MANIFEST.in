@@ -1,3 +1,0 @@
-recursive-include avena_commons/system_dashboard/templates *
-recursive-include avena_commons/system_dashboard/static *
-recursive-include install *.whl
