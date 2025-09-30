@@ -417,6 +417,7 @@ class Camera(EventListener):
 
             case CameraState.RUNNING:
                 result = self.camera.get_last_result()
+                
                 if result is not None:
                     debug(
                         f"Otrzymano wynik z run_postprocess_workers: result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",
