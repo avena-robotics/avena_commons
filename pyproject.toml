@@ -78,3 +78,6 @@ line-length = 88
 
 [tool.setuptools.package-data]
 avena_commons = ["vision/data/*.png"]
+
+[tool.setuptools.data-files]
+"avena_commons/install" = ["install/*.whl"]

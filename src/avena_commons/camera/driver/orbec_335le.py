@@ -23,6 +23,7 @@ from pyorbbecsdk import (
     Pipeline,
     SpatialAdvancedFilter,
     TemporalFilter,
+    FrameSet,
     VideoStreamProfile,
 )
 
@@ -453,8 +454,9 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 )
                 raise ValueError("Config nie został zainicjalizowany")
 
-            self.camera_pipeline.start(self.camera_config)
+            self.camera_pipeline.start(self.camera_config, lambda frames: self._async_grab_frames(frames))
             return True
+        
         except Exception as e:
             error(f"{self.device_name} - Starting failed: {e}", self._message_logger)
             return False
@@ -479,6 +481,98 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         except Exception as e:
             error(f"{self.device_name} - Stopping failed: {e}", self._message_logger)
             return False
+    
+    def _async_grab_frames(self, frames: FrameSet):
+        if frames is None:
+            return None
+
+        # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
+        frame_color = frames.get_color_frame()
+        frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+
+        if frame_color is None or frame_depth is None:
+            debug("Brak jednej z ramek. Skip...", self._message_logger)
+            return None
+
+        self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
+        debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
+
+        # Zastosuj filtry na kopii
+        if self.align_filter:
+            aligned_frames = self.align_filter.process(frames)
+            aligned_frames = aligned_frames.as_frame_set()
+            frame_depth = aligned_frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+            debug("Filtr wyrównania zastosowany", self._message_logger)
+
+        if self.spatial_filter and frame_depth:
+            frame_depth = self.spatial_filter.process(frame_depth)
+            debug("Filtr przestrzenny zastosowany", self._message_logger)
+
+        if self.temporal_filter and frame_depth:
+            frame_depth = self.temporal_filter.process(frame_depth)
+            debug("Filtr czasowy zastosowany", self._message_logger)
+
+        # Sprawdzenie finalnych ramek
+        if frame_color is None or frame_depth is None:
+            debug("Jedna z ramek jest None po filtrach", self._message_logger)
+            return None
+
+        # Process color frame
+        color_image = None
+        if frame_color.get_format() == OBFormat.MJPG:
+            debug(
+                f"Dekodowanie MJPG ramki kolorowej {frame_color.get_width()}x{frame_color.get_height()}",
+                self._message_logger,
+            )
+
+            color_data = frame_color.get_data()
+            color_image = cv2.imdecode(
+                np.frombuffer(color_data, np.uint8), cv2.IMREAD_COLOR
+            )
+
+            if color_image is None:
+                error(
+                    f"Błąd dekodowania MJPG ramki kolorowej", self._message_logger
+                )
+                return None
+        else:
+            color_data = frame_color.get_data()
+            color_image = np.frombuffer(color_data, dtype=np.uint8).reshape((
+                frame_color.get_height(),
+                frame_color.get_width(),
+                3,
+            ))
+
+            if frame_color.get_format() == OBFormat.RGB:
+                color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+
+        depth_data = frame_depth.get_data()
+
+        try:
+            depth_image = np.frombuffer(depth_data, dtype=np.uint16).reshape((
+                frame_depth.get_height(),
+                frame_depth.get_width(),
+            ))
+
+            debug(
+                f"Pomyślnie utworzono ramkę głębi {frame_depth.get_width()}x{frame_depth.get_height()}",
+                self._message_logger,
+            )
+
+        except ValueError as reshape_error:
+            error(
+                f"ODRZUCAM RAMKĘ - błąd reshape ramki głębi: {reshape_error}. ",
+                self._message_logger,
+            )
+            return None
+
+        debug(
+            f"Utworzono obrazy - color: {color_image.shape if color_image is not None else None}, depth: {depth_image.shape}",
+            self._message_logger,
+        )
+
+        self.last_frame = {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
+        # return {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
 
     async def grab_frames_from_camera(self):
         """Pobierz i przygotuj ramki koloru i głębi z kamery.
@@ -502,117 +596,121 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             >>> True
             True
         """
-        try:
-            def _sync_grab_frames():
-                return self.camera_pipeline.wait_for_frames(3)
+        return self.last_frame
+        
+        # try:
+            # def _sync_grab_frames():
+            #     return self.camera_pipeline.wait_for_frames(3)
             
-            # Wykonaj synchroniczną operację w thread pool
-            loop = asyncio.get_event_loop()
-            # Pobierz oryginalne ramki (zawsze FrameSet)
-            frames = await loop.run_in_executor(None, _sync_grab_frames)
-            
-            if frames is None:
-                return None
+            # # Wykonaj synchroniczną operację w thread pool
+            # loop = asyncio.get_event_loop()
+            # # Pobierz oryginalne ramki (zawsze FrameSet)
+            # frames = await loop.run_in_executor(None, _sync_grab_frames)
 
-            # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
-            frame_color = frames.get_color_frame()
-            frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+            # def _async_grab_frames(self, frames: FrameSet):
+                
+            #     if frames is None:
+            #         return None
 
-            if frame_color is None or frame_depth is None:
-                debug("Brak jednej z ramek. Skip...", self._message_logger)
-                return None
+            #     # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
+            #     frame_color = frames.get_color_frame()
+            #     frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
 
-            self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
-            # debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
+            #     if frame_color is None or frame_depth is None:
+            #         debug("Brak jednej z ramek. Skip...", self._message_logger)
+            #         return None
 
-            # Zastosuj filtry na kopii
-            if self.align_filter:
-                aligned_frames = self.align_filter.process(frames)
-                aligned_frames = aligned_frames.as_frame_set()
-                frame_depth = aligned_frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
-                debug("Filtr wyrównania zastosowany", self._message_logger)
+            #     self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
+            #     # debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
 
-            if self.spatial_filter and frame_depth:
-                frame_depth = self.spatial_filter.process(frame_depth)
-                debug("Filtr przestrzenny zastosowany", self._message_logger)
+            #     # Zastosuj filtry na kopii
+            #     if self.align_filter:
+            #         aligned_frames = self.align_filter.process(frames)
+            #         aligned_frames = aligned_frames.as_frame_set()
+            #         frame_depth = aligned_frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+            #         debug("Filtr wyrównania zastosowany", self._message_logger)
 
-            if self.temporal_filter and frame_depth:
-                frame_depth = self.temporal_filter.process(frame_depth)
-                debug("Filtr czasowy zastosowany", self._message_logger)
+            #     if self.spatial_filter and frame_depth:
+            #         frame_depth = self.spatial_filter.process(frame_depth)
+            #         debug("Filtr przestrzenny zastosowany", self._message_logger)
 
-            # Sprawdzenie finalnych ramek
-            if frame_color is None or frame_depth is None:
-                debug("Jedna z ramek jest None po filtrach", self._message_logger)
-                return None
+            #     if self.temporal_filter and frame_depth:
+            #         frame_depth = self.temporal_filter.process(frame_depth)
+            #         debug("Filtr czasowy zastosowany", self._message_logger)
 
-            # debug(
-            #     f"Ramka kolorowa: format {frame_color.get_format()}",
-            #     self._message_logger,
-            # )
-            # debug(
-            #     f"Ramka głębi: format {frame_depth.get_format()}", self._message_logger
-            # )
+            #     # Sprawdzenie finalnych ramek
+            #     if frame_color is None or frame_depth is None:
+            #         debug("Jedna z ramek jest None po filtrach", self._message_logger)
+            #         return None
 
-            # Process color frame
-            color_image = None
-            if frame_color.get_format() == OBFormat.MJPG:
-                debug(
-                    f"Dekodowanie MJPG ramki kolorowej {frame_color.get_width()}x{frame_color.get_height()}",
-                    self._message_logger,
-                )
+            #     # debug(
+            #     #     f"Ramka kolorowa: format {frame_color.get_format()}",
+            #     #     self._message_logger,
+            #     # )
+            #     # debug(
+            #     #     f"Ramka głębi: format {frame_depth.get_format()}", self._message_logger
+            #     # )
 
-                color_data = frame_color.get_data()
-                color_image = cv2.imdecode(
-                    np.frombuffer(color_data, np.uint8), cv2.IMREAD_COLOR
-                )
+            #     # Process color frame
+            #     color_image = None
+            #     if frame_color.get_format() == OBFormat.MJPG:
+            #         debug(
+            #             f"Dekodowanie MJPG ramki kolorowej {frame_color.get_width()}x{frame_color.get_height()}",
+            #             self._message_logger,
+            #         )
 
-                if color_image is None:
-                    error(
-                        f"Błąd dekodowania MJPG ramki kolorowej", self._message_logger
-                    )
-                    return None
-            else:
-                color_data = frame_color.get_data()
-                color_image = np.frombuffer(color_data, dtype=np.uint8).reshape((
-                    frame_color.get_height(),
-                    frame_color.get_width(),
-                    3,
-                ))
+            #         color_data = frame_color.get_data()
+            #         color_image = cv2.imdecode(
+            #             np.frombuffer(color_data, np.uint8), cv2.IMREAD_COLOR
+            #         )
 
-                if frame_color.get_format() == OBFormat.RGB:
-                    color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+            #         if color_image is None:
+            #             error(
+            #                 f"Błąd dekodowania MJPG ramki kolorowej", self._message_logger
+            #             )
+            #             return None
+            #     else:
+            #         color_data = frame_color.get_data()
+            #         color_image = np.frombuffer(color_data, dtype=np.uint8).reshape((
+            #             frame_color.get_height(),
+            #             frame_color.get_width(),
+            #             3,
+            #         ))
 
-            depth_data = frame_depth.get_data()
+            #         if frame_color.get_format() == OBFormat.RGB:
+            #             color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
 
-            try:
-                depth_image = np.frombuffer(depth_data, dtype=np.uint16).reshape((
-                    frame_depth.get_height(),
-                    frame_depth.get_width(),
-                ))
+            #     depth_data = frame_depth.get_data()
 
-                debug(
-                    f"Pomyślnie utworzono ramkę głębi {frame_depth.get_width()}x{frame_depth.get_height()}",
-                    self._message_logger,
-                )
+            #     try:
+            #         depth_image = np.frombuffer(depth_data, dtype=np.uint16).reshape((
+            #             frame_depth.get_height(),
+            #             frame_depth.get_width(),
+            #         ))
 
-            except ValueError as reshape_error:
-                error(
-                    f"ODRZUCAM RAMKĘ - błąd reshape ramki głębi: {reshape_error}. ",
-                    self._message_logger,
-                )
-                return None
+            #         debug(
+            #             f"Pomyślnie utworzono ramkę głębi {frame_depth.get_width()}x{frame_depth.get_height()}",
+            #             self._message_logger,
+            #         )
 
-            debug(
-                f"Utworzono obrazy - color: {color_image.shape if color_image is not None else None}, depth: {depth_image.shape}",
-                self._message_logger,
-            )
+            #     except ValueError as reshape_error:
+            #         error(
+            #             f"ODRZUCAM RAMKĘ - błąd reshape ramki głębi: {reshape_error}. ",
+            #             self._message_logger,
+            #         )
+            #         return None
 
-            return {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
+            #     debug(
+            #         f"Utworzono obrazy - color: {color_image.shape if color_image is not None else None}, depth: {depth_image.shape}",
+            #         self._message_logger,
+            #     )
 
-        except Exception as e:
-            error(f"Błąd przetwarzania ramek: {e}", self._message_logger)
-            error(f"Traceback: {traceback.format_exc()}", self._message_logger)
-            return None
+            #     return {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
+        #     pass
+        # except Exception as e:
+        #     error(f"Błąd przetwarzania ramek: {e}", self._message_logger)
+        #     error(f"Traceback: {traceback.format_exc()}", self._message_logger)
+        #     return None
 
 
 class OrbecGemini335Le(GeneralCameraConnector):
