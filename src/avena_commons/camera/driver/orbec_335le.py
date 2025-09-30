@@ -8,24 +8,68 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from pyorbbecsdk import (
-    AlignFilter,
-    Config,
-    Context,
-    Device,
-    OBAlignMode,
-    OBFormat,
-    OBPermissionType,
-    OBPropertyID,
-    OBPropertyType,
-    OBSensorType,
-    OBStreamType,
-    Pipeline,
-    SpatialAdvancedFilter,
-    TemporalFilter,
-    FrameSet,
-    VideoStreamProfile,
-)
+
+# Lazy import pyorbbecsdk with automatic installation
+_pyorbbecsdk_imported = False
+_pyorbbecsdk_error = None
+
+def _ensure_pyorbbecsdk():
+    """Ensure pyorbbecsdk is available, install if necessary."""
+    global _pyorbbecsdk_imported, _pyorbbecsdk_error
+    
+    if _pyorbbecsdk_imported:
+        return True
+    
+    if _pyorbbecsdk_error:
+        raise _pyorbbecsdk_error
+        
+    try:
+        import pyorbbecsdk
+        _pyorbbecsdk_imported = True
+        return True
+    except ImportError:
+        try:
+            # Attempt to install SDK automatically
+            from avena_commons.install_sdk import install_pyorbbecsdk
+            if install_pyorbbecsdk():
+                import pyorbbecsdk
+                _pyorbbecsdk_imported = True
+                return True
+            else:
+                _pyorbbecsdk_error = ImportError(
+                    "pyorbbecsdk could not be installed automatically. "
+                    "Run 'install_orbec_sdk' manually or install pyorbbecsdk for your platform."
+                )
+                raise _pyorbbecsdk_error
+        except Exception as e:
+            _pyorbbecsdk_error = ImportError(
+                f"Failed to import or install pyorbbecsdk: {e}. "
+                "Orbec camera support is not available."
+            )
+            raise _pyorbbecsdk_error
+
+def _get_pyorbbecsdk_modules():
+    """Get pyorbbecsdk modules after ensuring they're available."""
+    _ensure_pyorbbecsdk()
+    import pyorbbecsdk
+    return (
+        pyorbbecsdk.AlignFilter,
+        pyorbbecsdk.Config,
+        pyorbbecsdk.Context,
+        pyorbbecsdk.Device,
+        pyorbbecsdk.OBAlignMode,
+        pyorbbecsdk.OBFormat,
+        pyorbbecsdk.OBPermissionType,
+        pyorbbecsdk.OBPropertyID,
+        pyorbbecsdk.OBPropertyType,
+        pyorbbecsdk.OBSensorType,
+        pyorbbecsdk.OBStreamType,
+        pyorbbecsdk.Pipeline,
+        pyorbbecsdk.SpatialAdvancedFilter,
+        pyorbbecsdk.TemporalFilter,
+        pyorbbecsdk.FrameSet,
+        pyorbbecsdk.VideoStreamProfile,
+    )
 
 from avena_commons.camera.driver.general import (
     CameraState,
@@ -168,7 +212,12 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         try:
             self.state = CameraState.INITIALIZING
             debug(f"{self.device_name} - Initializing camera", self._message_logger)
-            # Tu będzie inicjalizacja kamery Orbbec
+            
+            # Get pyorbbecsdk modules with lazy loading
+            (AlignFilter, Config, Context, Device, OBAlignMode, OBFormat, 
+             OBPermissionType, OBPropertyID, OBPropertyType, OBSensorType, 
+             OBStreamType, Pipeline, SpatialAdvancedFilter, TemporalFilter, 
+             FrameSet, VideoStreamProfile) = _get_pyorbbecsdk_modules()
 
             """
             Init camera:

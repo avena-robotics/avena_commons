@@ -54,6 +54,7 @@ test = [
 
 [project.scripts]
 run_system_dashboard = "avena_commons.system_dashboard.app:run_app"
+install_orbec_sdk = "avena_commons.install_sdk:main"
 
 [project.urls]
 Homepage = "https://github.com/avena-robotics/avena_commons"
@@ -76,8 +77,8 @@ ignore = ["E501"]
 [tool.black]
 line-length = 88
 
-[tool.setuptools.package-data]
-avena_commons = ["vision/data/*.png"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
-[tool.setuptools.data-files]
-"avena_commons/install" = ["install/*.whl"]
+[tool.setuptools.package-data]
+avena_commons = ["vision/data/*.png", "../install/*.whl"]
