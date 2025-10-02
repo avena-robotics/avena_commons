@@ -1,0 +1,10 @@
+{
+    "pepper_configuration": {
+        "buffer_size": 4,
+        "core": 1,
+        "expected_fragments": 4,
+        "processing_enabled": true,
+        "timeout_ms": 5000,
+        "vision_algorithm": "pepper_search"
+    }
+}

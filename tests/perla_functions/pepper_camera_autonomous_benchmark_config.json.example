@@ -1,0 +1,142 @@
+{
+    "camera_configuration": {
+        "align": "d2c",
+        "camera_ip": "192.168.1.10",
+        "camera_params": [
+            613.788,
+            613.756,
+            641.051,
+            402.142
+        ],
+        "color": {
+            "exposure": 500,
+            "format": "MJPG",
+            "fps": 30,
+            "gain": 10,
+            "height": 400,
+            "white_balance": 4000,
+            "width": 640
+        },
+        "core": 1,
+        "depth": {
+            "exposure": 500,
+            "format": "Y16",
+            "fps": 30,
+            "gain": 10,
+            "height": 800,
+            "laser_power": 5,
+            "width": 1280
+        },
+        "disparity_to_depth": true,
+        "distortion_coefficients": [
+            -0.0318751,
+            0.0338157,
+            -0.000153122,
+            -0.000599062,
+            -0.0119746
+        ],
+        "filters": {
+            "spatial": false,
+            "temporal": false
+        },
+        "model": "orbec_gemini_335le"
+    },
+    "camera_pipeline": {
+        "camera_number": 1,
+        "fragments": [
+            {
+                "address": "http://localhost",
+                "fragment_id": 0,
+                "mask_config": {
+                    "nozzle_mask": {
+                        "enabled": false
+                    }
+                },
+                "name": "pepper_region_1",
+                "position": "top-left",
+                "roi": {
+                    "x": [
+                        100,
+                        280
+                    ],
+                    "y": [
+                        20,
+                        200
+                    ]
+                }
+            },
+            {
+                "address": "http://localhost",
+                "fragment_id": 1,
+                "mask_config": {
+                    "nozzle_mask": {
+                        "enabled": false
+                    }
+                },
+                "name": "pepper_region_2",
+                "position": "top-right",
+                "roi": {
+                    "x": [
+                        320,
+                        500
+                    ],
+                    "y": [
+                        20,
+                        200
+                    ]
+                }
+            },
+            {
+                "address": "http://localhost",
+                "fragment_id": 2,
+                "mask_config": {
+                    "nozzle_mask": {
+                        "enabled": false
+                    }
+                },
+                "name": "pepper_region_3",
+                "position": "bottom-left",
+                "roi": {
+                    "x": [
+                        100,
+                        280
+                    ],
+                    "y": [
+                        220,
+                        400
+                    ]
+                }
+            },
+            {
+                "address": "http://localhost",
+                "fragment_id": 3,
+                "mask_config": {
+                    "nozzle_mask": {
+                        "enabled": false
+                    }
+                },
+                "name": "pepper_region_4",
+                "position": "bottom-right",
+                "roi": {
+                    "x": [
+                        320,
+                        500
+                    ],
+                    "y": [
+                        220,
+                        400
+                    ]
+                }
+            }
+        ],
+        "framerate": 30,
+        "image_config": {
+            "color_format": "MJPG",
+            "depth_format": "Y16",
+            "resolution": [
+                640,
+                400
+            ]
+        }
+    }
+}
