@@ -10,7 +10,7 @@ Eksponuje:
 - Klasa `PepperConnector` (connector do pepper worker)
 """
 
-from .pepper import Pepper
 from .driver.pepper_connector import PepperConnector
+from .pepper import Pepper
 
 __all__ = ["Pepper", "PepperConnector"]

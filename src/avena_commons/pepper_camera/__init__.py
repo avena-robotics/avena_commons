@@ -10,11 +10,11 @@ Eksponuje:
 - Klasa `PepperCamera` (główny event listener pepper camera)
 """
 
-from .pepper_camera import PepperCamera
 from .driver.pepper_camera_connector import PepperCameraConnector, PepperCameraWorker
+from .pepper_camera import PepperCamera
 
 __all__ = [
     "PepperCamera",
-    "PepperCameraConnector", 
+    "PepperCameraConnector",
     "PepperCameraWorker",
 ]
