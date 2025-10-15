@@ -1,0 +1,94 @@
+{
+  "benchmark": {
+    "duration_sec": 60,
+    "monitoring_frequency": 30,
+    "startup_delay_sec": 5
+  },
+  "services": [
+    {
+      "name": "pepper_1",
+      "address": "127.0.0.1",
+      "port": "8001"
+    },
+    {
+      "name": "virtual_camera_1",
+      "address": "127.0.0.1",
+      "port": "9001"
+    },
+    {
+      "name": "virtual_camera_2",
+      "address": "127.0.0.1",
+      "port": "9002"
+    },
+    {
+      "name": "virtual_camera_3",
+      "address": "127.0.0.1",
+      "port": "9003"
+    },
+    {
+      "name": "virtual_camera_4",
+      "address": "127.0.0.1",
+      "port": "9004"
+    },
+    {
+      "name": "virtual_camera_5",
+      "address": "127.0.0.1",
+      "port": "9005"
+    },
+    {
+      "name": "virtual_camera_6",
+      "address": "127.0.0.1",
+      "port": "9006"
+    },
+    {
+      "name": "virtual_camera_7",
+      "address": "127.0.0.1",
+      "port": "9007"
+    },
+    {
+      "name": "virtual_camera_8",
+      "address": "127.0.0.1",
+      "port": "9008"
+    },
+    {
+      "name": "virtual_camera_9",
+      "address": "127.0.0.1",
+      "port": "9009"
+    },
+    {
+      "name": "virtual_camera_10",
+      "address": "127.0.0.1",
+      "port": "9010"
+    },
+    {
+      "name": "virtual_camera_11",
+      "address": "127.0.0.1",
+      "port": "9011"
+    },
+    {
+      "name": "virtual_camera_12",
+      "address": "127.0.0.1",
+      "port": "9012"
+    },
+    {
+      "name": "virtual_camera_13",
+      "address": "127.0.0.1",
+      "port": "9013"
+    },
+    {
+      "name": "virtual_camera_14",
+      "address": "127.0.0.1",
+      "port": "9014"
+    },
+    {
+      "name": "virtual_camera_15",
+      "address": "127.0.0.1",
+      "port": "9015"
+    },
+    {
+      "name": "virtual_camera_16",
+      "address": "127.0.0.1",
+      "port": "9016"
+    }
+  ]
+}

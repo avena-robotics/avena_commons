@@ -12,10 +12,8 @@ Exposes:
 
 import json
 import os
-import traceback
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -25,10 +23,6 @@ from avena_commons.event_listener import (
     Event,
     EventListener,
     EventListenerState,
-    Result,
-)
-from avena_commons.pepper_camera.driver.pepper_camera_connector import (
-    PepperCameraConnector,
 )
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
@@ -80,7 +74,7 @@ class PepperCamera(EventListener):
                 "Missing required PEPPER_CAMERA_LISTENER_PORT environment variable"
             )
 
-        self.check_local_data_frequency = 30  # Check local data every 30ms
+        self.check_local_data_frequency = 30  # Check local data 60Hz
         self.name = name
 
         super().__init__(
@@ -128,12 +122,71 @@ class PepperCamera(EventListener):
             self._message_logger,
         )
 
-        # Initialize PepperCamera connector with pipeline config
-        self.camera = PepperCameraConnector(
-            camera_ip=self.camera_address,
-            core=self.__camera_config.get("core", 1),
-            message_logger=self._message_logger,
-        )
+        # Initialize PepperCamera connector based on camera type and GPU settings
+        camera_type = self.__camera_config.get("type", "physical")
+        gpu_config = self.__camera_config.get("gpu_acceleration", {})
+        gpu_enabled = gpu_config.get("enabled", False)
+
+        if camera_type == "virtual":
+            from avena_commons.pepper_camera.driver.virtual_pepper_camera import (
+                VirtualPepperCameraConnector,
+            )
+
+            camera_id = self.__camera_config.get("camera_id", "virtual_0")
+            debug(
+                f"Initializing VIRTUAL PepperCamera with ID: {camera_id}",
+                self._message_logger,
+            )
+            self.camera = VirtualPepperCameraConnector(
+                camera_id=camera_id,
+                core=self.__camera_config.get("core", 1),
+                message_logger=self._message_logger,
+            )
+        elif gpu_enabled:
+            # IMPORTANT: Do NOT check GPU availability in parent process before fork!
+            # CUDA state cannot survive fork() - let worker handle GPU detection
+            try:
+                from avena_commons.pepper_camera.driver.pepper_camera_gpu_connector import (
+                    PepperCameraGPUConnector,
+                )
+
+                info(
+                    f"Initializing GPU-ACCELERATED PepperCamera for IP: {self.camera_address} (GPU check deferred to worker)",
+                    self._message_logger,
+                )
+                self.camera = PepperCameraGPUConnector(
+                    camera_ip=self.camera_address,
+                    core=self.__camera_config.get("core", 1),
+                    message_logger=self._message_logger,
+                )
+            except ImportError as e:
+                info(
+                    f"GPU connector not available: {e}, falling back to CPU",
+                    self._message_logger,
+                )
+                from avena_commons.pepper_camera.driver.pepper_camera_connector import (
+                    PepperCameraConnector,
+                )
+
+                self.camera = PepperCameraConnector(
+                    camera_ip=self.camera_address,
+                    core=self.__camera_config.get("core", 1),
+                    message_logger=self._message_logger,
+                )
+        else:
+            from avena_commons.pepper_camera.driver.pepper_camera_connector import (
+                PepperCameraConnector,
+            )
+
+            debug(
+                f"Initializing PHYSICAL PepperCamera (CPU) for IP: {self.camera_address}",
+                self._message_logger,
+            )
+            self.camera = PepperCameraConnector(
+                camera_ip=self.camera_address,
+                core=self.__camera_config.get("core", 1),
+                message_logger=self._message_logger,
+            )
 
         # Pass both camera and pipeline config to connector
         # full_config = {**self.__camera_config, "pipeline": self.__pipeline_config}
@@ -166,6 +219,10 @@ class PepperCamera(EventListener):
 
         # Log performance metrics at shutdown
         self._log_performance_metrics()
+
+    async def on_stopped(self):
+        """Method called during transition to STOPPED state."""
+        self._change_fsm_state(EventListenerState.INITIALIZING)
 
     def _log_performance_metrics(self):
         """Log comprehensive performance metrics for image processing functions."""
@@ -244,6 +301,32 @@ class PepperCamera(EventListener):
         # Set to None so other threads don't try to use it
         self._message_logger = None
 
+    def _get_fragment_config(self, fragment_name: str) -> Optional[Dict]:
+        """Get configuration for a specific fragment.
+
+        Args:
+            fragment_name (str): Name of the fragment (e.g., 'pepper_region_1')
+
+        Returns:
+            Optional[Dict]: Fragment configuration or None if not found
+        """
+        if not self.__pipeline_config or "fragments" not in self.__pipeline_config:
+            error(
+                f"No pipeline configuration or fragments defined",
+                self._message_logger,
+            )
+            return None
+
+        for fragment_config in self.__pipeline_config["fragments"]:
+            if fragment_config.get("name") == fragment_name:
+                return fragment_config
+
+        error(
+            f"Fragment configuration not found for {fragment_name}",
+            self._message_logger,
+        )
+        return None
+
     async def _analyze_event(self, event):
         """Analyze incoming events and handle pepper camera logic.
 
@@ -264,51 +347,102 @@ class PepperCamera(EventListener):
         return True
 
     async def _send_fragments_to_pepper_listener(self, fragments_data):
-        """Send processed fragments to Pepper EventListener.
+        """Send each fragment individually to its configured destination.
+
+        Each fragment is sent to its own address:port as defined in pipeline configuration.
 
         Args:
-            fragments_data (bytes): Serialized image fragments
-            event (Event): Original pepper camera event
+            fragments_data (dict): Dictionary of serialized image fragments
+
+        Returns:
+            bool: True if all fragments were sent successfully, False otherwise
         """
+        if not fragments_data:
+            error("No fragments data to send", self._message_logger)
+            return False
+
+        all_sent = True
+        fragments_sent_count = 0
+
         try:
-            # Get pepper listener configuration from environment
-            pepper_address = "http://127.0.0.1"
-            pepper_port = "8001"
+            for fragment_name, fragment_data in fragments_data.items():
+                # Get configuration for this specific fragment
+                fragment_config = self._get_fragment_config(fragment_name)
 
-            if not pepper_address or not pepper_port:
-                error(
-                    "Missing PEPPER_LISTENER_ADDRESS or PEPPER_LISTENER_PORT environment variables",
-                    self._message_logger,
+                if not fragment_config:
+                    error(
+                        f"No configuration found for fragment {fragment_name}, skipping",
+                        self._message_logger,
+                    )
+                    all_sent = False
+                    continue
+
+                # Get destination address and port from fragment configuration
+                destination_address = fragment_config.get("address", "http://localhost")
+                destination_port = fragment_config.get("port", "8001")
+
+                if not destination_address or not destination_port:
+                    error(
+                        f"Missing address or port for fragment {fragment_name}",
+                        self._message_logger,
+                    )
+                    all_sent = False
+                    continue
+
+                # Send single fragment to its destination
+                event = Event(
+                    source=self.name,
+                    source_port=int(self._port),
+                    destination=fragment_config.get(
+                        "destination_name", "pepper_listener"
+                    ),
+                    destination_port=destination_port,
+                    event_type="process_fragments",
+                    data={
+                        "fragment": fragment_data,  # Single fragment
+                        "fragment_name": fragment_name,
+                        "fragment_id": fragment_data.get("fragment_id"),
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                    to_be_processed=False,
                 )
-                return False
 
-            # Send process_fragments event to Pepper EventListener with proper format
-            event = Event(
-                source="pepper_camera_autonomous_benchmark",  # Fixed name for PepperCamera Event
-                source_port=8002,
-                destination="pepper_autonomous_benchmark",  # Fixed name for Pepper EventListener
-                destination_port=pepper_port,
-                event_type="process_fragments",
-                data={
-                    "fragments": fragments_data,  # Already base64-encoded string
-                    "timestamp": datetime.now().isoformat(),
-                },
-                to_be_processed=False,  # Changed to False for proper event processing
-            )
+                try:
+                    response = requests.post(
+                        f"{destination_address}:{destination_port}/event",
+                        json=event.to_dict(),
+                        timeout=5.0,
+                    )
 
-            response = requests.post(
-                f"{pepper_address}:{pepper_port}/event", json=event.to_dict()
-            )
+                    if response.status_code == 200:
+                        debug(
+                            f"Sent fragment {fragment_name} to {destination_address}:{destination_port}",
+                            self._message_logger,
+                        )
+                        fragments_sent_count += 1
+                    else:
+                        error(
+                            f"Failed to send fragment {fragment_name}, status: {response.status_code}",
+                            self._message_logger,
+                        )
+                        all_sent = False
+
+                except requests.exceptions.RequestException as req_error:
+                    error(
+                        f"Network error sending fragment {fragment_name}: {req_error}",
+                        self._message_logger,
+                    )
+                    all_sent = False
 
             info(
-                f"Sent process_fragments event to Pepper EventListener",
+                f"Sent {fragments_sent_count}/{len(fragments_data)} fragments to configured destinations",
                 self._message_logger,
             )
-            return True
+            return all_sent
 
         except Exception as e:
             error(
-                f"Error sending fragments to Pepper EventListener: {e}",
+                f"Error sending fragments to destinations: {e}",
                 self._message_logger,
             )
             return False

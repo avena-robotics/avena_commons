@@ -1,9 +1,8 @@
 {
     "camera_configuration": {
-        "type": "physical",
-        "camera_id": "physical_0",
-        "align": "d2c",
-        "camera_ip": "192.168.1.10",
+        "type": "virtual",
+        "camera_id": "virtual_0",
+        "camera_ip": "virtual",
         "camera_params": [
             613.788,
             613.756,
@@ -12,7 +11,7 @@
         ],
         "color": {
             "exposure": 500,
-            "format": "MJPG",
+            "format": "BGR",
             "fps": 30,
             "gain": 10,
             "height": 400,
@@ -41,7 +40,7 @@
             "spatial": false,
             "temporal": false
         },
-        "model": "orbec_gemini_335le"
+        "model": "virtual_pepper_camera"
     },
     "camera_pipeline": {
         "camera_number": 1,
@@ -53,7 +52,7 @@
                 "fragment_id": 0,
                 "mask_config": {
                     "nozzle_mask": {
-                        "enabled": false
+                        "enabled": true
                     }
                 },
                 "name": "pepper_region_1",
@@ -76,7 +75,7 @@
                 "fragment_id": 1,
                 "mask_config": {
                     "nozzle_mask": {
-                        "enabled": false
+                        "enabled": true
                     }
                 },
                 "name": "pepper_region_2",
@@ -99,7 +98,7 @@
                 "fragment_id": 2,
                 "mask_config": {
                     "nozzle_mask": {
-                        "enabled": false
+                        "enabled": true
                     }
                 },
                 "name": "pepper_region_3",
@@ -122,7 +121,7 @@
                 "fragment_id": 3,
                 "mask_config": {
                     "nozzle_mask": {
-                        "enabled": false
+                        "enabled": true
                     }
                 },
                 "name": "pepper_region_4",
@@ -141,7 +140,7 @@
         ],
         "framerate": 30,
         "image_config": {
-            "color_format": "MJPG",
+            "color_format": "BGR",
             "depth_format": "Y16",
             "resolution": [
                 640,

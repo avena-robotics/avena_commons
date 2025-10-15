@@ -134,6 +134,7 @@ class EventListener:
 
         self.__state_file_path = TEMP_DIR / f"{name}_state.json"
         self.__config_file_path = f"{name}_config.json"
+        print(f"Config file path: {self.__config_file_path}")
         self.__name = name.lower()
         self.__port = int(port)
         self.__address = address
@@ -491,7 +492,7 @@ class EventListener:
                     message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
             else:
                 message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}{event.destination_endpoint}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
-            info(
+            debug(
                 message,
                 message_logger=self._message_logger,
             )
@@ -503,7 +504,7 @@ class EventListener:
                 message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
         else:
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
-        info(
+        debug(
             message,
             message_logger=self._message_logger,
         )

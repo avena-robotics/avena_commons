@@ -78,7 +78,7 @@ class Pepper(EventListener):
             )
 
         self.name = name
-        self.check_local_data_frequency = 30  # Check every 30ms
+        self.check_local_data_frequency = 60  # Check every 60Hz = ~16ms
 
         super().__init__(
             name=name,
@@ -91,7 +91,15 @@ class Pepper(EventListener):
         self.__pepper_config = self._configuration.get("pepper_configuration", {})
         debug(f"Pepper config: {self.__pepper_config}", self._message_logger)
         self.current_core = self.__pepper_config.get("core", 2)
-        debug(f"Pepper init on core {self.current_core}", self._message_logger)
+
+        # Check if GPU acceleration is enabled
+        gpu_config = self.__pepper_config.get("gpu_acceleration", {})
+        self.gpu_enabled = gpu_config.get("enabled", False)
+
+        debug(
+            f"Pepper init on core {self.current_core}, GPU: {self.gpu_enabled}",
+            self._message_logger,
+        )
 
         self._port = port
         self._address = address
@@ -100,7 +108,7 @@ class Pepper(EventListener):
         self.processing_enabled = True
         self.last_processing_result = None
         self._is_processing = False
-        self.last_fragments = None
+        self.fragment_buffer = []  # Buffer for incoming fragments
 
         self._fragments_lock = threading.Lock()  # Thread safety
 
@@ -125,10 +133,43 @@ class Pepper(EventListener):
             self._message_logger,
         )
 
-        # Initialize PepperConnector
-        self.pepper_connector = PepperConnector(
-            core=self.current_core, message_logger=self._message_logger
-        )
+        # Initialize PepperConnector (GPU or CPU based on config)
+        # IMPORTANT: Do NOT check GPU availability in parent process before fork!
+        # CUDA state cannot survive fork() - let worker handle GPU detection
+        if self.gpu_enabled:
+            try:
+                from avena_commons.pepper.driver.pepper_gpu_connector import (
+                    PepperGPUConnector,
+                )
+
+                info(
+                    f"Initializing GPU-ACCELERATED Pepper on core {self.current_core} (GPU check deferred to worker)",
+                    self._message_logger,
+                )
+                self.pepper_connector = PepperGPUConnector(
+                    core=self.current_core, message_logger=self._message_logger
+                )
+            except ImportError as e:
+                info(
+                    f"GPU connector not available: {e}, falling back to CPU",
+                    self._message_logger,
+                )
+                self.pepper_connector = PepperConnector(
+                    core=self.current_core,
+                    name=self.name,
+                    message_logger=self._message_logger,
+                )
+                self.gpu_enabled = False
+        else:
+            debug(
+                f"Initializing Pepper (CPU) on core {self.current_core}",
+                self._message_logger,
+            )
+            self.pepper_connector = PepperConnector(
+                core=self.current_core,
+                name=self.name,
+                message_logger=self._message_logger,
+            )
 
         # Initialize pepper worker
         self._change_fsm_state(EventListenerState.INITIALIZING)
@@ -303,31 +344,40 @@ class Pepper(EventListener):
 
         match event.event_type:
             case "process_fragments":
-                # Sprawdź czy mamy fragments w event data
+                # Sprawdź czy mamy pojedynczy fragment (nie "fragments"!)
                 if (
                     not hasattr(event, "data")
                     or not event.data
-                    or "fragments" not in event.data
+                    or "fragment" not in event.data
                 ):
                     event.result = Result(
                         result="failure",
-                        error_message="No fragments provided in event data.",
+                        error_message="No fragment in event data.",
                     )
                     await self._reply(event)
                     return True
 
-                fragments = event.data["fragments"]
+                # Dodaj fragment do buffera
+                with self._fragments_lock:
+                    # check fragment_id, if fragment_id already in buffer, replace it
+                    fragment_id = event.data.get("fragment_id", None)
+                    if fragment_id is not None:
+                        for i, frag in enumerate(self.fragment_buffer):
+                            if frag.get("fragment_id", None) == fragment_id:
+                                self.fragment_buffer[i] = event.data
+                                break
+                        else:
+                            self.fragment_buffer.append(event.data)
+                    else:
+                        self.fragment_buffer.append(event.data)
+
                 debug(
-                    f"Received {len(fragments)} fragments for buffering",
+                    f"Fragment buffered ({len(self.fragment_buffer)}/{self.expected_fragments})",
                     self._message_logger,
                 )
 
-                self.last_fragments = self._deserialize_fragments(fragments)
-
-                debug(
-                    f"Event added to processing queue, fragments buffered",
-                    self._message_logger,
-                )
+                # Return True → EventListener automatycznie odpowie SUCCESS
+                return True
 
             case _:
                 if event.result is not None:
@@ -352,20 +402,40 @@ class Pepper(EventListener):
             self._is_processing = False
             return
 
-        # Check if we have enough fragments to process and we're not already processing
-        if self.last_fragments is not None and not self._is_processing:
+        # Check if we have enough fragments in buffer
+        with self._fragments_lock:
+            fragments_ready = len(self.fragment_buffer) >= self.expected_fragments
+
+        if fragments_ready and not self._is_processing:
             # Take fragments for processing
             with self._fragments_lock:
-                processing_fragment = copy.deepcopy(self.last_fragments)
+                fragments_to_process = self.fragment_buffer[: self.expected_fragments]
+                self.fragment_buffer = self.fragment_buffer[self.expected_fragments :]
 
-            debug(f"Starting pepper processing for fragment", self._message_logger)
+            debug(
+                f"Starting pepper processing with {len(fragments_to_process)} fragments",
+                self._message_logger,
+            )
 
             # Start processing with performance tracking
             self._is_processing = True
 
+            # Deserialize all fragments into dict
+            all_fragments = {}
+            for fragment_item in fragments_to_process:
+                fragment_name = fragment_item.get("fragment_name", "unknown")
+                fragment_data = fragment_item.get("fragment", {})
+
+                # Deserialize this single fragment
+                deserialized = self._deserialize_fragments({
+                    fragment_name: fragment_data
+                })
+                if deserialized:
+                    all_fragments.update(deserialized)
+
             # Process fragments with pepper vision
             with Catchtime() as processing_timer:
-                result = self.pepper_connector.process_fragments(processing_fragment)
+                result = self.pepper_connector.process_fragments(all_fragments)
 
             # Record processing metrics
             self.performance_metrics["processing_times"].append(processing_timer.ms)
@@ -373,8 +443,6 @@ class Pepper(EventListener):
                 processing_timer.ms
             )
             self.performance_metrics["processing_sessions"] += 1
-
-            self.last_fragments = None
 
             if result and result.get("success", False):
                 debug(
@@ -386,7 +454,7 @@ class Pepper(EventListener):
                 self._is_processing = False
 
                 info(
-                    f"Pepper vision completed - results logged for fragment: {result}",
+                    f"Pepper vision completed - results logged: {result}",
                     self._message_logger,
                 )
             else:
