@@ -1,7 +1,19 @@
+"""Moduł Orchestrator.
+
+Odpowiedzialność:
+- Ładowanie, rejestracja i sortowanie scenariuszy, akcji, warunków
+- Harmonogram i współbieżne wykonywanie scenariuszy z limitami
+- Integracja z komponentami zewnętrznymi i klientami (monitoring stanu)
+
+Eksponuje:
+- Klasa `Orchestrator`
+"""
+
 import asyncio
 import importlib
 import inspect
 import json
+import os
 import traceback
 from collections import OrderedDict
 from datetime import datetime
@@ -16,18 +28,34 @@ from avena_commons.event_listener.event_listener import (
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 # Import nowego systemu akcji
-from .actions import ActionContext, ActionExecutionError, ActionExecutor
+from .actions import ActionExecutionError, ActionExecutor
 from .actions.base_action import BaseAction
 from .base.base_condition import BaseCondition
 
 # Import nowego systemu warunków
 from .factories.condition_factory import ConditionFactory
 
-# Import modeli pydantic
-from .models import ScenarioModel
+# Import modeli pydantic - NOWY prosty ScenarioContext
+from .models import ScenarioContext
 
 
 class Orchestrator(EventListener):
+    """
+    Orchestrator sterujący wykonywaniem scenariuszy zdarzeniowych.
+
+    Odpowiada za:
+    - ładowanie i sortowanie scenariuszy,
+    - rejestrację i wykonywanie akcji,
+    - ładowanie, rejestrację i ewaluację warunków,
+    - zarządzanie komponentami zewnętrznymi (np. bazami danych),
+    - harmonogram i współbieżne uruchamianie scenariuszy z limitami.
+
+    Współpracuje z `EventListener`, nasłuchując i interpretując zdarzenia systemowe.
+
+    Przykład:
+        >>> orch = Orchestrator(name="orch", port=5000, address="127.0.0.1")
+    """
+
     def __init__(
         self,
         name: str,
@@ -36,22 +64,34 @@ class Orchestrator(EventListener):
         message_logger: MessageLogger | None = None,
         debug: bool = True,
     ):
+        """
+        Inicjalizuje instancję Orchestratora.
+
+        Args:
+            name (str): Unikalna nazwa instancji.
+            port (int): Port nasłuchu komponentu.
+            address (str): Adres IP lub host do komunikacji.
+            message_logger (MessageLogger | None): Opcjonalny logger komunikatów.
+            debug (bool): Czy włączyć tryb debug (domyślnie True).
+
+        Raises:
+            Exception: Błędy inicjalizacji zależności lub ładowania modułów.
+        """
         self._message_logger = message_logger
         self._debug = debug
 
         # Konfiguracja domyślna z komponentami systemu
         self._default_configuration = {
             "clients": {},
+            "components": {},  # Komponenty zewnętrzne (bazy danych)
             # Systemowe źródła (built-in z paczki)
             "builtin_scenarios_directory": str(Path(__file__).parent / "scenarios"),
             "builtin_actions_directory": str(Path(__file__).parent / "actions"),
-            "builtin_conditions_directory": str(
-                Path(__file__).parent / "conditions"
-            ),  # ← NOWE
+            "builtin_conditions_directory": str(Path(__file__).parent / "conditions"),
             # Źródła użytkownika (z JSON) - opcjonalne
             "scenarios_directory": None,  # Użytkownik może nadpisać w JSON
             "actions_directory": None,  # Użytkownik może nadpisać w JSON
-            "conditions_directory": None,  # Użytkownik może nadpisać w JSON ← NOWE
+            "conditions_directory": None,  # Użytkownik może nadpisać w JSON
             # Limity wykonywania scenariuszy
             "max_concurrent_scenarios": 1,  # Maksymalna liczba jednoczesnych scenariuszy (domyślnie 1)
         }
@@ -63,6 +103,22 @@ class Orchestrator(EventListener):
         # Tracking aktywnych scenariuszy - zabezpieczenie przed wielokrotnym uruchamianiem
         self._running_scenarios: Dict[str, asyncio.Task] = {}
         self._scenario_execution_count: Dict[str, int] = {}
+
+        # NOWE: Liczniki wykonań scenariuszy dla systemu blokowania po przekroczeniu limitu
+        self._scenario_execution_counters: Dict[str, int] = {}
+        # Flagi scenariuszy zablokowanych do ACK
+        self._blocked_scenarios: Dict[str, bool] = {}
+
+        # Komponenty zewnętrzne (bazy danych, API)
+        self._components: Dict[str, Any] = {}
+
+        # NOWE: Przechowywanie kontekstów scenariuszy
+        self.scenario_data: Dict[str, Any] = {}  # ScenarioContext per nazwa scenariusza
+
+        path = "temp/completed_scenarios"
+        if os.path.exists(path) is False:
+            os.makedirs(path)
+        self.completed_scenario_contexts_dir = path
 
         self._action_executor = ActionExecutor(
             register_default_actions=False
@@ -83,6 +139,100 @@ class Orchestrator(EventListener):
             # self._load_scenarios()
         except Exception as e:
             error(f"Initialisation error: {e}", message_logger=self._message_logger)
+
+    # ==== Liczniki wykonań scenariuszy ====
+    def get_scenario_execution_count(self, scenario_name: str) -> int:
+        """Zwraca liczbę wykonań scenariusza od ostatniego ACK."""
+        return self._scenario_execution_counters.get(scenario_name, 0)
+
+    def increment_scenario_execution_count(self, scenario_name: str) -> int:
+        """Zwiększa licznik wykonań scenariusza i zwraca aktualną wartość."""
+        current = self._scenario_execution_counters.get(scenario_name, 0) + 1
+        self._scenario_execution_counters[scenario_name] = current
+        return current
+
+    def reset_scenario_execution_count(self, scenario_name: str) -> None:
+        """Resetuje licznik wykonań scenariusza po ACK."""
+        if scenario_name in self._scenario_execution_counters:
+            del self._scenario_execution_counters[scenario_name]
+        if scenario_name in self._blocked_scenarios:
+            del self._blocked_scenarios[scenario_name]
+        info(
+            f"🔁 Reset licznika wykonań dla scenariusza: {scenario_name}",
+            message_logger=self._message_logger,
+        )
+
+    def reset_all_scenario_execution_counters(self) -> None:
+        """Resetuje wszystkie liczniki wykonań scenariuszy po ACK."""
+        reset_count = len(self._scenario_execution_counters) + len(
+            self._blocked_scenarios
+        )
+        self._scenario_execution_counters.clear()
+        self._blocked_scenarios.clear()
+        if reset_count > 0:
+            info(
+                f"🔁 Reset wszystkich liczników scenariuszy ({reset_count} scenariuszy)",
+                message_logger=self._message_logger,
+            )
+
+    def is_scenario_blocked(self, scenario_name: str) -> bool:
+        """Sprawdza czy scenariusz jest zablokowany z powodu przekroczenia limitu."""
+        return self._blocked_scenarios.get(scenario_name, False)
+
+    def should_block_scenario_due_to_limit(
+        self, scenario_name: str, max_executions: Optional[int]
+    ) -> bool:
+        """
+        Sprawdza czy scenariusz powinien być zablokowany z powodu przekroczenia limitu wykonań.
+
+        Args:
+            scenario_name: Nazwa scenariusza
+            max_executions: Limit wykonań (None = bez limitu)
+
+        Returns:
+            True jeśli scenariusz powinien być zablokowany, False w przeciwnym razie
+        """
+        if max_executions is None or max_executions <= 0:
+            return False
+
+        current_count = self.get_scenario_execution_count(scenario_name)
+        should_block = current_count >= max_executions
+
+        if should_block and not self.is_scenario_blocked(scenario_name):
+            # Pierwszy raz przekraczamy limit - zablokuj scenariusz
+            self._blocked_scenarios[scenario_name] = True
+            warning(
+                f"🚫 BLOKADA scenariusza '{scenario_name}' - przekroczono limit {max_executions} wykonań "
+                f"(aktualnie: {current_count}). Wymagane ACK do odblokowania.",
+                message_logger=self._message_logger,
+            )
+
+        return should_block
+
+    def get_scenarios_execution_status(self) -> Dict[str, Any]:
+        """
+        Zwraca status wykonań scenariuszy z informacjami o licznikach i blokadach.
+
+        Returns:
+            Słownik ze statusem wykonań wszystkich scenariuszy
+        """
+        status = {}
+
+        for scenario_name, scenario in self._scenarios.items():
+            # Pobierz limit z modelu scenariusza
+            max_executions = scenario.get("max_executions")
+            current_count = self.get_scenario_execution_count(scenario_name)
+            is_blocked = self.is_scenario_blocked(scenario_name)
+
+            status[scenario_name] = {
+                "max_executions": max_executions,
+                "current_executions": current_count,
+                "is_blocked": is_blocked,
+                "can_execute": not is_blocked
+                and (max_executions is None or current_count < max_executions),
+            }
+
+        return status
 
     def _load_scenarios(self):
         """
@@ -208,6 +358,343 @@ class Orchestrator(EventListener):
                 message_logger=self._message_logger,
             )
 
+    def _load_components(self):
+        """
+        Ładuje komponenty zewnętrzne z konfiguracji.
+
+        Generyczna metoda która automatycznie importuje i instancjonuje komponenty
+        na podstawie typu z konfiguracji. Obsługuje wszystkie komponenty zgodne
+        z konwencją nazewnictwa: {type} -> {Type}Component.
+        """
+        try:
+            info(
+                "🔧 Rozpoczynam ładowanie komponentów...",
+                message_logger=self._message_logger,
+            )
+
+            components_config = self._configuration.get("components", {})
+            if not components_config:
+                info(
+                    "ℹ️ Brak komponentów w konfiguracji",
+                    message_logger=self._message_logger,
+                )
+                return
+
+            info(
+                f"Znaleziono {len(components_config)} komponentów do załadowania: {list(components_config.keys())}",
+                message_logger=self._message_logger,
+            )
+
+            # Wczytaj każdy komponent
+            for component_name, component_config in components_config.items():
+                try:
+                    component_type = component_config.get(
+                        "type", "database"
+                    )  # Domyślnie database
+
+                    info(
+                        f"🔧 Ładowanie komponentu typu '{component_type}': {component_name}",
+                        message_logger=self._message_logger,
+                    )
+
+                    # Dynamiczne ładowanie komponentu
+                    component = self._create_component_instance(
+                        component_type, component_name, component_config
+                    )
+
+                    if component is not None:
+                        # Zapisz komponent
+                        self._components[component_name] = component
+
+                        info(
+                            f"✅ Komponent '{component_name}' typu '{component_type}' załadowany",
+                            message_logger=self._message_logger,
+                        )
+                    else:
+                        warning(
+                            f"⚠️ Nie udało się utworzyć komponentu '{component_name}' typu '{component_type}' - pomijam",
+                            message_logger=self._message_logger,
+                        )
+
+                except Exception as e:
+                    error(
+                        f"❌ Błąd ładowania komponentu '{component_name}': {e}",
+                        message_logger=self._message_logger,
+                    )
+                    # Kontynuuj z innymi komponentami
+                    continue
+
+            # Podsumowanie
+            loaded_count = len(self._components)
+            if loaded_count > 0:
+                info(
+                    f"🎯 Łącznie załadowanych komponentów: {loaded_count}",
+                    message_logger=self._message_logger,
+                )
+                for i, (component_name, component) in enumerate(
+                    self._components.items(), 1
+                ):
+                    component_type = getattr(
+                        component, "_component_type", component.__class__.__name__
+                    )
+                    info(
+                        f"   {i}. {component_name} ({component_type})",
+                        message_logger=self._message_logger,
+                    )
+            else:
+                warning(
+                    "⚠️ Nie załadowano żadnych komponentów",
+                    message_logger=self._message_logger,
+                )
+
+        except Exception as e:
+            error(
+                f"❌ Błąd ładowania komponentów: {e}",
+                message_logger=self._message_logger,
+            )
+            error(
+                f"Traceback: {traceback.format_exc()}",
+                message_logger=self._message_logger,
+            )
+
+    def _create_component_instance(
+        self, component_type: str, component_name: str, component_config: Dict[str, Any]
+    ):
+        """
+        Tworzy instancję komponentu na podstawie jego typu.
+
+        Args:
+            component_type: Typ komponentu (np. 'database', 'lynx_api', 'email', 'sms')
+            component_name: Nazwa komponentu
+            component_config: Konfiguracja komponentu
+
+        Returns:
+            Instancja komponentu lub None w przypadku błędu
+        """
+        try:
+            # Konwertuj typ na nazwę klasy (np. 'lynx_api' -> 'LynxApiComponent')
+            class_name = self._get_component_class_name(component_type)
+
+            # Konwertuj typ na nazwę modułu (np. 'lynx_api' -> 'lynx_api_component')
+            module_name = f"{component_type}_component"
+
+            # Pełna ścieżka modułu
+            full_module_path = f"avena_commons.orchestrator.components.{module_name}"
+
+            debug(
+                f"Próba importu modułu: {full_module_path}, klasa: {class_name}",
+                message_logger=self._message_logger,
+            )
+
+            # Dynamiczny import modułu
+            try:
+                module = importlib.import_module(full_module_path)
+            except ImportError as import_error:
+                error(
+                    f"❌ Nie można zaimportować modułu '{full_module_path}': {import_error}",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            # Pobierz klasę z modułu
+            if not hasattr(module, class_name):
+                error(
+                    f"❌ Klasa '{class_name}' nie istnieje w module '{full_module_path}'",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            component_class = getattr(module, class_name)
+
+            # Sprawdź czy to klasa
+            if not inspect.isclass(component_class):
+                error(
+                    f"❌ '{class_name}' nie jest klasą w module '{full_module_path}'",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+            # Utwórz instancję komponentu ze standardowymi argumentami
+            component_instance = component_class(
+                name=component_name,
+                config=component_config,
+                message_logger=self._message_logger,
+            )
+
+            # Dodaj informację o typie dla późniejszego logowania
+            component_instance._component_type = component_type
+
+            debug(
+                f"✅ Utworzono instancję komponentu '{class_name}' dla '{component_name}'",
+                message_logger=self._message_logger,
+            )
+
+            return component_instance
+
+        except Exception as e:
+            error(
+                f"❌ Błąd tworzenia instancji komponentu typu '{component_type}': {e}",
+                message_logger=self._message_logger,
+            )
+            error(
+                f"Traceback: {traceback.format_exc()}",
+                message_logger=self._message_logger,
+            )
+            return None
+
+    def _get_component_class_name(self, component_type: str) -> str:
+        """
+        Konwertuje typ komponentu na nazwę klasy zgodnie z konwencją.
+
+        Args:
+            component_type: Typ komponentu (np. 'database', 'lynx_api', 'email')
+
+        Returns:
+            Nazwa klasy komponentu (np. 'DatabaseComponent', 'LynxApiComponent', 'EmailComponent')
+        """
+        # Podziel typ na części po '_' i pierwszą literę każdej części zrób wielką
+        parts = component_type.split("_")
+        class_name_parts = [part.capitalize() for part in parts]
+
+        # Połącz z 'Component'
+        class_name = "".join(class_name_parts) + "Component"
+
+        return class_name
+
+    async def _initialize_components(self):
+        """
+        Inicjalizuje wszystkie załadowane komponenty.
+
+        Wywołuje initialize() i connect() na każdym komponencie.
+        """
+        if not self._components:
+            info(
+                "ℹ️ Brak komponentów do inicjalizacji",
+                message_logger=self._message_logger,
+            )
+            return
+
+        info(
+            f"🚀 Inicjalizacja {len(self._components)} komponentów...",
+            message_logger=self._message_logger,
+        )
+
+        failed_components = []
+
+        for component_name, component in self._components.items():
+            try:
+                info(
+                    f"🔧 Inicjalizacja komponentu: {component_name}",
+                    message_logger=self._message_logger,
+                )
+
+                # KROK 1: Inicjalizacja (walidacja konfiguracji)
+                if not await component.initialize():
+                    error(
+                        f"❌ Inicjalizacja komponentu '{component_name}' nie powiodła się",
+                        message_logger=self._message_logger,
+                    )
+                    failed_components.append(component_name)
+                    continue
+
+                # KROK 2: Nawiązanie połączenia
+                if not await component.connect():
+                    error(
+                        f"❌ Połączenie komponentu '{component_name}' nie powiodło się",
+                        message_logger=self._message_logger,
+                    )
+                    failed_components.append(component_name)
+                    continue
+
+                # KROK 3: Health check
+                if not await component.health_check():
+                    warning(
+                        f"⚠️ Health check komponentu '{component_name}' nie powiódł się",
+                        message_logger=self._message_logger,
+                    )
+                    # Nie usuwamy komponentu - może się naprawić później
+
+                info(
+                    f"✅ Komponent '{component_name}' zainicjalizowany i połączony",
+                    message_logger=self._message_logger,
+                )
+
+            except Exception as e:
+                error(
+                    f"❌ Błąd inicjalizacji komponentu '{component_name}': {e}",
+                    message_logger=self._message_logger,
+                )
+                failed_components.append(component_name)
+
+        # Usuń komponenty które nie mogły się zainicjalizować
+        for component_name in failed_components:
+            if component_name in self._components:
+                error(
+                    f"🗑️ Usuwanie nieudanego komponentu: {component_name}",
+                    message_logger=self._message_logger,
+                )
+                del self._components[component_name]
+
+        # Podsumowanie
+        successful_count = len(self._components)
+        failed_count = len(failed_components)
+
+        if successful_count > 0:
+            info(
+                f"🎯 Pomyślnie zainicjalizowanych komponentów: {successful_count}",
+                message_logger=self._message_logger,
+            )
+
+        if failed_count > 0:
+            warning(
+                f"⚠️ Komponenty które nie mogły się zainicjalizować: {failed_count} ({failed_components})",
+                message_logger=self._message_logger,
+            )
+
+    async def _disconnect_components(self):
+        """
+        Rozłącza wszystkie komponenty podczas zamykania orchestratora.
+        """
+        if not self._components:
+            return
+
+        info(
+            f"🔌 Rozłączanie {len(self._components)} komponentów...",
+            message_logger=self._message_logger,
+        )
+
+        for component_name, component in self._components.items():
+            try:
+                await component.disconnect()
+                info(
+                    f"✅ Komponent '{component_name}' rozłączony",
+                    message_logger=self._message_logger,
+                )
+            except Exception as e:
+                error(
+                    f"❌ Błąd rozłączania komponentu '{component_name}': {e}",
+                    message_logger=self._message_logger,
+                )
+
+        self._components.clear()
+
+    def get_components_status(self) -> Dict[str, Any]:
+        """
+        Zwraca status wszystkich komponentów.
+
+        Returns:
+            Słownik ze statusem komponentów
+        """
+        components_status = {}
+
+        for component_name, component in self._components.items():
+            components_status[component_name] = component.get_status()
+
+        return {
+            "total_components": len(self._components),
+            "components": components_status,
+        }
+
     def _load_scenarios_from_directory(self, scenarios_dir: Path, source_type: str):
         """Ładuje scenariusze z konkretnego katalogu."""
         if not scenarios_dir.exists():
@@ -243,59 +730,86 @@ class Orchestrator(EventListener):
                 with open(json_file, "r", encoding="utf-8") as f:
                     scenario_data = json.load(f)
 
-                # Waliduj scenariusz przez Pydantic
-                try:
-                    scenario_model = ScenarioModel(**scenario_data)
-
-                    # Dodaj informację o źródle
-                    scenario_dict = scenario_model.dict()
-                    scenario_dict["_source"] = source_type
-
-                    # Zapisz walidowany scenariusz
-                    scenario_name = scenario_model.name
-
-                    # Sprawdź czy scenariusz już istnieje (custom może nadpisać systemowy)
-                    if scenario_name in self._scenarios:
-                        existing_source = self._scenarios[scenario_name].get(
-                            "_source", "unknown"
-                        )
-                        info(
-                            f"   ⚠️ Scenariusz '{scenario_name}' z {source_type} nadpisuje istniejący z {existing_source}",
-                            message_logger=self._message_logger,
-                        )
-
-                    self._scenarios[scenario_name] = scenario_dict
-
-                    info(
-                        f"✅ Załadowano scenariusz {source_type}: '{scenario_name}' z pliku {json_file.name}",
-                        message_logger=self._message_logger,
-                    )
-
-                    # Dodatkowe informacje o scenariuszu
-                    if scenario_model.description:
-                        info(
-                            f"   📝 Opis: {scenario_model.description}",
-                            message_logger=self._message_logger,
-                        )
-
-                    if scenario_model.tags:
-                        info(
-                            f"   🏷️ Tagi: {', '.join(scenario_model.tags)}",
-                            message_logger=self._message_logger,
-                        )
-
-                    actions_count = len(scenario_model.actions)
-                    info(
-                        f"   ⚙️ Akcji: {actions_count}",
-                        message_logger=self._message_logger,
-                    )
-
-                except Exception as validation_error:
+                # NOWE: Prosta walidacja - wymagane pola
+                if not isinstance(scenario_data, dict):
                     error(
-                        f"❌ Błąd walidacji scenariusza {source_type} w {json_file}: {validation_error}",
-                        message_logger=self._message_logger,
+                        f"❌ Scenariusz w {json_file} nie jest słownikiem",
+                        self._message_logger,
                     )
                     continue
+
+                scenario_name = scenario_data.get("name")
+                if not scenario_name:
+                    error(
+                        f"❌ Scenariusz w {json_file} nie ma nazwy",
+                        self._message_logger,
+                    )
+                    continue
+
+                if not scenario_data.get("actions"):
+                    error(
+                        f"❌ Scenariusz '{scenario_name}' nie ma akcji",
+                        self._message_logger,
+                    )
+                    continue
+
+                # Dodaj informację o źródle
+                scenario_data["_source"] = source_type
+
+                # Sprawdź czy scenariusz już istnieje (custom może nadpisać systemowy)
+                if scenario_name in self._scenarios:
+                    existing_source = self._scenarios[scenario_name].get(
+                        "_source", "unknown"
+                    )
+                    info(
+                        f"   ⚠️ Scenariusz '{scenario_name}' z {source_type} nadpisuje istniejący z {existing_source}",
+                        message_logger=self._message_logger,
+                    )
+
+                # Ustaw wewnętrzną flagę dla scenariuszy manualnych (domyślnie False)
+                try:
+                    trigger_cfg = scenario_data.get("trigger", {}) or {}
+                    trigger_type = str(trigger_cfg.get("type", "")).lower()
+                    if trigger_type == "manual":
+                        internal = scenario_data.setdefault("_internal", {})
+                        # Zachowaj istniejącą wartość jeśli już była ustawiona (np. przy reload)
+                        internal["manual_run_requested"] = bool(
+                            internal.get("manual_run_requested", False)
+                        )
+                except Exception as e:
+                    # Nie blokuj ładowania scenariuszy w razie problemów z flagą wewnętrzną
+                    error(
+                        f"Błąd podczas ustawiania flagi manual_run_requested dla scenariusza {scenario_name}: {e}",
+                        message_logger=self._message_logger,
+                    )
+
+                self._scenarios[scenario_name] = scenario_data
+
+                info(
+                    f"✅ Załadowano scenariusz {source_type}: '{scenario_name}' z pliku {json_file.name}",
+                    message_logger=self._message_logger,
+                )
+
+                # Dodatkowe informacje o scenariuszu
+                description = scenario_data.get("description")
+                if description:
+                    info(
+                        f"   📝 Opis: {description}",
+                        message_logger=self._message_logger,
+                    )
+
+                tags = scenario_data.get("tags")
+                if tags:
+                    info(
+                        f"   🏷️ Tagi: {', '.join(tags)}",
+                        message_logger=self._message_logger,
+                    )
+
+                actions_count = len(scenario_data.get("actions", []))
+                info(
+                    f"   ⚙️ Akcji: {actions_count}",
+                    message_logger=self._message_logger,
+                )
 
             except json.JSONDecodeError as json_error:
                 error(
@@ -336,7 +850,6 @@ class Orchestrator(EventListener):
             f"Znaleziono {len(py_files)} plików warunków {source_type}: {[f.name for f in py_files]}",
             message_logger=self._message_logger,
         )
-
         # Wczytaj każdy plik Python jako moduł
         for py_file in py_files:
             try:
@@ -346,7 +859,13 @@ class Orchestrator(EventListener):
                         f"avena_commons.orchestrator.conditions.{py_file.stem}"
                     )
                 else:
-                    module_name = f"avena_commons.orchestrator.{source_type}_conditions.{py_file.stem}"
+                    custom_dir = (
+                        str(conditions_dir)
+                        .replace("\\", "/")
+                        .strip("/")
+                        .replace("/", ".")
+                    )
+                    module_name = f"{custom_dir}.{py_file.stem}"
 
                 module = importlib.import_module(module_name)
 
@@ -562,6 +1081,7 @@ class Orchestrator(EventListener):
             "log": "log_event",
             "send_command": "send_command",
             "wait_for_state": "wait_for_state",
+            "lynx_refund": "lynx_refund",
         }
 
         return action_type_mapping.get(result, result)
@@ -652,103 +1172,54 @@ class Orchestrator(EventListener):
             },
             "execution_history_count": len(self._autonomous_execution_history),
             "scenarios_list": list(self._scenarios.keys()),
+            # NOWE: Informacje o licznikach wykonań i blokadach
+            "execution_counters": self.get_scenarios_execution_status(),
         }
 
-    # async def start_autonomous_mode(self):
-    #     """
-    #     Uruchamia tryb autonomiczny orkiestratora.
-
-    #     W trybie autonomicznym orkiestrator będzie monitorować stan systemu
-    #     i automatycznie uruchamiać scenariusze gdy ich warunki są spełnione.
-    #     """
-    #     info(
-    #         "🤖 Uruchamiam tryb autonomiczny orkiestratora",
-    #         message_logger=self._message_logger,
-    #     )
-
-    #     # Sprawdź czy są scenariusze autonomiczne
-    #     autonomous_scenarios = self._autonomous_manager._get_autonomous_scenarios()
-    #     if not autonomous_scenarios:
-    #         warning(
-    #             "⚠️ Brak scenariuszy autonomicznych - tryb autonomiczny bez efektu",
-    #             message_logger=self._message_logger,
-    #         )
-    #     else:
-    #         info(
-    #             f"🎯 Znaleziono {len(autonomous_scenarios)} scenariuszy autonomicznych:",
-    #             message_logger=self._message_logger,
-    #         )
-    #         for name in autonomous_scenarios.keys():
-    #             info(f"   • {name}", message_logger=self._message_logger)
-
-    #     # Uruchom monitoring w tle
-    #     asyncio.create_task(self._autonomous_manager.start_autonomous_monitoring())
-
-    # def stop_autonomous_mode(self):
-    #     """Zatrzymuje tryb autonomiczny orkiestratora."""
-    #     info(
-    #         "🛑 Zatrzymuję tryb autonomiczny orkiestratora",
-    #         message_logger=self._message_logger,
-    #     )
-    #     self._autonomous_manager.stop_autonomous_monitoring()
-
-    # def get_autonomous_status(self) -> Dict[str, Any]:
-    #     """
-    #     Zwraca status trybu autonomicznego.
-
-    #     Returns:
-    #         Słownik ze statusem autonomicznym, scenariuszami i historią wykonań
-    #     """
-    #     return {
-    #         "is_running": self._autonomous_manager.is_running,
-    #         "monitor_interval_seconds": self._autonomous_manager.monitor_interval,
-    #         "scenarios": self._autonomous_manager.get_autonomous_scenarios_status(),
-    #         "execution_history": [
-    #             {
-    #                 "scenario_name": exec.scenario_name,
-    #                 "execution_time": exec.execution_time.isoformat(),
-    #                 "success": exec.success,
-    #             }
-    #             for exec in self._autonomous_manager.get_execution_history()[
-    #                 -10:
-    #             ]  # Ostatnie 10
-    #         ],
-    #     }
-
-    # async def simulate_component_state(self, component_name: str, state: str):
-    #     """
-    #     Symuluje stan komponentu dla testowania scenariuszy autonomicznych.
-
-    #     Args:
-    #         component_name: Nazwa komponentu
-    #         state: Stan do ustawienia (np. "STOPPED", "ERROR", "RUN")
-    #     """
-    #     if component_name not in self._configuration.get("components", {}):
-    #         warning(
-    #             f"Nieznany komponent: {component_name}",
-    #             message_logger=self._message_logger,
-    #         )
-    #         return
-
-    #     # Ustaw stan w orkiestratorze
-    #     if component_name not in self._state:
-    #         self._state[component_name] = {}
-    #     self._state[component_name]["fsm_state"] = state
-
-    #     info(
-    #         f"🧪 Symulacja: ustawiono {component_name} w stan {state}",
-    #         message_logger=self._message_logger,
-    #     )
-
-    async def _execute_scenario_with_tracking(
-        self, scenario_name: str, trigger_data: Optional[Dict[str, Any]] = None
+    def set_manual_scenario_run_requested(
+        self, scenario_name: str, value: bool = True
     ) -> bool:
+        """
+        Ustawia wewnętrzną flagę uruchomienia dla scenariusza manualnego.
+
+        Args:
+            scenario_name: Nazwa scenariusza manualnego
+            value: Czy oznaczyć scenariusz do uruchomienia (True/False)
+
+        Returns:
+            True jeśli ustawiono flagę, False w przeciwnym razie
+        """
+        if scenario_name not in self._scenarios:
+            warning(
+                f"Nie znaleziono scenariusza: {scenario_name}",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        scenario = self._scenarios[scenario_name]
+        trigger_cfg = scenario.get("trigger", {}) or {}
+        trigger_type = str(trigger_cfg.get("type", "")).lower()
+        if trigger_type != "manual":
+            warning(
+                f"Scenariusz '{scenario_name}' nie jest manualny - pomijam ustawienie flagi",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        internal = scenario.setdefault("_internal", {})
+        internal["manual_run_requested"] = bool(value)
+        info(
+            f"Ustawiono manual_run_requested={value} dla scenariusza: {scenario_name}",
+            message_logger=self._message_logger,
+        )
+        return True
+
+    async def _execute_scenario_with_tracking(self, scenario_name: str) -> bool:
         """
         Wykonuje scenariusz z pełnym tracking i cleanup.
 
         Args:
             scenario_name: Nazwa scenariusza do wykonania
-            trigger_data: Opcjonalne dane z triggera
 
         Returns:
             True jeśli scenariusz wykonał się pomyślnie, False w przeciwnym razie
@@ -760,7 +1231,7 @@ class Orchestrator(EventListener):
                 f"▶️ START scenariusza: {scenario_name}",
                 message_logger=self._message_logger,
             )
-            success = await self.execute_scenario(scenario_name, trigger_data)
+            success = await self.execute_scenario(scenario_name)
 
             # Zapisz wyniki
             execution_time = datetime.now()
@@ -783,6 +1254,21 @@ class Orchestrator(EventListener):
                     f"✅ SUKCES scenariusza: {scenario_name}",
                     message_logger=self._message_logger,
                 )
+                # Jeśli to scenariusz manualny oznaczony do uruchomienia, zresetuj flagę
+                try:
+                    scenario = self._scenarios.get(scenario_name, {})
+                    trigger_cfg = scenario.get("trigger", {}) or {}
+                    trigger_type = str(trigger_cfg.get("type", "")).lower()
+                    if trigger_type == "manual":
+                        internal = scenario.setdefault("_internal", {})
+                        if internal.get("manual_run_requested"):
+                            internal["manual_run_requested"] = False
+                            debug(
+                                f"🔁 Reset manual_run_requested dla scenariusza: {scenario_name}",
+                                message_logger=self._message_logger,
+                            )
+                except Exception:
+                    pass
             else:
                 warning(
                     f"⚠️ NIEPOWODZENIE scenariusza: {scenario_name}",
@@ -818,15 +1304,13 @@ class Orchestrator(EventListener):
                 if self._scenario_execution_count[scenario_name] <= 0:
                     del self._scenario_execution_count[scenario_name]
 
-    async def execute_scenario(
-        self, scenario_name: str, trigger_data: Optional[Dict[str, Any]] = None
-    ) -> bool:
+    async def execute_scenario(self, scenario_name: str) -> bool:
         """
         Wykonuje scenariusz o podanej nazwie.
+        Używa ScenarioContext z scenario_data jeśli istnieje.
 
         Args:
             scenario_name: Nazwa scenariusza do wykonania
-            trigger_data: Opcjonalne dane z triggera (dla zmiennych szablonowych)
 
         Returns:
             True jeśli scenariusz wykonał się pomyślnie, False w przeciwnym razie
@@ -843,28 +1327,59 @@ class Orchestrator(EventListener):
             return False
 
         scenario = self._scenarios[scenario_name]
-        info(
-            f"Rozpoczynam wykonywanie scenariusza: {scenario_name}",
-            message_logger=self._message_logger,
-        )
 
-        # Przygotuj kontekst wykonania
-        context = ActionContext(
-            orchestrator=self,
-            message_logger=self._message_logger,
-            trigger_data=trigger_data,
-            scenario_name=scenario_name,
-        )
+        # ZWIĘKSZ LICZNIK WYKONAŃ PRZED ROZPOCZĘCIEM
+        execution_count = self.increment_scenario_execution_count(scenario_name)
+        max_executions = scenario.get("max_executions")
+
+        if max_executions is not None:
+            info(
+                f"Rozpoczynam wykonywanie scenariusza: {scenario_name} "
+                f"(wykonanie {execution_count}/{max_executions})",
+                message_logger=self._message_logger,
+            )
+        else:
+            info(
+                f"Rozpoczynam wykonywanie scenariusza: {scenario_name} "
+                f"(wykonanie #{execution_count}, bez limitu)",
+                message_logger=self._message_logger,
+            )
+
+        # NOWE: Pobierz kontekst scenariusza z scenario_data
+        scenario_context = self.scenario_data.get(scenario_name)
+
+        if scenario_context is None:
+            error(
+                f"❌ Brak kontekstu scenariusza '{scenario_name}' - scenariusz nie przeszedł walidacji warunków!",
+                message_logger=self._message_logger,
+            )
+            return False
 
         try:
             actions = scenario.get("actions", [])
+
+            debug(
+                f"Before scenario execution - context: {scenario_context.context}",
+                self._message_logger,
+            )
+
             for action_config in actions:
-                await self._action_executor.execute_action(action_config, context)
+                # Przekaż bezpośrednio ScenarioContext
+                await self._action_executor.execute_action(
+                    action_config, scenario_context
+                )
+
+            debug(
+                f"After scenario execution - context: {scenario_context.context}",
+                self._message_logger,
+            )
 
             info(
                 f"Scenariusz '{scenario_name}' zakończony pomyślnie",
                 message_logger=self._message_logger,
             )
+
+            # Usuń kontekst po udanym wykonaniu -> finally
             return True
 
         except ActionExecutionError as e:
@@ -872,6 +1387,7 @@ class Orchestrator(EventListener):
                 f"Błąd wykonywania scenariusza '{scenario_name}': {e}",
                 message_logger=self._message_logger,
             )
+            # Usuń kontekst po błędzie -> finally
             return False
         except Exception as e:
             error(
@@ -882,27 +1398,58 @@ class Orchestrator(EventListener):
                 f"Traceback: {traceback.format_exc()}",
                 message_logger=self._message_logger,
             )
+            # Usuń kontekst po błędzie -> finally
             return False
+        finally:
+            context_to_dump = self.scenario_data.pop(scenario_name, None)
+            await self._serialize_completed_scenario_context(context_to_dump)
 
     async def _execute_action(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Any:
         """
         Deleguje wykonanie akcji do ActionExecutor.
         Metoda używana przez wait_for_state_action dla obsługi on_failure.
+
+        Args:
+            action_config: Konfiguracja akcji do wykonania
+            context: Kontekst scenariusza
+
+        Returns:
+            Any: Wynik wykonania akcji
         """
         return await self._action_executor.execute_action(action_config, context)
 
     async def _analyze_event(self, event: Event) -> bool:
+        """
+        Analizuje i obsługuje zdarzenia przychodzące do Orchestratora.
+
+        Obsługuje m.in. aktualizację stanów klientów dla zdarzeń
+        `CMD_GET_STATE` i `CMD_HEALTH_CHECK` oraz porządkuje listę
+        przetwarzanych zdarzeń.
+
+        Args:
+            event (Event): Otrzymane zdarzenie.
+
+        Returns:
+            bool: Zawsze True (zdarzenie zostało obsłużone).
+        """
         match event.event_type:
             case "CMD_GET_STATE":
                 if event.result is not None:
-                    # print(event)
                     old_state = self._state.get(event.source, {}).get(
                         "fsm_state", "UNKNOWN"
                     )
                     new_state = event.data["fsm_state"]
                     self._state[event.source]["fsm_state"] = new_state
+
+                    # Zapisz pola błędu raportowane przez klienta
+                    self._state[event.source]["error"] = bool(
+                        event.data.get("error", False)
+                    )
+                    self._state[event.source]["error_message"] = event.data.get(
+                        "error_message"
+                    )
 
                     debug(
                         f"📊 _state update: {event.source} FSM: {old_state} → {new_state}",
@@ -916,34 +1463,7 @@ class Orchestrator(EventListener):
                     self._state[event.source]["health_check"] = event.data
                     # Event ma result - usuń go z processing
                     self._find_and_remove_processing_event(event)
-            # case "EXECUTE_SCENARIO":
-            #     if event.result is None:
-            #         scenario_name = event.data.get("scenario_name")
-            #         if scenario_name:
-            #             # Przygotuj dane triggera z wydarzenia
-            #             trigger_data = {
-            #                 "source": event.source,
-            #                 "event_type": event.event_type,
-            #                 "data": event.data,
-            #                 "payload": event.data,  # Dla kompatybilności z dokumentacją
-            #             }
 
-            #             success = await self.execute_scenario(
-            #                 scenario_name, trigger_data
-            #             )
-            #             event.result = Result(
-            #                 result="success" if success else "error",
-            #                 data={
-            #                     "scenario_executed": scenario_name,
-            #                     "success": success,
-            #                 },
-            #             )
-            #         else:
-            #             event.result = Result(
-            #                 result="error",
-            #                 error_message="Brak nazwy scenariusza w danych wydarzenia",
-            #             )
-            #         await self._reply(event)
             case _:
                 pass
         return True
@@ -978,6 +1498,8 @@ class Orchestrator(EventListener):
                 message_logger=self._message_logger,
             )
 
+        self._load_components()  # Wczytaj komponenty z konfiguracji
+        await self._initialize_components()  # Inicjalizuj i połącz komponenty
         self._load_actions()  # Wczytaj akcje: systemowe i użytkownika
         self._load_scenarios()  # Wczytaj scenariusze: systemowe i użytkownika
 
@@ -1037,6 +1559,7 @@ class Orchestrator(EventListener):
     async def on_stopped(self):
         """Metoda wywoływana po przejściu w stan STOPPED.
         Tu komponent jest całkowicie zatrzymany i wyczyszczony."""
+        await self._disconnect_components()  # Rozłącz komponenty
         self._change_fsm_state(EventListenerState.INITIALIZING)
 
     async def on_soft_stopping(self):
@@ -1045,10 +1568,17 @@ class Orchestrator(EventListener):
         pass
 
     async def on_ack(self):
-        """Metoda wywoływana po otrzymaniu ACK operatora ze stanu FAULT.
-        Tu komponent wykonuje operacje czyszczenia i przygotowania do stanu STOPPED.
         """
-        pass
+        Metoda wywoływana po otrzymaniu ACK operatora ze stanu FAULT.
+
+        Tu komponent wykonuje operacje czyszczenia i przygotowania do stanu STOPPED.
+        Resetuje również wszystkie liczniki wykonań scenariuszy i odblokowuje je.
+        """
+        info(
+            "🔧 ACK otrzymany - resetuję liczniki wykonań scenariuszy",
+            message_logger=self._message_logger,
+        )
+        self.reset_all_scenario_execution_counters()
 
     async def on_error(self):
         """Metoda wywoływana podczas przejścia w stan ON_ERROR.
@@ -1060,13 +1590,60 @@ class Orchestrator(EventListener):
         Tu komponent przechodzi w stan błędu i oczekuje na ACK operatora."""
         pass
 
-    async def _should_execute_scenario(self, scenario: dict) -> bool:
-        """Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu."""
+    async def _should_execute_scenario(
+        self, scenario: dict
+    ) -> tuple[bool, Dict[str, Any]]:
+        """
+        Sprawdza czy scenariusz powinien być wykonany na podstawie aktualnego stanu.
+        NOWE: Tworzy ScenarioContext który zostaje przechowany w scenario_data.
+
+        Returns:
+            Tuple (should_execute: bool, trigger_data: Dict[str, Any])
+        """
+        scenario_name = scenario.get("name", "unknown")
+
+        # KROK 1: Sprawdź blokadę z powodu przekroczenia limitu wykonań
+        max_executions = scenario.get("max_executions")
+        if self.should_block_scenario_due_to_limit(scenario_name, max_executions):
+            debug(
+                f"🚫 Scenariusz '{scenario_name}' zablokowany - przekroczono limit wykonań",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        # KROK 2: Utwórz ScenarioContext
+        # Przefiltruj stan klientów do znanych klientów
+        configured_clients = self._configuration.get("clients", {})
+        # Uzupełnij dane klientów z konfiguracji i ich stan z self._state
+        clients_state = {}
+        for client_name, client_config in configured_clients.items():
+            clients_state[client_name] = {
+                **client_config,  # Dane z konfiguracji (port, address, itp.)
+                **self._state.get(
+                    client_name, {}
+                ),  # Stan aktualny (fsm_state, error, itp.)
+            }
+
+        # Utwórz kontekst scenariusza
+        scenario_context = ScenarioContext(
+            scenario_name=scenario_name,
+            orchestrator=self,
+            action_executor=self._action_executor,
+            message_logger=self._message_logger,
+            clients=clients_state,
+            components=self._components,
+            context={},  # Pusty słownik na zmienne
+        )
+
+        # KROK 3: Sprawdź warunki triggera
         trigger = scenario.get("trigger", {})
         conditions = trigger.get("conditions", {})
 
+        self.scenario_data[scenario_name] = scenario_context
+
         if not conditions:
-            return True  # Brak warunków = zawsze wykonuj
+            # Brak warunków = zawsze wykonuj, zachowaj kontekst
+            return True
 
         try:
             # Użyj nowego systemu warunków
@@ -1074,25 +1651,23 @@ class Orchestrator(EventListener):
                 conditions, self._message_logger
             )
 
-            # Przygotuj kontekst tylko z clients – przefiltruj do znanych klientów
-            configured_clients = self._configuration.get("clients", {})
-            filtered_clients_state = {
-                client_name: self._state.get(client_name, {})
-                for client_name in configured_clients.keys()
-            }
-
-            context = {
-                "clients": filtered_clients_state,
-            }
-
             # Ewaluuj warunek
-            return await condition.evaluate(context)
+            should_trigger = await condition.evaluate(self.scenario_data[scenario_name])
+
+            if should_trigger:
+                return True
+            else:
+                # Usuń kontekst jeśli scenariusz nie będzie wykonywany
+                self.scenario_data.pop(scenario_name, None)
+                return False
 
         except Exception as e:
             error(
-                f"❌ Błąd ewaluacji warunków dla scenariusza {scenario.get('name', 'unknown')}: {e}",
+                f"❌ Błąd ewaluacji warunków dla scenariusza {scenario_name}: {e}",
                 message_logger=self._message_logger,
             )
+            # Usuń kontekst w przypadku błędu
+            self.scenario_data.pop(scenario_name, None)
             return False
 
     def _is_scenario_in_cooldown(self, scenario_name: str, scenario: dict) -> bool:
@@ -1141,9 +1716,6 @@ class Orchestrator(EventListener):
         - Execution limits
         - Automatic cleanup
         """
-        # debug(self._configuration, message_logger=self._message_logger)
-        # debug(self._state, message_logger=self._message_logger)
-        # debug(self._scenarios, message_logger=self._message_logger)
         if not self._scenarios:
             return
 
@@ -1187,6 +1759,25 @@ class Orchestrator(EventListener):
         # Iteruj przez scenariusze (już posortowane według priorytetu)
         for scenario_name, scenario in self._scenarios.items():
             try:
+                # KROK 0: Pomijaj scenariusze manualne w trybie autonomicznym,
+                # chyba że mają ustawioną wewnętrzną flagę manual_run_requested=True
+                trigger_cfg = scenario.get("trigger", {}) or {}
+                trigger_type = str(trigger_cfg.get("type", "")).lower()
+                if trigger_type == "manual":
+                    internal = scenario.get("_internal", {}) or {}
+                    manual_requested = bool(internal.get("manual_run_requested", False))
+                    if not manual_requested:
+                        debug(
+                            f"⏭️ Pomijam scenariusz manualny w auto-sprawdzeniu (brak flagi): {scenario_name}",
+                            message_logger=self._message_logger,
+                        )
+                        continue
+                    else:
+                        debug(
+                            f"✅ Scenariusz manualny oznaczony do uruchomienia: {scenario_name}",
+                            message_logger=self._message_logger,
+                        )
+
                 # KROK 1: Cleanup zakończonych tasków
                 if scenario_name in self._running_scenarios:
                     task = self._running_scenarios[scenario_name]
@@ -1217,13 +1808,18 @@ class Orchestrator(EventListener):
                     continue
 
                 # KROK 3: Sprawdź warunki
-                if not await self._should_execute_scenario(scenario):
+                should_execute = await self._should_execute_scenario(scenario)
+                if not should_execute:
                     continue
 
                 # KROK 4: Sprawdź limity wykonań (opcjonalne)
                 max_concurrent = scenario.get("max_concurrent_executions", 1)
                 if (
-                    self._scenario_execution_count.get(scenario_name, 0)
+                    len([
+                        task
+                        for task in self._running_scenarios.values()
+                        if not task.done()
+                    ])
                     >= max_concurrent
                 ):
                     debug(
@@ -1250,16 +1846,8 @@ class Orchestrator(EventListener):
                     message_logger=self._message_logger,
                 )
 
-                # Utwórz task dla scenariusza
                 task = asyncio.create_task(
-                    self._execute_scenario_with_tracking(
-                        scenario_name,
-                        {
-                            "source": "autonomous_mode",
-                            "event_type": "AUTONOMOUS_TRIGGER",
-                            "timestamp": datetime.now().isoformat(),
-                        },
-                    )
+                    self._execute_scenario_with_tracking(scenario_name)
                 )
 
                 # Dodaj do tracking
@@ -1290,7 +1878,50 @@ class Orchestrator(EventListener):
                     message_logger=self._message_logger,
                 )
 
+    async def _serialize_completed_scenario_context(
+        self, scenario_context: ScenarioContext
+    ) -> None:
+        """Serializuje i zapisuje zakończony context scenariusza do pliku JSON.
+
+        Args:
+            scenario_context(ScenarioContext): Obiekt ScenarioContext do serializacji
+        """
+        try:
+            context_data = {
+                **scenario_context.to_dict(),
+                "completion_timestamp": datetime.now().isoformat(),
+            }
+
+            # Serializacja całości za pomocą odziedziczonej metody
+            serialized_data = self._serialize_value(context_data)
+
+            # Generowanie nazwy pliku
+            filename = f"context_{scenario_context.scenario_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filepath = self.completed_scenario_contexts_dir + "/" + filename
+
+            # Zapis do pliku
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(serialized_data, f, ensure_ascii=False, indent=4)
+
+            debug(
+                f"Zapisano dane kontekstu scenariusza {scenario_context.scenario_name} do pliku {filename}",
+                message_logger=self._message_logger,
+            )
+
+        except Exception as e:
+            error(
+                f"Błąd podczas zapisywania danych kontekstu scenariusza {scenario_context.scenario_name}: {str(e)}",
+                message_logger=self._message_logger,
+            )
+
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
+        """
+        Odpytuje zdalnych klientów o stan lokalny i uruchamia kontrolę scenariuszy.
+
+        Wysyła zdarzenia `CMD_GET_STATE` do wszystkich skonfigurowanych klientów,
+        dodając je do kolejki „processing”, a następnie wywołuje sprawdzenie
+        warunków scenariuszy w trybie autonomicznym.
+        """
         for key, client in self._configuration["clients"].items():
             client_port = client["port"]
             client_address = client["address"]
@@ -1301,6 +1932,7 @@ class Orchestrator(EventListener):
                 event_type="CMD_GET_STATE",
                 data={},
                 to_be_processed=False,
+                is_system_event=True,
             )
             self._add_to_processing(event)
 
@@ -1314,6 +1946,12 @@ class Orchestrator(EventListener):
             )
 
     def _clear_before_shutdown(self):
+        """
+        Czyści zasoby i anuluje aktywne scenariusze przed wyłączeniem.
+
+        Upewnia się, że wszystkie zadania scenariuszy zostały anulowane oraz
+        zwalnia referencję do loggera.
+        """
         __logger = self._message_logger  # Zapisz referencję jeśli potrzebna
 
         # Anuluj wszystkie aktywne scenariusze przed zamknięciem
@@ -1348,6 +1986,10 @@ class Orchestrator(EventListener):
             # Wyczyść tracking
             self._running_scenarios.clear()
             self._scenario_execution_count.clear()
+
+            # Wyczyść liczniki wykonań scenariuszy
+            self._scenario_execution_counters.clear()
+            self._blocked_scenarios.clear()
 
             info(
                 "🧹 Cleanup aktywnych scenariuszy zakończony",

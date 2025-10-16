@@ -1,3 +1,16 @@
+"""Moduł zarządzania sekwencjami kroków.
+
+Odpowiedzialność:
+- Zarządzanie stanem i przepływem kroków w sekwencjach
+- Obsługa restartów sekwencji i warunków restartowania
+- Śledzenie statusu wykonania poszczególnych kroków
+
+Eksponuje:
+- Klasa `Sequence` (główny manager sekwencji)
+- Klasa `SequenceStatus` (status całej sekwencji)
+- Klasa `SequenceStepStatus` (status pojedynczego kroku)
+"""
+
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -5,7 +18,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from avena_commons.event_listener import Result
-from avena_commons.util.logger import MessageLogger, error, info
+from avena_commons.util.logger import MessageLogger, debug, error, info
 
 from .step_state import StepState
 
@@ -106,6 +119,9 @@ class Sequence(BaseModel):
         sequence_enum (str | type[Enum]): Enum defining sequence steps
         status (SequenceStatus): Current sequence status
         parametry (dict[str, Any]): Sequence configuration parameters
+        restart (bool): Flag indicating if sequence should be restarted
+        can_restart (bool): Flag indicating if sequence is in restartable state
+        restart_target_step (int): Step number to restart to when restart is triggered
     """
 
     produkt_id: int
@@ -113,6 +129,9 @@ class Sequence(BaseModel):
     status: SequenceStatus = Field(default_factory=SequenceStatus)
     parametry: dict[str, Any] = Field(default_factory=dict)
     creation_timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    restart: bool = Field(default=False)
+    can_restart: bool = Field(default=False)
+    restart_target_step: int = Field(default=1)
 
     @field_validator("sequence_enum", mode="before")
     @classmethod
@@ -310,26 +329,195 @@ class Sequence(BaseModel):
         """Marks the current step as error."""
         self._do_error(self.status.get_current_step_status, message_logger)
 
+    def set_restart(
+        self, value: bool = True, message_logger: MessageLogger | None = None
+    ) -> None:
+        """Ustawia flagę restart dla sekwencji.
+
+        Args:
+            value (bool): Wartość flagi restart (domyślnie True).
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+        """
+        self.restart = value
+        info(
+            f"Ustawiono flagę restart={value} dla sekwencji {self.sequence_enum} produktu {self.produkt_id}",
+            message_logger=message_logger,
+        )
+
+    def set_can_restart(
+        self, value: bool = True, message_logger: MessageLogger | None = None
+    ) -> None:
+        """Ustawia flagę can_restart dla sekwencji.
+
+        Args:
+            value (bool): Wartość flagi can_restart (domyślnie True).
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+        """
+        self.can_restart = value
+        info(
+            f"Ustawiono flagę can_restart={value} dla sekwencji {self.sequence_enum} produktu {self.produkt_id}",
+            message_logger=message_logger,
+        )
+
+    def get_restart(self) -> bool:
+        """Zwraca wartość flagi restart.
+
+        Returns:
+            bool: Wartość flagi restart.
+        """
+        return self.restart
+
+    def get_can_restart(self) -> bool:
+        """Zwraca wartość flagi can_restart.
+
+        Returns:
+            bool: Wartość flagi can_restart.
+        """
+        return self.can_restart
+
+    def reset_restart_flags(self, message_logger: MessageLogger | None = None) -> None:
+        """Resetuje flagi restart i can_restart do False.
+
+        Args:
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+        """
+        self.restart = False
+        self.can_restart = False
+        info(
+            f"Zresetowano flagi restart dla sekwencji {self.sequence_enum} produktu {self.produkt_id}",
+            message_logger=message_logger,
+        )
+
+    def should_restart(self, message_logger: MessageLogger | None = None) -> bool:
+        """Sprawdza czy sekwencja powinna zostać zrestartowana.
+
+        Returns:
+            bool: True jeśli sekwencja powinna zostać zrestartowana (restart=True i can_restart=True).
+        """
+        debug(
+            f"Sprawdzanie warunków restartu: restart={self.restart}, can_restart={self.can_restart}",
+            message_logger=message_logger,
+        )
+        return self.restart and self.can_restart
+
+    def restart_sequence(self, message_logger: MessageLogger | None = None) -> bool:
+        """Restartuje sekwencję jeśli spełnione są warunki restartu.
+
+        Resetuje sekwencję do kroku określonego przez atrybut restart_to_step
+        i przygotowuje do ponownego wykonania. Zeruje liczniki ponowień wszystkich kroków i flagi restart.
+
+        Args:
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+
+        Returns:
+            bool: True jeśli restart został wykonany, False w przeciwnym razie.
+        """
+        if not self.should_restart(message_logger=message_logger):
+            return False
+
+        info(
+            f"Restartowanie sekwencji {self.sequence_enum} dla produktu {self.produkt_id} do kroku {self.restart_target_step}",
+            message_logger=message_logger,
+        )
+
+        # Resetuj status sekwencji
+        self.status.finished = False
+        self.status.current_step = self.restart_target_step
+
+        # Resetuj wszystkie kroki do stanu PREPARE i wyzeruj liczniki ponowień
+        for step_status in self.status.steps.values():
+            step_status.fsm_state = StepState.PREPARE
+            step_status.retry_count = 0
+            step_status.error_code = 0
+
+        # Resetuj flagi restart
+        self.reset_restart_flags(message_logger=message_logger)
+
+        # Przygotuj określony krok
+        if self.restart_target_step in self.status.steps:
+            self._do_prepare(
+                self.status.steps[self.restart_target_step], message_logger
+            )
+
+        info(
+            f"Sekwencja {self.sequence_enum} została zrestartowana dla produktu {self.produkt_id} do kroku {self.restart_target_step}",
+            message_logger=message_logger,
+        )
+
+        return True
+
+    def restart_to_step(
+        self, step_id: int, message_logger: MessageLogger | None = None
+    ) -> None:
+        """Restartuje sekwencję do określonego kroku.
+
+        Ustawia atrybut restart_target_step, flagę restart, can_restart i wykonuje restart.
+        Jest to wygodna metoda do wymuszenia restartu bez sprawdzania warunków.
+
+        Args:
+            step_id (int): Numer kroku, do którego ma zostać zresetowana sekwencja.
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+        """
+        self.restart_target_step = step_id
+        self.set_restart(True, message_logger)
+        self.set_can_restart(True, message_logger)
+        self.restart_sequence(message_logger)
+
+    def set_restart_target_step(
+        self, step_id: int, message_logger: MessageLogger | None = None
+    ) -> None:
+        """Ustawia numer kroku, do którego sekwencja ma zostać zresetowana podczas restartu.
+
+        Args:
+            step_id (int): Numer kroku, do którego ma zostać zresetowana sekwencja.
+            message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
+        """
+        self.restart_target_step = step_id
+        info(
+            f"Ustawiono restart_target_step={step_id} dla sekwencji {self.sequence_enum} produktu {self.produkt_id}",
+            message_logger=message_logger,
+        )
+
     def done_step(self, message_logger: MessageLogger | None = None):
         """Marks the current step as done.
 
-        Sets the current step's state to DONE.
+        Sets the current step's state to DONE and checks for restart conditions.
 
         Args:
             message_logger (MessageLogger, optional): Logger for recording messages. Defaults to None.
         """
-        self._do_done(self.status.get_current_step_status, message_logger)
+        step_status = self.status.get_current_step_status
+
+        # Sprawdź czy to jest ostatni krok i czy powinniśmy zrestartować
+        if self.should_restart(message_logger=message_logger):
+            info(
+                f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu ostatniego kroku",
+                message_logger=message_logger,
+            )
+            self.restart_sequence(message_logger)
+            return  # Nie przechodzimy do next_step, bo zrestartowaliśmy
+
+        self._do_done(step_status, message_logger)
+        # Jeśli nie restartujemy, kontynuuj normalnie
+        # self.next_step(message_logger)
 
     def next_step(self, message_logger: MessageLogger | None = None) -> None:
         """Advances to the next step in the sequence.
 
         Increments the step counter if there are more steps to execute,
-        otherwise marks the sequence as finished.
+        otherwise marks the sequence as finished. Also handles sequence restart
+        if restart conditions are met in the last step.
 
         Args:
             message_logger (MessageLogger, optional): Logger for recording messages. Defaults to None.
         """
-        if self.status.current_step < len(self.status.steps):
+        if self.should_restart(message_logger=message_logger):
+            info(
+                f"Wykryto żądanie restartu sekwencji {self.sequence_enum} po zakończeniu wszystkich kroków",
+                message_logger=message_logger,
+            )
+            self.restart_sequence(message_logger)
+        elif self.status.current_step < len(self.status.steps):
             self.status.current_step += 1
             self._do_prepare(
                 self.status.steps[self.status.current_step], message_logger

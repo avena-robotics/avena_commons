@@ -31,6 +31,11 @@ sequence = Sequence(
 sequence.run_step()      # PREPARE → EXECUTE
 sequence.done_step()     # EXECUTE → DONE
 sequence.next_step()     # Przejście do następnego kroku
+
+# Kontrola restartów
+sequence.go_to_step(2)   # Przejście do określonego kroku
+sequence.set_restart_to_step(2)  # Ustaw krok docelowy dla restartu
+sequence.restart_to_step(2)  # Restart sekwencji do kroku 2
 ```
 
 #### Funkcjonalności:

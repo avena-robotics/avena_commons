@@ -1,13 +1,25 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from threading import Lock
+from typing import Any, Callable, Dict, Optional
 
 from avena_commons.event_listener import Event, Result
 from avena_commons.util.logger import debug, error
 from avena_commons.util.measure_time import MeasureTime
 
+from .sensor_watchdog import SensorTimerTask, SensorWatchdog
+
 
 class VirtualDeviceState(Enum):
+    """Enum przedstawiający stany pracy urządzenia wirtualnego.
+
+    Atrybuty:
+        UNINITIALIZED: Urządzenie nie zostało jeszcze zainicjalizowane.
+        INITIALIZING: Urządzenie jest w trakcie inicjalizacji.
+        WORKING: Urządzenie pracuje prawidłowo.
+        ERROR: Urządzenie znajduje się w stanie błędu.
+    """
+
     UNINITIALIZED = 0
     INITIALIZING = 1
     WORKING = 2
@@ -15,7 +27,22 @@ class VirtualDeviceState(Enum):
 
 
 class VirtualDevice(ABC):
+    """Abstrakcyjna baza dla urządzeń wirtualnych sterowanych przez serwer IO.
+
+    Klasa dostarcza wspólną infrastrukturę: obsługę zdarzeń, kolejek
+    przetwarzania i zakończonych zdarzeń, mechanizm watchdogów czujników
+    oraz podstawowy FSM stanu urządzenia.
+    """
+
     def __init__(self, **kwargs):
+        """Inicjalizuje urządzenie wirtualne.
+
+        Oczekiwane pola w `kwargs`:
+            - device_name (str): Nazwa urządzenia wirtualnego.
+            - devices (dict[str, Any]): Mapa podłączonych urządzeń fizycznych.
+            - methods (dict[str, Any]): Konfiguracja mapująca metody wirtualne na urządzenia fizyczne.
+            - message_logger: Logger wiadomości używany do logowania.
+        """
         self.device_name = kwargs["device_name"]
         self.devices = kwargs["devices"]
         self.methods = kwargs["methods"]
@@ -24,7 +51,102 @@ class VirtualDevice(ABC):
         self._processing_events_lock = Lock()
         self._finished_events_lock = Lock()
         self._state = VirtualDeviceState.UNINITIALIZED
+        self._error_message = None
         self._message_logger = kwargs["message_logger"]
+
+        # Built-in sensor watchdog: common for all VirtualDevice subclasses
+        # Default timeout action sets device state to ERROR and logs message
+        self._watchdog = SensorWatchdog(
+            on_timeout_default=self._on_sensor_timeout_wrapper,
+            log_error=lambda msg: error(msg, message_logger=self._message_logger),
+        )
+
+    def _on_sensor_timeout_wrapper(self, task: SensorTimerTask) -> None:
+        """Wrapper dla domyślnej akcji w przypadku przekroczenia czasu zadania watchdoga.
+        Wywołuje _on_sensor_timeout(nadpisywalne), ustawia stan urządzenia na ERROR i zapisuje błąd.
+        """
+        self._on_sensor_timeout(task)
+        self.set_state(VirtualDeviceState.ERROR)
+        self._error_message = (
+            f"{self.device_name} - Timeout: {task.description}, {task.metadata}"
+        )
+
+    def _on_sensor_timeout(self, task: SensorTimerTask) -> None:
+        """
+        Domyślna akcja w przypadku przekroczenia czasu zadania watchdoga.
+        Potomne urządzenia mogą nadpisać tę metodę, aby rozbudować zachowanie
+        (np. zatrzymanie napędów) przed przejściem w stan ERROR.
+        """
+        pass
+
+    # Public helper API for subclasses
+    def add_sensor_timeout(
+        self,
+        condition: Callable[[], bool],
+        timeout_s: float,
+        description: str,
+        id: Optional[str] = None,
+        on_timeout: Optional[Callable[[SensorTimerTask], None]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Dodaje zadanie watchdog do monitorowania warunku w czasie.
+
+        Args:
+            condition (Callable[[], bool]): Funkcja, która powinna zwracać True przed upływem czasu.
+            timeout_s (float): Limit czasu w sekundach.
+            description (str): Opis zadania/warunku.
+            id (str | None): Opcjonalny identyfikator zadania; gdy None, zostanie nadany automatycznie.
+            on_timeout (Callable[[SensorTimerTask], None] | None): Niestandardowa akcja na timeout.
+            metadata (dict[str, Any] | None): Dodatkowe metadane zadania.
+
+        Returns:
+            str: Identyfikator utworzonego zadania watchdoga.
+        """
+        return self._watchdog.until(
+            condition=condition,
+            timeout_s=timeout_s,
+            description=description,
+            id=id,
+            on_timeout=on_timeout or self._on_sensor_timeout_wrapper,
+            metadata=metadata,
+        )
+
+    def cancel_sensor_timeout(self, id: str) -> bool:
+        """Anuluje zadanie watchdoga o podanym identyfikatorze.
+
+        Args:
+            id (str): Identyfikator zadania zwrócony przez `add_sensor_timeout`.
+
+        Returns:
+            bool: True, jeśli anulowano; False, jeśli zadanie nie istniało.
+        """
+        return self._watchdog.cancel(id)
+
+    def _tick_watchdogs(self) -> None:
+        """Wywołuje cykliczną obsługę wszystkich zadań watchdoga dla urządzenia."""
+        self._watchdog.tick()
+
+    # Ensure watchdog.tick() is invoked before subclass tick() body
+    def __init_subclass__(cls, **kwargs):
+        """Hak klasowy, który opakowuje metodę `tick` potomków.
+
+        Zapewnia, że przed właściwą logiką `tick()` urządzenia zawsze
+        zostanie wywołany `watchdog.tick()`.
+        """
+        super().__init_subclass__(**kwargs)
+        if "tick" in cls.__dict__:
+            original_tick = cls.__dict__["tick"]
+
+            def wrapped_tick(self, *args, **kws):
+                # Always tick watchdog first
+                try:
+                    self._tick_watchdogs()
+                except Exception:
+                    # Nie blokuj działania urządzenia w razie problemu z watchdogiem
+                    pass
+                return original_tick(self, *args, **kws)
+
+            setattr(cls, "tick", wrapped_tick)
 
     def set_state(self, new_state: VirtualDeviceState):
         """
@@ -101,6 +223,16 @@ class VirtualDevice(ABC):
     def _move_event_to_finished(
         self, event_type: str, result: str, result_message: str | None = None
     ) -> bool:
+        """Przenosi zdarzenie z kolejki przetwarzania do listy zakończonych.
+
+        Args:
+            event_type (str): Typ zdarzenia do przeniesienia.
+            result (str): Wynik przetwarzania (np. "success", "error").
+            result_message (str | None): Opcjonalna wiadomość błędu/rezultatu.
+
+        Returns:
+            bool: True, jeśli operacja się powiodła; False w przypadku błędu.
+        """
         try:
             debug(
                 f"{self.device_name} - Current processing events: {self._processing_events}",
@@ -127,9 +259,34 @@ class VirtualDevice(ABC):
 
     @abstractmethod
     def _instant_execute_event(self, event: Event) -> Event:
+        """Abstrakcyjna metoda natychmiastowego wykonania akcji dla zdarzenia.
+
+        Potomne klasy powinny zaimplementować logikę bezpośredniej obsługi akcji,
+        która nie wymaga dodawania zdarzenia do kolejki długotrwałego przetwarzania.
+
+        Args:
+            event (Event): Zdarzenie do obsłużenia.
+
+        Returns:
+            Event: Zdarzenie z uzupełnionym polem `result`.
+        """
         pass
 
     def execute_event(self, event: Event) -> Event | None:  # wywolanie akcji
+        """Wykonuje akcję związaną z przekazanym zdarzeniem.
+
+        Zachowanie:
+            - Jeśli zdarzenie jest już w przetwarzaniu, zwraca je z wynikiem błędu.
+            - Jeśli `to_be_processed` jest True, zdarzenie trafia do kolejki i funkcja zwraca None.
+            - W przeciwnym wypadku akcja jest wykonywana natychmiast (w tym standardowy `*_check_fsm_state`).
+
+        Args:
+            event (Event): Zdarzenie do obsłużenia.
+
+        Returns:
+            Event | None: Zdarzenie (gdy obsługa zakończona natychmiast) lub None
+            (gdy dodano do kolejki przetwarzania).
+        """
         with MeasureTime(
             label=f"{self.device_name} execute_event: {event.event_type}",
             max_execution_time=1.0,
@@ -155,6 +312,11 @@ class VirtualDevice(ABC):
                             return self._instant_execute_event(event)
 
     def finished_events(self) -> list[Event]:  # odbior zakonczonych zdarzen
+        """Zwraca listę zakończonych zdarzeń i czyści wewnętrzną kolejkę.
+
+        Returns:
+            list[Event]: Kopia listy zakończonych zdarzeń od ostatniego wywołania.
+        """
         with self._finished_events_lock:
             temp_list = self._finished_events.copy()
             self._finished_events.clear()
@@ -162,7 +324,11 @@ class VirtualDevice(ABC):
 
     @abstractmethod
     def tick(self):
-        """Module main loop method. Io Server calls this method periodically. Device checks should take place here. Do not use this method for blocking operations."""
+        """Główna metoda pętli modułu wywoływana cyklicznie przez serwer IO.
+
+        W tej metodzie powinny odbywać się okresowe kontrole urządzenia. Nie należy
+        umieszczać tu operacji blokujących.
+        """
         pass
 
     def __str__(self) -> str:
@@ -269,6 +435,59 @@ class VirtualDevice(ABC):
                 if hasattr(current_state, "name")
                 else str(current_state)
             )
+
+            # Próba odczytu wewnętrznego FSM urządzenia (np. atrybut __fsm/_fsm/fsm)
+            try:
+                fsm_attr_name = None
+                # Szukaj atrybutów z końcówką __fsm (po name-mangling) w instancji
+                private_fsm_attrs = [
+                    attr for attr in vars(self).keys() if attr.endswith("__fsm")
+                ]
+                if private_fsm_attrs:
+                    fsm_attr_name = private_fsm_attrs[0]
+                else:
+                    # Popularne nazwy alternatywne
+                    for candidate in ("_fsm", "fsm"):
+                        if hasattr(self, candidate):
+                            fsm_attr_name = candidate
+                            break
+
+                if fsm_attr_name is not None:
+                    fsm_obj = getattr(self, fsm_attr_name, None)
+                    if fsm_obj is not None:
+                        # Jeśli atrybut FSM jest Enumem bezpośrednio
+                        if isinstance(fsm_obj, Enum):
+                            result["__fsm"] = getattr(fsm_obj, "name", str(fsm_obj))
+                        else:
+                            # Wyciągnij stan FSM, preferując pola/state o standardowych nazwach
+                            fsm_state_obj = None
+                            if hasattr(fsm_obj, "state"):
+                                fsm_state_obj = getattr(fsm_obj, "state")
+                            elif hasattr(fsm_obj, "current_state"):
+                                fsm_state_obj = getattr(fsm_obj, "current_state")
+
+                            # Zapisz pod kluczem "__fsm" nazwę stanu (np. RUNNING),
+                            # a jeśli brak nazwy — jego wartość/string
+                            if fsm_state_obj is not None:
+                                fsm_state_name = (
+                                    getattr(fsm_state_obj, "name")
+                                    if hasattr(fsm_state_obj, "name")
+                                    else None
+                                )
+                                if fsm_state_name is not None:
+                                    result["__fsm"] = fsm_state_name
+                                else:
+                                    result["__fsm"] = (
+                                        getattr(fsm_state_obj, "value")
+                                        if hasattr(fsm_state_obj, "value")
+                                        else str(fsm_state_obj)
+                                    )
+            except Exception as fsm_err:
+                # Nie przerywamy serializacji w razie problemów z FSM; wpiszemy tylko podstawowe pola
+                error(
+                    f"{self.device_name} - Error reading internal FSM for serialization: {fsm_err}",
+                    message_logger=self._message_logger,
+                )
 
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie

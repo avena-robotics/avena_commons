@@ -1,12 +1,13 @@
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class LogicNandCondition(BaseCondition):
     """Warunek logiczny NAND - nie wszystkie warunki mogą być spełnione."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
         conditions_config = self.config.get("conditions", [])
         if not conditions_config:
             if self.message_logger:

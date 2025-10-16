@@ -8,6 +8,24 @@ from ..io_utils import init_device_di, init_device_do
 
 
 class TLC57R24V08:
+    """Sterownik TLC57R24V08 z trybem jog/pozycja, wątkami DI/DO i obsługą błędów.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        configuration_type: Typ konfiguracji urządzenia (mapowanie wejść/wyjść).
+        reverse_direction (bool): Odwrócenie kierunku enkodera.
+        period (float): Okres pętli wątków (s).
+        do_count (int): Liczba linii DO.
+        di_count (int): Liczba linii DI.
+        movement_retry_attempts (int): Maks. próby ponawiania ruchu przy błędzie.
+        movement_retry_delay (float): Opóźnienie między próbami (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Włącza logi debug.
+        command_send_retry_attempts (int): Próby ponownego wysłania komendy (niezależnie od retry ruchu).
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -18,8 +36,11 @@ class TLC57R24V08:
         period: float = 0.05,
         do_count: int = 3,
         di_count: int = 5,
+        movement_retry_attempts: int = 3,
+        movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
+        command_send_retry_attempts: int = 3,
     ):
         self.device_name = device_name
         self.bus = bus
@@ -70,7 +91,6 @@ class TLC57R24V08:
         self._di_stop_event: threading.Event = threading.Event()
 
         # DO writing thread properties
-        # TODO: implement DO writing thread
         self.do_current_state: list[int] = [0] * self.do_count
         self.do_state_changed: bool = False
         self.do_previous_state: list[int] = [0] * self.do_count
@@ -78,9 +98,34 @@ class TLC57R24V08:
         self._do_thread: threading.Thread | None = None
         self._do_stop_event: threading.Event = threading.Event()
 
+        # Error propagation fields (for IO_server escalation)
+        self._error: bool = False
+        self._error_message: str | None = None
+
+        # Movement retry configuration/state
+        self._move_retry_attempts: int = (
+            int(movement_retry_attempts) if movement_retry_attempts is not None else 0
+        )
+        self._move_retry_delay: float = (
+            float(movement_retry_delay) if movement_retry_delay is not None else 0.0
+        )
+        self._move_in_progress: bool = False
+        self._move_attempts_made: int = 0
+        self._last_command_type: str | None = None  # 'jog' | 'position' | None
+        self._waiting_for_failure_clear: bool = False
+
+        # Command send retry configuration/state (independent from movement retries)
+        self._command_send_retry_attempts: int = (
+            int(command_send_retry_attempts)
+            if command_send_retry_attempts is not None
+            else 0
+        )
+        self._command_send_attempts_made: int = 0
+
         self.__setup()
 
     def __setup(self):
+        """Konfiguruje rejestry sterownika, uruchamia wątki jog/DI/DO."""
         try:
             if self.configuration_type == 1:  # komora odbiorcza
                 # komora odbiorcza
@@ -127,7 +172,7 @@ class TLC57R24V08:
             return None
 
     def _start_jog_thread(self):
-        """Start the continuous jog thread"""
+        """Uruchamia wątek sterowania jog, jeśli nie działa."""
         try:
             if self._jog_thread is None or not self._jog_thread.is_alive():
                 self._stop_event.clear()
@@ -146,7 +191,7 @@ class TLC57R24V08:
             )
 
     def __jog_thread_worker(self):
-        """Continuous jog thread worker that sends jog or position parameters when enabled"""
+        """Wątek: wysyła parametry jog/pozycja po ustawieniu flagi run, z obsługą retry."""
 
         while not self._stop_event.is_set():
             now = time.time()
@@ -184,8 +229,30 @@ class TLC57R24V08:
                             )
                             if response:
                                 self._run = False
+                                self._command_send_attempts_made = 0
                             else:
-                                self._run = True
+                                self._command_send_attempts_made += 1
+                                if (
+                                    self._command_send_retry_attempts > 0
+                                    and self._command_send_attempts_made
+                                    >= self._command_send_retry_attempts
+                                ):
+                                    self._error = True
+                                    self._error_message = (
+                                        f"{self.device_name} - Wysyłanie parametrów pozycji: "
+                                        f"przekroczono liczbę prób ("
+                                        f"{self._command_send_attempts_made}/"
+                                        f"{self._command_send_retry_attempts})"
+                                    )
+                                    error(
+                                        self._error_message,
+                                        message_logger=self.message_logger,
+                                    )
+                                    self._move_in_progress = False
+                                    self._last_command_type = None
+                                    self._run = False
+                                else:
+                                    self._run = True
                             debug(
                                 f"{self.device_name} Position parameters sent: target={target}, speed={speed}, accel={accel}, decel={decel}",
                                 message_logger=self.message_logger,
@@ -197,8 +264,30 @@ class TLC57R24V08:
                             )
                             if response:
                                 self._run = False
+                                self._command_send_attempts_made = 0
                             else:
-                                self._run = True
+                                self._command_send_attempts_made += 1
+                                if (
+                                    self._command_send_retry_attempts > 0
+                                    and self._command_send_attempts_made
+                                    >= self._command_send_retry_attempts
+                                ):
+                                    self._error = True
+                                    self._error_message = (
+                                        f"{self.device_name} - Wysyłanie parametrów ruchu: "
+                                        f"przekroczono liczbę prób ("
+                                        f"{self._command_send_attempts_made}/"
+                                        f"{self._command_send_retry_attempts})"
+                                    )
+                                    error(
+                                        self._error_message,
+                                        message_logger=self.message_logger,
+                                    )
+                                    self._move_in_progress = False
+                                    self._last_command_type = None
+                                    self._run = False
+                                else:
+                                    self._run = True
                             debug(
                                 f"{self.device_name} Jog parameters sent: speed={speed}, accel={accel}, decel={decel}",
                                 message_logger=self.message_logger,
@@ -248,6 +337,68 @@ class TLC57R24V08:
                         else:
                             debug(message, message_logger=self.message_logger)
 
+                        # Movement error handling with retry and reset
+                        try:
+                            if self.operation_status_failure:
+                                # Avoid hammering retry while failure bit still set
+                                if not self._waiting_for_failure_clear:
+                                    # Reset error at drive and schedule retry or escalate
+                                    try:
+                                        self.reset_error()
+                                    except Exception as _e:
+                                        error(
+                                            f"{self.device_name} - Reset error failed: {_e}",
+                                            message_logger=self.message_logger,
+                                        )
+
+                                    self._move_attempts_made += 1
+                                    if (
+                                        self._move_in_progress
+                                        and self._move_attempts_made
+                                        <= self._move_retry_attempts
+                                    ):
+                                        # Re-send the last command by toggling _run
+                                        with self._jog_lock:
+                                            self._run = True
+                                        if self._move_retry_delay > 0:
+                                            time.sleep(self._move_retry_delay)
+                                    else:
+                                        # Exceeded retry attempts → escalate error
+                                        self._error = True
+                                        self._error_message = (
+                                            f"{self.device_name} - Błąd ruchu podczas {self._last_command_type or 'unknown'}: "
+                                            f"przekroczono liczbę prób ({self._move_attempts_made}/{self._move_retry_attempts})"
+                                        )
+                                        error(
+                                            self._error_message,
+                                            message_logger=self.message_logger,
+                                        )
+                                        # Stop trying further
+                                        self._move_in_progress = False
+                                        self._last_command_type = None
+
+                                    # From now wait until failure bit clears to avoid repeated retries in tight loop
+                                    self._waiting_for_failure_clear = True
+                            else:
+                                # Failure bit cleared → allow next detection
+                                if self._waiting_for_failure_clear:
+                                    self._waiting_for_failure_clear = False
+
+                                # Detect success and clear in-progress flags
+                                if self._move_in_progress:
+                                    if (
+                                        self.operation_status_in_place
+                                        or self.operation_status_motor_running
+                                    ):
+                                        self._move_in_progress = False
+                                        self._last_command_type = None
+                                        self._move_attempts_made = 0
+                        except Exception as _eh:
+                            error(
+                                f"{self.device_name} - Error in movement retry handler: {_eh}",
+                                message_logger=self.message_logger,
+                            )
+
                 with self._jog_lock:
                     self._jog_counter = jog_counter + 1
 
@@ -263,7 +414,7 @@ class TLC57R24V08:
     def __send_jog_parameters(
         self, speed: int, accel: int, decel: int, control_word: int
     ):
-        """Send jog parameters to the device via Modbus"""
+        """Wysyła do urządzenia parametry trybu jog przez Modbus."""
         try:
             response_setup = self.bus.write_holding_registers(
                 address=self.address,
@@ -299,7 +450,7 @@ class TLC57R24V08:
         start_speed: int,
         control_word: int,
     ):
-        """Send position parameters to the device via Modbus"""
+        """Wysyła do urządzenia parametry trybu pozycja przez Modbus."""
         try:
             high_word = (position >> 16) & 0xFFFF
             low_word = position & 0xFFFF
@@ -330,6 +481,7 @@ class TLC57R24V08:
             return False
 
     def __operation_status_thread(self):
+        """Wątek śledzący status operacyjny podczas pracy silnika."""
         while self.__motor_running:
             response_status = self.bus.read_holding_registers(
                 address=self.address, first_register=4, count=2
@@ -357,20 +509,24 @@ class TLC57R24V08:
             time.sleep(0.1)
 
     def __run_operation_status_read(self):
+        """Uruchamia wątek odczytu statusu operacyjnego."""
         self.__motor_running = True
         self._status_thread = threading.Thread(target=self.__operation_status_thread)
         self._status_thread.start()
 
     def is_motor_running(self):
+        """Zwraca True, jeśli silnik jest uruchomiony (bit motor_running)."""
         return self.operation_status_motor_running
 
     def is_failure(self):
+        """Zwraca True, jeśli występuje stan awarii (failure)."""
         return self.operation_status_failure
 
     def reset_error(self):
+        """Resetuje błąd w urządzeniu (zapis do rejestru resetu błędów)."""
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
         debug(
-            f"{self.device_name} - Reset bo byciu w stanie failure",
+            f"{self.device_name} - Reset po byciu w stanie failure",
             message_logger=self.message_logger,
         )
 
@@ -388,15 +544,14 @@ class TLC57R24V08:
         decel: int = 1,
         start_speed: int = 0,
     ):
-        """
-        Enable position mode with specified parameters. The jog thread will handle sending the parameters.
+        """Włącza tryb pozycja z podanymi parametrami (wysyłką zajmuje się wątek jog).
 
         Args:
-            position (int): Target position in pulses (-2147483648~2147483647)
-            speed (int): Positioning speed in r/min (0-3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
-            start_speed (int): Positioning start speed in r/min (0-3000)
+            position (int): Docelowa pozycja w impulsach (-2147483648..2147483647).
+            speed (int): Prędkość pozycjonowania w r/min (0..3000).
+            accel (int): Czas narastania prędkości w ms (0..2000).
+            decel (int): Czas opadania prędkości w ms (0..2000).
+            start_speed (int): Prędkość startowa w r/min (0..3000).
         """
         info(
             f"{self.device_name}.run_position(position={position}, speed={speed}, accel={accel}, decel={decel}, start_speed={start_speed})",
@@ -412,15 +567,21 @@ class TLC57R24V08:
             self._position_start_speed = start_speed
             self._position_control_word = 1
             self._run = True
+        # Initialize movement tracking
+        self._move_in_progress = True
+        self._last_command_type = "position"
+        self._move_attempts_made = 0
+        self._error = False
+        self._error_message = None
+        self._command_send_attempts_made = 0
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
-        """
-        Enable jog mode with specified parameters. The jog thread will handle sending the parameters.
+        """Włącza tryb jog z podanymi parametrami (wysyłką zajmuje się wątek jog).
 
         Args:
-            speed (int): Positioning speed in r/min (-3000 - 3000)
-            accel (int): Positioning acceleration time in ms (0-2000)
-            decel (int): Positioning deceleration time in ms (0-2000)
+            speed (int): Prędkość w r/min (-3000..3000).
+            accel (int): Czas narastania w ms (0..2000).
+            decel (int): Czas opadania w ms (0..2000).
         """
         info(
             f"{self.device_name}.run_jog(speed={speed}, accel={accel}, decel={decel})",
@@ -434,9 +595,16 @@ class TLC57R24V08:
             self._jog_decel = decel
             self._jog_control_word = 8
             self._run = True
+        # Initialize movement tracking
+        self._move_in_progress = True
+        self._last_command_type = "jog"
+        self._move_attempts_made = 0
+        self._error = False
+        self._error_message = None
+        self._command_send_attempts_made = 0
 
     def stop(self):
-        """Stop motor operation and disable jog mode"""
+        """Zatrzymuje silnik i wyłącza tryb jog."""
         self.__motor_running = False
 
         # Disable jog mode
@@ -450,6 +618,10 @@ class TLC57R24V08:
 
         info(f"{self.device_name}.stop", message_logger=self.message_logger)
         # The jog thread will handle sending the stop command when jog is disabled
+        # Clear movement tracking (stop requested)
+        self._move_in_progress = False
+        self._last_command_type = None
+        self._command_send_attempts_made = 0
 
     def di(self, index: int):
         """Read DI value from cached data"""
@@ -765,6 +937,10 @@ class TLC57R24V08:
             result["di_value"] = self.di_value
             result["do_current_state"] = self.do_current_state.copy()
 
+            # Eskalacja błędu (dla IO_server i monitoringu)
+            result["error"] = self._error
+            result["error_message"] = self._error_message
+
             # Dodanie głównego stanu urządzenia
             if self.operation_status_failure:
                 result["main_state"] = "FAILURE"
@@ -781,6 +957,7 @@ class TLC57R24V08:
             # W przypadku błędu dodajemy informację o błędzie
             result["main_state"] = "ERROR"
             result["error"] = str(e)
+            result["error_message"] = str(e)
 
             if self.message_logger:
                 error(

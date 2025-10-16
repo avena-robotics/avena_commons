@@ -9,7 +9,7 @@ from avena_commons.event_listener.event_listener import (
     EventListener,
     EventListenerState,
 )
-from avena_commons.util.logger import MessageLogger, info, warning
+from avena_commons.util.logger import MessageLogger, error, info, warning
 
 
 class BaseTestService(EventListener):
@@ -210,6 +210,38 @@ class BaseTestService(EventListener):
         Obsługuje niestandardowe zdarzenia - do przedefiniowania w klasach potomnych.
         """
         if event.result is None:
+            # Testowa komenda wymuszająca FAULT dla usług demo
+            if event.event_type == "CMD_FORCE_FAULT":
+                # Odczytaj error i error_message z event.data jeśli są
+                error_flag = False
+                error_msg = None
+                if event.data:
+                    error_flag = bool(event.data.get("error", False))
+                    error_msg = event.data.get("error_message")
+
+                # Ustaw stan błędu i komunikat
+                if error_flag:
+                    self._error = True
+                if error_msg:
+                    self._error_message = error_msg
+
+                error(
+                    f"{self._service_name}: Otrzymano CMD_FORCE_FAULT - przejście do FAULT"
+                    + (f"; error_message: {error_msg}" if error_msg else ""),
+                    message_logger=self._message_logger,
+                )
+                self._change_fsm_state(EventListenerState.ON_ERROR)
+                event.result = Result(
+                    result="success",
+                    data={
+                        "message": "Forced fault",
+                        "error": error_flag,
+                        "error_message": error_msg,
+                    },
+                )
+                await self._reply(event)
+                return
+
             event.result = Result(
                 result="info",
                 data={"message": f"Obsłużono zdarzenie {event.event_type}"},

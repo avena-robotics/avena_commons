@@ -8,6 +8,13 @@ from avena_commons.util.worker import Connector, Worker
 
 
 class ModbusTCPWorker(Worker):
+    """Worker do obsługi (przykładowej) komunikacji Modbus TCP.
+
+    Args:
+        host (str): Adres hosta urządzenia Modbus TCP.
+        message_logger: Logger wiadomości.
+    """
+
     def __init__(self, host: str, message_logger=None):
         self.__lock = threading.Lock()
         self._period = 0.002
@@ -19,11 +26,13 @@ class ModbusTCPWorker(Worker):
         # debug("ModbusTCP Worker initialized", message_logger=self._message_logger)
 
     def __trace_connection(self):
+        """Loguje wynik próby połączenia (gdy klient dostępny)."""
         debug(
             f"Connection: {self._client.connect()}", message_logger=self._message_logger
         )
 
     def __trace_packet(self, is_sending: bool, packet: bytes) -> bytes:
+        """Loguje pakiet wysyłany/odbierany w formacie hex."""
         debug(
             f"Packet {'OUT' if is_sending else ' IN'}: [{' '.join(f'{b:02X}' for b in packet)}]",
             message_logger=self._message_logger,
@@ -31,6 +40,7 @@ class ModbusTCPWorker(Worker):
         return packet
 
     def __trace_pdu(self, is_sending: bool, pdu) -> object:
+        """Loguje PDU wysyłane/odbierane (gdy klient dostępny)."""
         debug(
             f"PDU {'OUT' if is_sending else ' IN'}: {pdu}",
             message_logger=self._message_logger,
@@ -38,6 +48,7 @@ class ModbusTCPWorker(Worker):
         return pdu
 
     def _run(self, pipe_in):
+        """Pętla robocza przetwarzająca komendy przychodzące przez pipe."""
         cl = ControlLoop(
             "control_loop_modbus_rtu",
             period=self._period,
@@ -203,6 +214,13 @@ class ModbusTCPWorker(Worker):
 
 
 class ModbusTCP(Connector):
+    """Konektor Modbus TCP uruchamiany w procesie potomnym.
+
+    Args:
+        host (str): Adres hosta urządzenia.
+        message_logger: Logger wiadomości.
+    """
+
     def __init__(self, host: str, message_logger=None):
         self._host = host
         self.message_logger = message_logger
@@ -216,13 +234,16 @@ class ModbusTCP(Connector):
         )
 
     def __getstate__(self):
+        """Serializuje stan obiektu (dla picklingu procesu)."""
         state = self.__dict__.copy()
         return state
 
     def __setstate__(self, state):
+        """Przywraca stan obiektu (dla picklingu procesu)."""
         self.__dict__.update(state)
 
     def _run(self, pipe_in):
+        """Wejście procesu potomnego: uruchamia `ModbusTCPWorker`."""
         self.__lock = threading.Lock()
         debug(
             f"Starting {self.__class__.__name__} subprocess: {self._host}",
@@ -233,12 +254,19 @@ class ModbusTCP(Connector):
 
     @property
     def host(self):
+        """Zwraca skonfigurowany adres hosta."""
         return self._host
 
     def configure(self):
+        """Konfiguracja urządzeń (placeholder)."""
         pass
 
     def read_coils(self, address: int, register: int, count: int):
+        """Czyta rejestry Coils z urządzenia.
+
+        Returns:
+            Any: Odpowiedź z procesu worker'a.
+        """
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out, ["READ_COILS", address, register, count]
@@ -246,6 +274,7 @@ class ModbusTCP(Connector):
             return value
 
     def write_coils(self, address: int, register: int, values: list):
+        """Zapisuje wartości do rejestrów Coils."""
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out, ["WRITE_COILS", address, register, values]
@@ -253,6 +282,7 @@ class ModbusTCP(Connector):
             return value
 
     def read_holding_register(self, address: int, register: int):
+        """Czyta pojedynczy rejestr Holding Register."""
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out, ["READ_HOLDING_REGISTER", address, register]
@@ -260,6 +290,7 @@ class ModbusTCP(Connector):
             return value
 
     def write_holding_register(self, address: int, register: int, value: int):
+        """Zapisuje wartość do pojedynczego rejestru Holding Register."""
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out, ["WRITE_HOLDING_REGISTER", address, register, value]
@@ -267,6 +298,7 @@ class ModbusTCP(Connector):
             return value
 
     def read_holding_registers(self, address: int, first_register: int, count: int):
+        """Czyta wiele rejestrów Holding Registers."""
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out,
@@ -275,6 +307,7 @@ class ModbusTCP(Connector):
             return value
 
     def write_holding_registers(self, address: int, first_register: int, values: list):
+        """Zapisuje wiele rejestrów Holding Registers."""
         with self.__lock:
             value = super()._send_thru_pipe(
                 self._pipe_out,

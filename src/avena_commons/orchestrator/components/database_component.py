@@ -1,0 +1,767 @@
+"""
+Komponent bazodanowy dla orchestratora.
+
+Obsługuje połączenia z bazami danych PostgreSQL i udostępnia interfejs
+do wykonywania zapytań SQL dla warunków.
+"""
+
+import asyncio
+import os
+from typing import Any, Dict, Optional
+
+import asyncpg
+
+from avena_commons.util.logger import debug, error, info, warning
+
+# Lokalny import enumów nie jest już wymagany przy generycznej normalizacji wartości
+
+
+class DatabaseComponent:
+    """
+    Komponent do obsługi połączeń z bazą danych PostgreSQL.
+
+    Inicjalizowany przez orchestrator przy starcie i udostępniany warunkom.
+
+    Wymagane parametry w konfiguracji lub zmiennych środowiskowych:
+    - DB_HOST: Adres hosta bazy danych
+    - DB_PORT: Port bazy danych
+    - DB_NAME: Nazwa bazy danych
+    - DB_USER: Nazwa użytkownika
+    - DB_PASSWORD: Hasło użytkownika
+    - APS_ID: Identyfikator aplikacji
+    - APS_NAME: Nazwa aplikacji
+    """
+
+    def __init__(self, name: str, config: Dict[str, Any], message_logger=None):
+        """
+        Inicjalizuje komponent bazodanowy.
+
+        Args:
+            name: Nazwa komponentu
+            config: Konfiguracja komponentu z orchestratora
+            message_logger: Logger wiadomości
+        """
+        self.name = name
+        self.config = config
+        self._message_logger = message_logger
+        self._connection: Optional[asyncpg.Connection] = None
+        self._connection_params: Dict[str, Any] = {}
+        self._is_connected = False
+        self._is_initialized = False
+        self._conn_lock: asyncio.Lock = asyncio.Lock()
+        self._column_type_cache: Dict[str, Dict[str, Any]] = {}
+
+    def _to_db_value_for_column(self, column: str, value: Any) -> Any:
+        """
+        Generyczna normalizacja wartości parametru do wysyłki przez asyncpg.
+
+        - Jeśli to Enum (ma atrybut .value) → zwróć .value (string/int)
+        - W przeciwnym razie zwróć oryginał
+        """
+        try:
+            if value is None:
+                return None
+            if hasattr(value, "value"):
+                return value.value
+            return value
+        except Exception as e:
+            raise ValueError(
+                f"Nie można znormalizować wartości '{value}' kolumny '{column}': {e}"
+            )
+
+    def _convert_where_conditions(
+        self, where_conditions: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Zwraca kopię where_conditions z generyczną normalizacją wartości (Enum → .value).
+        Obsługuje także listy wartości.
+        """
+        converted: Dict[str, Any] = {}
+        for col, val in where_conditions.items():
+            if isinstance(val, list):
+                # Konwertuj każdy element listy
+                converted[col] = [
+                    self._to_db_value_for_column(col, item) for item in val
+                ]
+            else:
+                # Konwertuj pojedynczą wartość
+                converted[col] = self._to_db_value_for_column(col, val)
+        return converted
+
+    def validate_config(self) -> bool:
+        """
+        Waliduje konfigurację komponentu bazodanowego.
+
+        Returns:
+            True jeśli konfiguracja jest poprawna
+
+        Raises:
+            ValueError: Jeśli brakuje wymaganych parametrów
+            ImportError: Jeśli brakuje biblioteki asyncpg
+        """
+        if asyncpg is None:
+            raise ImportError(
+                "Biblioteka 'asyncpg' jest wymagana dla komponentu bazodanowego. "
+                "Zainstaluj ją: pip install asyncpg"
+            )
+
+        required_params = [
+            "DB_HOST",
+            "DB_PORT",
+            "DB_NAME",
+            "DB_USER",
+            "DB_PASSWORD",
+            "APS_ID",
+            "APS_NAME",
+        ]
+
+        missing_params = []
+
+        for param in required_params:
+            # Sprawdź najpierw w konfiguracji komponentu, potem w env
+            value = self.config.get(param) or os.getenv(param)
+            if not value:
+                missing_params.append(param)
+            else:
+                # Zapisz parametr do użycia przy połączeniu
+                if param.startswith("DB_"):
+                    # Konwertuj DB_HOST -> host, DB_PORT -> port, etc.
+                    key = param[3:].lower()  # Usuń prefiks "DB_"
+                    if key == "name":
+                        key = "database"  # asyncpg używa "database" zamiast "name"
+                    self._connection_params[key] = value
+
+        if missing_params:
+            raise ValueError(
+                f"Brakuje wymaganych parametrów konfiguracji dla komponentu bazodanowego '{self.name}': "
+                f"{', '.join(missing_params)}. "
+                "Parametry muszą być dostępne w konfiguracji komponentu lub zmiennych środowiskowych."
+            )
+
+        # Konwertuj port na int
+        try:
+            self._connection_params["port"] = int(self._connection_params["port"])
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"DB_PORT musi być liczbą całkowitą, otrzymano: {self._connection_params.get('port')}"
+            )
+
+        debug(
+            f"✅ Walidacja konfiguracji komponentu bazodanowego '{self.name}' pomyślna",
+            message_logger=self._message_logger,
+        )
+
+        return True
+
+    async def initialize(self) -> bool:
+        """
+        Inicjalizuje komponent bazodanowy.
+
+        Returns:
+            True jeśli inicjalizacja przebiegła pomyślnie
+        """
+        try:
+            # Waliduj konfigurację
+            self.validate_config()
+
+            info(
+                f"🔧 Inicjalizacja komponentu bazodanowego: {self.name}",
+                message_logger=self._message_logger,
+            )
+
+            self._is_initialized = True
+
+            debug(
+                f"✅ Komponent bazodanowy '{self.name}' zainicjalizowany",
+                message_logger=self._message_logger,
+            )
+
+            return True
+
+        except Exception as e:
+            error(
+                f"❌ Błąd inicjalizacji komponentu bazodanowego '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            self._is_initialized = False
+            return False
+
+    async def connect(self) -> bool:
+        """
+        Nawiązuje połączenie z bazą danych PostgreSQL.
+
+        Returns:
+            True jeśli połączenie zostało nawiązane pomyślnie
+        """
+        if not self._is_initialized:
+            error(
+                f"❌ Komponent bazodanowy '{self.name}' nie jest zainicjalizowany",
+                message_logger=self._message_logger,
+            )
+            return False
+
+        try:
+            info(
+                f"🔌 Nawiązywanie połączenia z bazą danych: {self.name}",
+                message_logger=self._message_logger,
+            )
+
+            # Ukryj hasło w logach
+            safe_params = self._connection_params.copy()
+            safe_params["password"] = "***"
+            debug(
+                f"Parametry połączenia: {safe_params}",
+                message_logger=self._message_logger,
+            )
+
+            # Nawiąż połączenie
+            async with self._conn_lock:
+                self._connection = await asyncpg.connect(**self._connection_params)
+
+                # Sprawdź połączenie prostym zapytaniem
+                result = await self._connection.fetchval("SELECT 1")
+            if result == 1:
+                self._is_connected = True
+                info(
+                    f"✅ Połączenie z bazą danych '{self.name}' nawiązane pomyślnie",
+                    message_logger=self._message_logger,
+                )
+                return True
+            else:
+                raise Exception("Test połączenia nie powiódł się")
+
+        except Exception as e:
+            error(
+                f"❌ Błąd nawiązywania połączenia z bazą danych '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            self._is_connected = False
+            self._connection = None
+            return False
+
+    async def disconnect(self) -> bool:
+        """
+        Rozłącza połączenie z bazą danych.
+
+        Returns:
+            True jeśli rozłączenie przebiegło pomyślnie
+        """
+        try:
+            async with self._conn_lock:
+                if self._connection and not self._connection.is_closed():
+                    info(
+                        f"🔌 Rozłączanie z bazą danych: {self.name}",
+                        message_logger=self._message_logger,
+                    )
+                    await self._connection.close()
+
+            self._connection = None
+            self._is_connected = False
+
+            debug(
+                f"✅ Rozłączono z bazą danych '{self.name}'",
+                message_logger=self._message_logger,
+            )
+
+            return True
+
+        except Exception as e:
+            error(
+                f"❌ Błąd rozłączania z bazą danych '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            return False
+
+    async def health_check(self) -> bool:
+        """
+        Sprawdza stan zdrowia połączenia z bazą danych.
+
+        Returns:
+            True jeśli połączenie działa poprawnie
+        """
+        if not self._is_connected or not self._connection:
+            return False
+
+        try:
+            if self._connection.is_closed():
+                self._is_connected = False
+                return False
+
+            # Sprawdź połączenie prostym zapytaniem
+            async with self._conn_lock:
+                result = await self._connection.fetchval("SELECT 1")
+                return result == 1
+
+        except Exception as e:
+            warning(
+                f"⚠️ Health check bazy danych '{self.name}' nie powiódł się: {e}",
+                message_logger=self._message_logger,
+            )
+            self._is_connected = False
+            return False
+
+    @property
+    def is_connected(self) -> bool:
+        """Zwraca True jeśli komponent jest połączony."""
+        return self._is_connected
+
+    @property
+    def is_initialized(self) -> bool:
+        """Zwraca True jeśli komponent jest zainicjalizowany."""
+        return self._is_initialized
+
+    async def check_table_value(
+        self, table: str, column: str, where_conditions: Dict[str, Any]
+    ) -> Optional[Any]:
+        """
+        Sprawdza wartość w tabeli na podstawie warunków WHERE.
+
+        Args:
+            table: Nazwa tabeli
+            column: Nazwa kolumny do pobrania
+            where_conditions: Słownik z warunkami WHERE {kolumna: wartość}
+
+        Returns:
+            Wartość z kolumny lub None jeśli nie znaleziono
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Buduj zapytanie WHERE
+        where_parts = []
+        values = []
+        param_index = 1
+
+        for col, val in where_conditions.items():
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = f"SELECT {column} FROM {table} WHERE {where_clause}"
+
+        try:
+            debug(
+                f"🔍 Wykonywanie zapytania w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
+                message_logger=self._message_logger,
+            )
+
+            async with self._conn_lock:
+                return await self._connection.fetchval(query, *values)
+
+        except Exception as e:
+            error(
+                f"❌ Błąd wykonania zapytania w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    async def fetch_records(
+        self,
+        table: str,
+        columns: list[str],
+        where_conditions: Dict[str, Any],
+        limit: Optional[int] = None,
+        order_by: Optional[str] = None,
+    ) -> list[Dict[str, Any]]:
+        """
+        Pobiera wiele rekordów z tabeli na podstawie warunków WHERE.
+
+        Args:
+            table: Nazwa tabeli
+            columns: Lista nazw kolumn do pobrania
+            where_conditions: Słownik z warunkami WHERE {kolumna: wartość}
+            limit: Opcjonalny limit liczby rekordów (domyślnie brak limitu)
+            order_by: Opcjonalne sortowanie (np. "id DESC", "created_at ASC")
+
+        Returns:
+            Lista słowników reprezentujących rekordy z bazy danych
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+            ValueError: Jeśli where_conditions lub columns są puste
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        if not columns:
+            raise ValueError("Lista columns nie może być pusta")
+
+        # Konwertuj wartości WHERE (obsługa enumów)
+        converted_where = self._convert_where_conditions(where_conditions)
+
+        # Buduj zapytanie WHERE
+        where_parts = []
+        values = []
+        param_index = 1
+
+        for col, val in converted_where.items():
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+
+        # Buduj listę kolumn
+        columns_str = ", ".join(columns)
+
+        # Buduj zapytanie
+        query = f"SELECT {columns_str} FROM {table} WHERE {where_clause}"
+
+        # Dodaj sortowanie jeśli określone
+        if order_by:
+            query += f" ORDER BY {order_by}"
+
+        # Dodaj limit jeśli określony
+        if limit is not None:
+            query += f" LIMIT {limit}"
+
+        try:
+            debug(
+                f"📋 Pobieranie rekordów z bazy '{self.name}': {query[:150]}{'...' if len(query) > 150 else ''}",
+                message_logger=self._message_logger,
+            )
+
+            async with self._conn_lock:
+                rows = await self._connection.fetch(query, *values)
+
+            # Konwertuj wyniki na listę słowników
+            results = []
+            for row in rows:
+                record = dict(row)
+                results.append(record)
+
+            debug(
+                f"✅ Pobrano {len(results)} rekordów z tabeli '{table}'",
+                message_logger=self._message_logger,
+            )
+
+            return results
+
+        except Exception as e:
+            error(
+                f"❌ Błąd pobierania rekordów z bazy '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    async def update_table_value(
+        self,
+        table: str,
+        column: str,
+        value: Any,
+        where_conditions: Dict[str, Any],
+    ) -> int:
+        """
+        Aktualizuje wskazaną kolumnę stałą wartością dla wierszy spełniających warunki.
+
+        Args:
+            table: Nazwa tabeli
+            column: Nazwa kolumny do aktualizacji
+            value: Wartość do ustawienia
+            where_conditions: Warunki WHERE {kolumna: wartość}
+
+        Returns:
+            Liczba zaktualizowanych wierszy
+
+        Raises:
+            RuntimeError: Jeśli komponent nie jest połączony
+            ValueError: Jeśli where_conditions jest puste
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Buduj SET i WHERE
+        param_index = 1
+        values = []
+
+        # Konwertuj wartość SET na string (jeśli to Enum)
+        set_value = self._to_db_value_for_column(column, value)
+        if hasattr(set_value, "value"):
+            set_value = set_value.value  # Pobierz .value z enuma dla asyncpg
+
+        set_clause = f"{column} = ${param_index}"
+        values.append(set_value)
+        param_index += 1
+
+        where_parts = []
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
+            if hasattr(val, "value"):
+                val = val.value  # Pobierz .value z enuma dla asyncpg
+
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
+
+        try:
+            debug(
+                f"✏️ UPDATE w bazie '{self.name}': {query[:100]}{'...' if len(query) > 100 else ''}",
+                message_logger=self._message_logger,
+            )
+            async with self._conn_lock:
+                status = await self._connection.execute(query, *values)
+            # status ma postać np. 'UPDATE 3'
+            try:
+                affected = int(status.split()[-1])
+            except Exception:
+                affected = 0
+            return affected
+        except Exception as e:
+            error(
+                f"❌ Błąd UPDATE w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    async def _get_column_type_info(self, table: str, column: str) -> Dict[str, Any]:
+        """
+        Zwraca informacje o typie kolumny (pełna nazwa typu i czy to enum).
+
+        Args:
+            table: nazwa tabeli (może być kwalifikowana schematem)
+            column: nazwa kolumny
+
+        Returns:
+            Słownik {"schema": str, "type": str, "fq_type": str, "is_enum": bool}
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        cache_key = f"{table}.{column}"
+        cached = self._column_type_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sql = (
+            "SELECT n.nspname AS schema, t.typname AS type, t.typtype AS typtype "
+            "FROM pg_catalog.pg_attribute a "
+            "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
+            "JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace "
+            "WHERE c.oid = $1::regclass AND a.attname = $2"
+        )
+
+        async with self._conn_lock:
+            row = await self._connection.fetchrow(sql, table, column)
+
+        if not row:
+            raise ValueError(f"Nie znaleziono kolumny {column} w tabeli {table}")
+
+        schema = row["schema"]
+        typname = row["type"]
+        typtype = row["typtype"]
+        info_dict = {
+            "schema": schema,
+            "type": typname,
+            "fq_type": f"{schema}.{typname}",
+            "is_enum": typtype == "e",
+        }
+        self._column_type_cache[cache_key] = info_dict
+        return info_dict
+
+    async def update_column_from_column(
+        self,
+        table: str,
+        target_column: str,
+        source_column: str,
+        where_conditions: Dict[str, Any],
+    ) -> int:
+        """
+        Kopiuje wartości z jednej kolumny do drugiej z opcjonalnym rzutowaniem między enumami.
+
+        Jeśli kolumny są różnych typów enum, zastosuje rzutowanie: source::text::target_type.
+        """
+        if not self._is_connected or not self._connection:
+            raise RuntimeError(f"Komponent bazodanowy '{self.name}' nie jest połączony")
+
+        if not where_conditions:
+            raise ValueError("where_conditions nie może być pusty")
+
+        # Ustal typy kolumn
+        target_info = await self._get_column_type_info(table, target_column)
+        source_info = await self._get_column_type_info(table, source_column)
+
+        # Zbuduj wyrażenie SET z rzutowaniem jeśli potrzebne
+        if (
+            target_info["is_enum"]
+            and source_info["is_enum"]
+            and (target_info["fq_type"] != source_info["fq_type"])
+        ):
+            set_expr = f"{source_column}::text::{target_info['fq_type']}"
+        else:
+            set_expr = f"{source_column}"
+
+        # WHERE z konwersją wartości (obsługa enumów w where)
+        param_index = 1
+        values = []
+        where_parts = []
+        converted_where = self._convert_where_conditions(where_conditions)
+        for col, val in converted_where.items():
+            if hasattr(val, "value"):
+                val = val.value
+
+            if isinstance(val, list):
+                # Obsługa list - użyj operatora IN
+                if len(val) == 0:
+                    # Pusta lista - warunek niemożliwy do spełnienia
+                    where_parts.append("FALSE")
+                elif len(val) == 1:
+                    # Jeden element - użyj prostego równania
+                    where_parts.append(f"{col} = ${param_index}")
+                    values.append(val[0])
+                    param_index += 1
+                else:
+                    # Wiele elementów - użyj IN
+                    placeholders = []
+                    for item in val:
+                        placeholders.append(f"${param_index}")
+                        values.append(item)
+                        param_index += 1
+                    where_parts.append(f"{col} IN ({', '.join(placeholders)})")
+            else:
+                # Pojedyncza wartość - użyj prostego równania
+                where_parts.append(f"{col} = ${param_index}")
+                values.append(val)
+                param_index += 1
+
+        where_clause = " AND ".join(where_parts)
+        query = f"UPDATE {table} SET {target_column} = {set_expr} WHERE {where_clause}"
+
+        try:
+            debug(
+                f"✏️ UPDATE (copy) w bazie '{self.name}': {query[:120]}{'...' if len(query) > 120 else ''}",
+                message_logger=self._message_logger,
+            )
+            async with self._conn_lock:
+                status = await self._connection.execute(query, *values)
+            try:
+                affected = int(status.split()[-1])
+            except Exception:
+                affected = 0
+            return affected
+        except Exception as e:
+            error(
+                f"❌ Błąd UPDATE (copy) w bazie '{self.name}': {e}",
+                message_logger=self._message_logger,
+            )
+            raise
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Zwraca status komponentu bazodanowego.
+
+        Returns:
+            Słownik ze statusem komponentu
+        """
+        return {
+            "component_name": self.name,
+            "type": "DatabaseComponent",
+            "initialized": self._is_initialized,
+            "connected": self._is_connected,
+            "database_host": self._connection_params.get("host", "unknown"),
+            "database_name": self._connection_params.get("database", "unknown"),
+            "database_port": self._connection_params.get("port", "unknown"),
+            "name": self._connection_params.get("name", "unknown"),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Zwraca serializowalną reprezentację komponentu do JSON.
+
+        Zawiera konfigurację i stan komponentu, pomijając nieserializowalne obiekty
+        takie jak połączenia czy locki.
+
+        Returns:
+            Słownik z ustawieniami i stanem komponentu gotowy do serializacji JSON
+        """
+        # Przygotuj bezpieczną kopię parametrów połączenia bez hasła
+        safe_connection_params = self._connection_params.copy()
+        if "password" in safe_connection_params:
+            safe_connection_params["password"] = "***"
+
+        return {
+            "component_name": self.name,
+            "component_type": "DatabaseComponent",
+            "config": self.config,
+            "connection_params": safe_connection_params,
+            "is_initialized": self._is_initialized,
+            "is_connected": self._is_connected,
+            "column_type_cache_keys": list(self._column_type_cache.keys()),
+            "status": self.get_status(),
+        }

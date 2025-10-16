@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import signal
@@ -91,6 +92,10 @@ class EventListener:
     _latest_state_data: dict = {}
     __state_update_frequency: int = 1  # Hz
     __state_update_thread: threading.Thread = None
+
+    _error: bool = False
+    _error_code: int = 0
+    _error_message: str | None = None
 
     def __init__(
         self,
@@ -312,11 +317,15 @@ class EventListener:
             Any: Serialized value ready for JSON format
 
         Note:
-            Handles serialization of Pydantic objects, dictionaries, and lists, datetime objects, and Enum values
+            Handles serialization of Pydantic objects, dictionaries, lists, datetime objects,
+            Enum values, and objects with to_dict() method (like orchestrator components)
         """
 
         if isinstance(value, BaseModel):
             return value.model_dump(mode="json")
+        elif hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+            # Obsługa komponentów orchestratora (DatabaseComponent, EmailComponent, etc.)
+            return self._serialize_value(value.to_dict())
         elif isinstance(value, dict):
             return {k: self._serialize_value(v) for k, v in value.items()}
         elif isinstance(value, list):
@@ -461,6 +470,8 @@ class EventListener:
             )
 
     def _event_find_and_remove_debug(self, event: Event):
+        if event.is_system_event:
+            return
         processing_time = time.time() - event.timestamp.timestamp()
         if processing_time < event.maximum_processing_time:
             debug(
@@ -474,13 +485,17 @@ class EventListener:
             )
 
     def _event_add_to_processing_debug(self, event: Event):
-        debug(
-            f"Event add to processing: id={event.id} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
-            message_logger=self._message_logger,
-        )
+        if not event.is_system_event:
+            debug(
+                f"Event add to processing: id={event.id} event_type={event.event_type} data={event.data} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}",
+                message_logger=self._message_logger,
+            )
 
     @contextmanager
     def _event_send_debug(self, event: Event):
+        if event.is_system_event:  # nie debugujemy systemowych
+            yield
+            return
         start = time.perf_counter()
         try:
             yield
@@ -498,6 +513,8 @@ class EventListener:
             )
 
     def _event_receive_debug(self, event: Event):
+        if event.is_system_event:  # nie debugujemy systemowych
+            return
         if event.event_type == "cumulative":
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}] (cumulative) payload={event.payload}:\n"
             for e in event.data["events"]:
@@ -603,7 +620,9 @@ class EventListener:
         """
         # Store the current configuration as baseline before any modifications
         self._configuration = (
-            self._default_configuration.copy() if self._default_configuration else {}
+            copy.deepcopy(self._default_configuration)
+            if self._default_configuration
+            else {}
         )
 
         if not os.path.exists(self.__config_file_path):
@@ -672,7 +691,7 @@ class EventListener:
         Returns:
             dict: Merged dictionary
         """
-        result = default_dict.copy()
+        result = copy.deepcopy(default_dict)
 
         for key, value in config_dict.items():
             if (
@@ -906,6 +925,16 @@ class EventListener:
                 f"{self.__class__.__name__} został bezpiecznie zamknięty.",
                 message_logger=None,
             )
+
+            # OSTATECZNOŚĆ - wymuszenie zakończenia procesu po krótkim czasie
+            def force_exit():
+                time.sleep(2.0)  # Dajemy 2 sekundy na naturalne zakończenie
+                warning("Forcing process exit after timeout...", message_logger=None)
+                os._exit(0)  # Wymuś zakończenie procesu
+
+            force_thread = threading.Thread(target=force_exit, daemon=True)
+            force_thread.start()
+
             return True
 
         except Exception as e:
@@ -976,10 +1005,11 @@ class EventListener:
         new_queue = []  # Tworzymy nową kolejkę dla eventów do zachowania
         for event in events_to_process:
             try:
-                debug(
-                    f"Analyzing incoming event: {event}",
-                    message_logger=self._message_logger,
-                )
+                if not event.is_system_event:
+                    debug(
+                        f"Analyzing incoming event: {event}",
+                        message_logger=self._message_logger,
+                    )
                 should_remove = True
                 match event.event_type:
                     case "CMD_INITIALIZED":
@@ -991,6 +1021,14 @@ class EventListener:
                     case "CMD_RUN":
                         if event.result is None:
                             await self._handle_cmd_run(event)
+                        else:
+                            should_remove = await self.__analyze_event_with_fsm(event)
+
+                    case "CMD_RESTART":
+                        if event.result is None:
+                            await self._handle_cmd_restart(event)
+                            # CMD_RESTART obsługuje odpowiedź samodzielnie, nie przekazujemy dalej
+                            should_remove = True
                         else:
                             should_remove = await self.__analyze_event_with_fsm(event)
 
@@ -1153,10 +1191,11 @@ class EventListener:
                     )
                 else:
                     self.__incoming_events.append(event)
-                    debug(
-                        f"Added event to incomming events queue: {event}",
-                        message_logger=self._message_logger,
-                    )
+                    if not event.is_system_event:
+                        debug(
+                            f"Added event to incomming events queue: {event}",
+                            message_logger=self._message_logger,
+                        )
             self.__received_events += 1
         except Exception as e:
             error(f"__event_handler: {e}", message_logger=self._message_logger)
@@ -1185,27 +1224,26 @@ class EventListener:
                 self.__check_local_data_frequency_changed = False
 
             loop.loop_begin()
-
-            # Event processing per state zgodnie z FSM analizą
-            match self.__fsm_state:
-                case EventListenerState.UNKNOWN:
-                    pass
-                case EventListenerState.STOPPED:
-                    await self.on_stopped()
-                case EventListenerState.INITIALIZING:
-                    # Wczytanie zapisanych kolejek
-                    if self.__load_state:
-                        self.__load_state()
-                    await self.on_initializing()
-                    self._change_fsm_state(EventListenerState.INITIALIZED)
-                case EventListenerState.INITIALIZED:
-                    await self.on_initialized()
-                case EventListenerState.STARTING:
-                    await self.on_starting()
-                    self._change_fsm_state(EventListenerState.RUN)
-                case EventListenerState.RUN:
-                    await self.on_run()
-                    try:
+            try:
+                # Event processing per state zgodnie z FSM analizą
+                match self.__fsm_state:
+                    case EventListenerState.UNKNOWN:
+                        pass
+                    case EventListenerState.STOPPED:
+                        await self.on_stopped()
+                    case EventListenerState.INITIALIZING:
+                        # Wczytanie zapisanych kolejek
+                        if self.__load_state:
+                            self.__load_state()
+                        await self.on_initializing()
+                        self._change_fsm_state(EventListenerState.INITIALIZED)
+                    case EventListenerState.INITIALIZED:
+                        await self.on_initialized()
+                    case EventListenerState.STARTING:
+                        await self.on_starting()
+                        self._change_fsm_state(EventListenerState.RUN)
+                    case EventListenerState.RUN:
+                        await self.on_run()
                         await self._check_local_data()
                     except Exception as e:
                         error(
@@ -1224,42 +1262,60 @@ class EventListener:
                             self.__sended_events - self.__prev_sended_events
                         )
 
-                        # Aktualizacja poprzednich wartości i czasu
-                        self.__prev_received_events = self.__received_events
-                        self.__prev_sended_events = self.__sended_events
+                        if (
+                            loop.loop_counter % self.__check_local_data_frequency == 0
+                        ):  # co 1 sekunde
+                            self.__received_events_per_second = (
+                                self.__received_events - self.__prev_received_events
+                            )
+                            self.__sended_events_per_second = (
+                                self.__sended_events - self.__prev_sended_events
+                            )
 
-                case EventListenerState.PAUSING:
-                    await self.on_pausing()
-                    self._change_fsm_state(EventListenerState.PAUSE)
-                case EventListenerState.RESUMING:
-                    await self.on_resuming()
-                    self._change_fsm_state(EventListenerState.RUN)
-                case EventListenerState.PAUSE:
-                    await self.on_pause()
-                case EventListenerState.SOFT_STOPPING:
-                    await self.on_soft_stopping()
-                    self._change_fsm_state(EventListenerState.INITIALIZED)
-                case EventListenerState.HARD_STOPPING:
-                    await self.on_hard_stopping()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case EventListenerState.STOPPING:
-                    self.__save_state()
-                    await self.on_stopping()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case EventListenerState.FAULT:
-                    await self.on_fault()
-                case EventListenerState.ON_ERROR:
-                    await self.on_error()
-                    self._change_fsm_state(EventListenerState.FAULT)
-                case EventListenerState.ACK:
-                    self.__save_state()
-                    await self.on_ack()
-                    self._change_fsm_state(EventListenerState.STOPPED)
-                case _:
-                    error(
-                        f"Unknown state: {self.__fsm_state}",
-                        message_logger=self._message_logger,
-                    )
+                            # Aktualizacja poprzednich wartości i czasu
+                            self.__prev_received_events = self.__received_events
+                            self.__prev_sended_events = self.__sended_events
+
+                    case EventListenerState.PAUSING:
+                        await self.on_pausing()
+                        self._change_fsm_state(EventListenerState.PAUSE)
+                    case EventListenerState.RESUMING:
+                        await self.on_resuming()
+                        self._change_fsm_state(EventListenerState.RUN)
+                    case EventListenerState.PAUSE:
+                        await self.on_pause()
+                    case EventListenerState.SOFT_STOPPING:
+                        await self.on_soft_stopping()
+                        self._change_fsm_state(EventListenerState.INITIALIZED)
+                    case EventListenerState.HARD_STOPPING:
+                        await self.on_hard_stopping()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case EventListenerState.STOPPING:
+                        self.__save_state()
+                        await self.on_stopping()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case EventListenerState.FAULT:
+                        await self.on_fault()
+                    case EventListenerState.ON_ERROR:
+                        await self.on_error()
+                        self._change_fsm_state(EventListenerState.FAULT)
+                    case EventListenerState.ACK:
+                        await self.on_ack()
+
+                        self._error = False
+                        self._error_code = 0
+                        self._error_message = None
+
+                        self.__save_state()
+                        self._change_fsm_state(EventListenerState.STOPPED)
+                    case _:
+                        error(
+                            f"Unknown state: {self.__fsm_state}",
+                            message_logger=self._message_logger,
+                        )
+            except Exception as e:
+                error(f"Error in check_local_data: {e}")
+                self._change_fsm_state(EventListenerState.ON_ERROR)
 
             loop.loop_end()
 
@@ -1334,10 +1390,10 @@ class EventListener:
                     self.__events_to_send.clear()
 
                 if local_queue:
-                    debug(
-                        f"Sending events: {len(local_queue)}",
-                        message_logger=self._message_logger,
-                    )
+                    # debug(
+                    #     f"Sending events: {len(local_queue)}",
+                    #     message_logger=self._message_logger,
+                    # )
 
                     if self.__use_cumulative_send:
                         # Group events by destination
@@ -1660,6 +1716,7 @@ class EventListener:
         data: dict = {},
         to_be_processed: bool = True,
         maximum_processing_time: float = 20,
+        is_system_event: bool = False,
     ) -> Event:
         """
         Creates a new event and adds it to the sending queue.
@@ -1689,6 +1746,7 @@ class EventListener:
             id=id,
             to_be_processed=to_be_processed,
             is_processing=False,
+            is_system_event=is_system_event,
             maximum_processing_time=maximum_processing_time,
         )
 
@@ -1734,14 +1792,16 @@ class EventListener:
         new_event.destination_port = event.source_port
         new_event.id = event.id
         new_event.result = event.result
+        new_event.is_system_event = event.is_system_event
 
         try:
             with self.__atomic_operation_for_events_to_send():
                 self.__events_to_send.append({"event": new_event, "retry_count": 0})
-                debug(
-                    f"Added event to send queue: {new_event}",
-                    message_logger=self._message_logger,
-                )
+                if not new_event.is_system_event:
+                    debug(
+                        f"Added event to send queue: {new_event}",
+                        message_logger=self._message_logger,
+                    )
         except TimeoutError as e:
             error(f"_reply: {e}", message_logger=self._message_logger)
             raise
@@ -1782,7 +1842,34 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
 
-            self.server.run()
+            # Uruchamiamy serwer w osobnym thread żeby nie blokować głównego procesu
+
+            server_thread = threading.Thread(target=self.server.run, daemon=False)
+            server_thread.start()
+
+            # Czekamy na zakończenie serwera lub shutdown request
+            try:
+                while server_thread.is_alive() and not self._shutdown_requested:
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                info(
+                    "Otrzymano KeyboardInterrupt, rozpoczynam shutdown...",
+                    message_logger=self._message_logger,
+                )
+                self.shutdown()
+
+            # Czekamy na zakończenie server thread
+            if server_thread.is_alive():
+                info(
+                    "Czekam na zakończenie serwera...",
+                    message_logger=self._message_logger,
+                )
+                server_thread.join(timeout=5.0)
+                if server_thread.is_alive():
+                    warning(
+                        "Serwer nie zakończył się w czasie, wymuszam zakończenie",
+                        message_logger=self._message_logger,
+                    )
 
         except Exception as e:
             error(
@@ -1803,7 +1890,7 @@ class EventListener:
         try:
             event.is_processing = True
             with self.__atomic_operation_for_processing_events():
-                event_timestamp = event.timestamp.isoformat()
+                event_timestamp = event.timestamp.isoformat(sep=" ")
 
                 self._processing_events_dict[event_timestamp] = event
 
@@ -1822,7 +1909,7 @@ class EventListener:
     def _find_and_remove_processing_event(self, event: Event) -> Event | None:
         try:
             # Obsługa zarówno datetime jak i string timestamp
-            timestamp_key = event.timestamp.isoformat()
+            timestamp_key = event.timestamp.isoformat(sep=" ")
 
             debug(
                 f"Searching for event for remove in processing queue: id={event.id} event_type={event.event_type} timestamp={timestamp_key}",
@@ -2040,6 +2127,40 @@ class EventListener:
                     message_logger=self._message_logger,
                 )
 
+    async def _handle_cmd_restart(self, event: Event):
+        """Obsługa CMD_RESTART - zatrzymanie programu przez shutdown, automatyczny restart z systemctl"""
+        match self.__fsm_state:
+            case EventListenerState.STOPPED:
+                # Najpierw wysyłamy odpowiedź że restart jest akceptowany
+                event.result = Result(
+                    result="success",
+                    data={"message": "Restart accepted, shutting down system"},
+                )
+                await self._reply(event)
+
+                # Dajemy czas na wysłanie odpowiedzi
+                await asyncio.sleep(0.1)
+
+                # Dopiero teraz wykonujemy shutdown
+                info(
+                    "CMD_RESTART: Initiating system shutdown after successful response",
+                    message_logger=self._message_logger,
+                )
+                self.shutdown()
+
+            case _:
+                # Wysyłamy odpowiedź o błędzie - restart niemożliwy
+                event.result = Result(
+                    result="error",
+                    error_message=f"Cannot restart from state {self.__fsm_state.name}. System must be in STOPPED state first.",
+                )
+                await self._reply(event)
+
+                warning(
+                    f"Received CMD_RESTART in unexpected state: {self.__fsm_state.name}, first STOP the program.",
+                    message_logger=self._message_logger,
+                )
+
     async def _handle_cmd_pause(self, event: Event):
         """Obsługa CMD_PAUSE - przejście DO stanu PAUSE z różnych stanów źródłowych"""
         match self.__fsm_state:
@@ -2109,15 +2230,16 @@ class EventListener:
                 )
 
     async def _handle_get_state_command(self, event: Event):
-        debug(
-            f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
-            message_logger=self._message_logger,
-        )
+        # debug(
+        #     f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
+        #     message_logger=self._message_logger,
+        # )
 
         event.data = {}
         event.data["fsm_state"] = self.__fsm_state.name
         # Pola błędu (jeśli klasa potomna je definiuje)
         event.data["error"] = getattr(self, "_error", False)
+        event.data["error_code"] = getattr(self, "_error_code", False)
         event.data["error_message"] = getattr(self, "_error_message", None)
         event.result = Result(result="success")
         await self._reply(event)

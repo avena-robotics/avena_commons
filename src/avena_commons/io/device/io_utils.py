@@ -1,15 +1,23 @@
-"""Utility functions for device initialization."""
+"""Funkcje pomocnicze do inicjalizacji urządzeń IO.
+
+Udostępnia uproszczenia do dynamicznego tworzenia właściwości odczytu/zapisu
+dla wejść cyfrowych (DI) i wyjść cyfrowych (DO) w klasach urządzeń. Dzięki temu
+możliwe jest wygodne odwoływanie się do sygnałów jako `di0`, `di1`, ... oraz
+`do0`, `do1`, ... zamiast stosowania wywołań metod z indeksami.
+"""
 
 
 def init_device_di(cls, first_index=0, count=16):
-    """Initialize digital input properties for a device class.
+    """Inicjalizuje właściwości wejść cyfrowych (DI) dla klasy urządzenia.
 
-    Creates properties di0, di1, ... diN on the class for easy access to digital inputs.
+    Na wskazanej klasie dynamicznie tworzy właściwości `di0`, `di1`, ... `diN`,
+    które mapują się na wywołania metody `di(index)` obiektu. Ułatwia to
+    odczyt stanu wejść cyfrowych bezpośrednio przez atrybuty.
 
     Args:
-        cls: The device class to add properties to
-        first_index: Starting index for digital inputs (default: 0)
-        count: Number of digital inputs to create (default: 16)
+        cls: Klasa urządzenia, do której zostaną dodane właściwości.
+        first_index (int): Indeks początkowy wejść cyfrowych (domyślnie 0).
+        count (int): Liczba tworzonych wejść cyfrowych (domyślnie 16).
     """
     for i in range(count):
 
@@ -20,14 +28,16 @@ def init_device_di(cls, first_index=0, count=16):
 
 
 def init_device_do(cls, first_index=0, count=16):
-    """Initialize digital output properties for a device class.
+    """Inicjalizuje właściwości wyjść cyfrowych (DO) dla klasy urządzenia.
 
-    Creates properties do0, do1, ... doN on the class for easy access to digital outputs.
+    Na wskazanej klasie dynamicznie tworzy właściwości `do0`, `do1`, ... `doN`,
+    które mapują się na wywołania metody `do(index)` obiektu (z obsługą zapisu).
+    Ułatwia to odczyt i ustawianie stanu wyjść cyfrowych bezpośrednio przez atrybuty.
 
     Args:
-        cls: The device class to add properties to
-        first_index: Starting index for digital outputs (default: 0)
-        count: Number of digital outputs to create (default: 16)
+        cls: Klasa urządzenia, do której zostaną dodane właściwości.
+        first_index (int): Indeks początkowy wyjść cyfrowych (domyślnie 0).
+        count (int): Liczba tworzonych wyjść cyfrowych (domyślnie 16).
     """
     for i in range(count):
 

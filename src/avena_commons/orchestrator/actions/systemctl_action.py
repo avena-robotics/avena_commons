@@ -1,9 +1,17 @@
+"""
+Akcja systemctl do sterowania usługami systemd.
+
+Umożliwia wykonywanie operacji start/stop/restart/reload/enable/disable/status
+na wybranych usługach. Wspiera sudo oraz timeouty na poziomie procesu.
+"""
+
 import asyncio
 from typing import Any, Dict, List, Tuple
 
 from avena_commons.util.logger import debug, info, warning
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class SystemctlAction(BaseAction):
@@ -32,8 +40,30 @@ class SystemctlAction(BaseAction):
     _ALLOWED_OPS = {"stop", "start", "restart", "reload", "enable", "disable", "status"}
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
+        """
+        Wykonuje operację systemctl na wskazanych usługach.
+
+        Args:
+            action_config (Dict[str, Any]): Konfiguracja akcji z polami:
+                - operation (str): "stop" | "start" | "restart" | "reload" | "enable" | "disable" | "status".
+                - service (str): Jedna usługa do obsługi.
+                - services (List[str]): Lista usług do obsługi.
+                - use_sudo (bool): Czy użyć sudo -n (domyślnie False).
+                - timeout (str|int|float): Timeout (np. "30s", "2m") lub sekundy.
+                - ignore_errors (bool): Czy kontynuować mimo błędów (domyślnie False).
+            context (ScenarioContext): Kontekst wykonania akcji.
+
+        Raises:
+            ActionExecutionError: Gdy konfiguracja jest niepoprawna lub operacja systemctl się nie powiedzie.
+
+        Examples:
+            >>> await SystemctlAction().execute(
+            ...     {"operation": "restart", "services": ["io.service"], "timeout": "20s"},
+            ...     context,
+            ... )
+        """
         operation = str(action_config.get("operation", "stop")).lower()
         if operation not in self._ALLOWED_OPS:
             raise ActionExecutionError(
@@ -83,6 +113,19 @@ class SystemctlAction(BaseAction):
             )
 
     def _collect_services(self, cfg: Dict[str, Any]) -> List[str]:
+        """
+        Zbiera i normalizuje listę usług z konfiguracji.
+
+        Args:
+            cfg (Dict[str, Any]): Konfiguracja akcji.
+
+        Returns:
+            List[str]: Unikalna lista nazw usług w kolejności pierwszego wystąpienia.
+
+        Examples:
+            >>> SystemctlAction()._collect_services({"service": "a.service", "services": ["a.service", "b.service"]})
+            ['a.service', 'b.service']
+        """
         services: List[str] = []
         if "service" in cfg and cfg["service"]:
             services.append(str(cfg["service"]))
@@ -98,6 +141,19 @@ class SystemctlAction(BaseAction):
         return uniq
 
     async def _run(self, cmd: List[str], timeout_sec: float) -> Tuple[int, str, str]:
+        """
+        Uruchamia komendę w subprocessie z timeoutem.
+
+        Args:
+            cmd (List[str]): Polecenie i argumenty.
+            timeout_sec (float): Limit czasu w sekundach.
+
+        Returns:
+            Tuple[int, str, str]: Kod wyjścia, stdout, stderr.
+
+        Raises:
+            ActionExecutionError: W przypadku przekroczenia limitu czasu.
+        """
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )

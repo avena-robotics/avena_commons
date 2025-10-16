@@ -1,0 +1,44 @@
+{
+  "name": "Diagnostyka systemu",
+  "description": "Scenariusz diagnostyczny używany jako zagnieżdżony w innych scenariuszach",
+  "version": "1.0",
+  "author": "System",
+  "priority": 90,
+  "cooldown": 10,
+  "trigger": {
+    "type": "manual",
+    "description": "Scenariusz diagnostyczny uruchamiany przez inne scenariusze"
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔍 Rozpoczynam diagnostykę systemu",
+      "description": "Rozpoczęcie diagnostyki"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "📊 Sprawdzam stan komponentów systemu",
+      "description": "Sprawdzanie komponentów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔧 Analizuję logi systemowe",
+      "description": "Analiza logów"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "💾 Sprawdzam zasoby systemowe",
+      "description": "Sprawdzanie zasobów"
+    },
+    {
+      "type": "log_event",
+      "level": "success",
+      "message": "✅ Diagnostyka systemu zakończona pomyślnie",
+      "description": "Zakończenie diagnostyki"
+    }
+  ]
+}

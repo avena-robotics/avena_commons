@@ -1,9 +1,20 @@
-from avena_commons.util.logger import MessageLogger, error, info
 import threading
 import time
 
+from avena_commons.util.logger import MessageLogger, error, info
+
 
 class WJ153:
+    """Czujnik/enkoder WJ153 z wątkiem monitorującym wartość enkodera.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        period (float): Okres odczytu (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -27,6 +38,7 @@ class WJ153:
         self.__reset()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek monitorujący odczyt enkodera."""
         try:
             # with self.__lock:
             #     self.bus.write_holding_register(address=self.address, register=0, value=0)
@@ -49,6 +61,7 @@ class WJ153:
             return None
 
     def __reset(self):
+        """Resetuje wewnętrzne rejestry odpowiedzialne za licznik/enkoder."""
         with self.__lock:
             self.bus.write_holding_registers(
                 address=self.address, first_register=67, values=[10]
@@ -56,6 +69,7 @@ class WJ153:
             # self.bus.write_holding_registers(address=self.address, first_register=32, values=[0, 0, 0, 0])
 
     def _encoder_thread(self):
+        """Wątek cyklicznie odczytujący wartość enkodera i aktualizujący cache."""
         while not self._stop_event.is_set():
             now = time.time()
             with self.__lock:

@@ -6,8 +6,15 @@
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "client_state": {
-        "all_services_in_state": "STOPPED"
+      "database": {
+        "component": "main_database",
+        "table": "aps_description",
+        "column": "goal_state",
+        "where": {
+          "current_state": "inactive"
+        },
+        "expected_value": "active",
+        "operator": "equals"
       }
     }
   },
@@ -15,19 +22,13 @@
     {
       "type": "log_event",
       "level": "info",
-      "message": "🤖 AUTONOMICZNY START: Wykryto zatrzymane usługi - rozpoczynam automatyczne uruchomienie",
-      "description": "Informacja o autonomicznym wyzwoleniu scenariusza"
-    },
-    {
-      "type": "log_event",
-      "level": "info",
-      "message": "🔍 Warunki spełnione: znaleziono komponenty w stanie STOPPED, brak komponentów w ERROR",
+      "message": "Warunki spełnione: znaleziono komponenty w stanie INACTIVE, brak komponentów w ERROR",
       "description": "Potwierdzenie spełnienia warunków autonomicznych"
     },
     {
       "type": "log_event",
       "level": "info",
-      "message": "⚙️ Autonomiczna inicjalizacja wszystkich komponentów (@all)...",
+      "message": "Autonomiczna inicjalizacja wszystkich komponentów (@all)...",
       "description": "Rozpoczęcie autonomicznej inicjalizacji"
     },
     {
@@ -46,7 +47,7 @@
     {
       "type": "log_event",
       "level": "info",
-      "message": "🔄 Autonomiczne uruchamianie wszystkich komponentów (@all) - przejście do stanu RUN...",
+      "message": "Autonomiczne uruchamianie wszystkich komponentów (@all) - przejście do stanu RUN...",
       "description": "Rozpoczęcie autonomicznego uruchomienia"
     },
     {
@@ -65,20 +66,34 @@
     {
       "type": "log_event",
       "level": "success",
-      "message": "✅ AUTONOMICZNY START ZAKOŃCZONY: Wszystkie usługi uruchomione pomyślnie!",
+      "message": "AUTONOMICZNY START ZAKOŃCZONY: Wszystkie usługi uruchomione pomyślnie!",
       "description": "Potwierdzenie pomyślnego autonomicznego startu"
     },
     {
       "type": "log_event",
       "level": "info",
-      "message": "📋 Autonomicznie uruchomione komponenty: io, supervisor_1, supervisor_2, munchies_algo",
+      "message": "Autonomicznie uruchomione komponenty: io, supervisor_1, supervisor_2, munchies_algo",
       "description": "Lista autonomicznie uruchomionych komponentów"
     },
     {
       "type": "log_event",
       "level": "info",
-      "message": "🎯 System autonomicznie przywrócony do pracy - wszystkie usługi w stanie RUN",
+      "message": "System autonomicznie przywrócony do pracy - wszystkie usługi w stanie RUN",
       "description": "Potwierdzenie autonomicznego przywrócenia gotowości systemu"
+    },
+    {
+      "type": "aps_database_update",
+      "component": "main_database",
+      "table": "aps_description",
+      "column": "current_state",
+      "value": "active",
+      "description": "Synchronizacja current_state z goal_state po udanym scenariuszu"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Aktualizacja bazy danych: current_state z goal_state po udanym scenariuszu",
+      "description": "Aktualizacja current_state z goal_state po udanym scenariuszu"
     }
   ]
 }

@@ -6,6 +6,17 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
 class GB4715:
+    """Czujnik alarmowy GB4715 monitorowany wątkiem z cache odczytu alarmu.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        period (float): Okres odczytu alarmu (s).
+        cache_time (float): Czas ważności cache odczytu (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -37,6 +48,7 @@ class GB4715:
         self.check_device_connection()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek monitorujący stan alarmu."""
         try:
             if self._thread is None or not self._thread.is_alive():
                 self._stop_event.clear()
@@ -56,6 +68,7 @@ class GB4715:
             return None
 
     def _alarm_monitor_thread(self):
+        """Wątek cyklicznie odczytujący i aktualizujący stan alarmu."""
         while not self._stop_event.is_set():
             now = time.time()
             with self.__lock:
@@ -63,7 +76,8 @@ class GB4715:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def read_alarm_status(self):
-        """Read alarm status from address 0x003
+        """Odczytuje stan alarmu z adresu 0x0033
+
         Returns:
             0: OK
             1: Alarm
@@ -112,7 +126,7 @@ class GB4715:
                 return None
 
     def set_alarm_delay(self, delay):
-        """Set alarm delay at address 0x0033"""
+        """Ustawia ouznienie alarmu na adresie 0x0033"""
         try:
             with self.__lock:
                 result = self.bus.write_holding_register(
