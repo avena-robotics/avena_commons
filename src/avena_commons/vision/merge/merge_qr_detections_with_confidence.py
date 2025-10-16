@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 def get_confidence_score(detection: Any) -> float:

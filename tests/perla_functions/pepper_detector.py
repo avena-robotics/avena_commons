@@ -7,14 +7,13 @@ Pracuje na poziomie głównego systemu, agregując fragmenty z wielu kamer.
 
 import cv2
 import numpy as np
-import os
 import time
 import base64
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 
-from avena_commons.util.logger import MessageLogger, debug, error, info, warning
+from avena_commons.util.logger import MessageLogger, debug, error, info
 
-from . import config, search, fill
+from . import config, search
 from .enums import CameraDetectionState
 
 

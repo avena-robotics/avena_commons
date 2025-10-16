@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, os, re, sys, time, subprocess
+import argparse, re, sys, time, subprocess
 
 WORKER_CODE = r"""
 import time, sys, signal, math

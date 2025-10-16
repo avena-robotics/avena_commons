@@ -11,10 +11,6 @@ Eksponuje:
 """
 
 import os
-import traceback
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 
@@ -26,7 +22,6 @@ from avena_commons.event_listener import (
     EventListenerState,
     Result,
 )
-from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.vision.validation.transfor_to_base import transform_camera_to_base
 

@@ -1,6 +1,4 @@
-import asyncio
 import base64
-import threading
 import time
 import traceback
 
@@ -15,13 +13,11 @@ from pyorbbecsdk import (
     OBFormat,
     OBPermissionType,
     OBPropertyID,
-    OBPropertyType,
     OBSensorType,
     OBStreamType,
     Pipeline,
     SpatialAdvancedFilter,
     TemporalFilter,
-    VideoStreamProfile,
 )
 
 from avena_commons.event_listener import Event, EventListener, Result

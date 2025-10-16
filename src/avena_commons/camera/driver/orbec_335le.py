@@ -1,9 +1,5 @@
 import asyncio
-import multiprocessing
-import threading
-import time
 import traceback
-from enum import Enum, auto
 from typing import Optional
 
 import cv2
@@ -17,14 +13,11 @@ from pyorbbecsdk import (
     OBFormat,
     OBPermissionType,
     OBPropertyID,
-    OBPropertyType,
     OBSensorType,
     OBStreamType,
     Pipeline,
     SpatialAdvancedFilter,
     TemporalFilter,
-    FrameSet,
-    VideoStreamProfile,
 )
 
 from avena_commons.camera.driver.general import (

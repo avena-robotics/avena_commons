@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import debug
 from avena_commons.vision.vision.merge_depth_lists import merge_depth_lists
 from avena_commons.vision.vision.propagate_by_shape import propagate_by_shape
 

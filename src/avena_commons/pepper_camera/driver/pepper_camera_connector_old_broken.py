@@ -1,11 +1,9 @@
 """PepperCamera Connector and Worker for simplified camera processing with fragmentation."""
 
 import asyncio
-import time
 import pickle
 import threading
 import traceback
-from enum import Enum
 from typing import Optional, Dict, Any
 
 import cv2

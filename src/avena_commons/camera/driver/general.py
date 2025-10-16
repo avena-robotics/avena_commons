@@ -1,5 +1,4 @@
 import asyncio
-import time
 import importlib
 import threading
 import traceback
@@ -13,7 +12,6 @@ from typing import Optional
 
 import avena_commons.vision.merge as merge
 import avena_commons.vision.sorter as sorter
-from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import (
     LoggerPolicyPeriod,

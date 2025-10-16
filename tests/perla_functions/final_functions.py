@@ -8,7 +8,6 @@ from .search_functions import add_nozzle_masks
 from .search_functions import check_mask_size
 from .search_functions import create_outer_overflow_mask
 
-from .utils_functions import refine_hole_mask_with_depth
 from .utils_functions import add_exclusion_masks
 from .utils_functions import filter_exclusion_mask
 from .utils_functions import create_seed_masks
@@ -20,10 +19,8 @@ from .fill_functions import if_pepper_mask_is_white
 from .fill_functions import overflow_detection
 
 import numpy as np
-import time
 import json
 
-from .catchtime import Catchtime
 
 
 # MARK: CONFIG

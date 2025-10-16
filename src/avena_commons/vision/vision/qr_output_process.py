@@ -1,11 +1,4 @@
-import numpy as np
 
-import avena_commons.vision.vision as vision
-from avena_commons.util.utils import (
-    euler_to_rotation_matrix,
-    rotation_matrix_to_euler_angles,
-    rotation_matrix_to_rvec,
-)
 
 
 def qr_output_process(detection_list: list, middle_point_y: int = 540) -> dict:

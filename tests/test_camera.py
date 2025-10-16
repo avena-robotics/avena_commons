@@ -5,18 +5,12 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 from dotenv import load_dotenv
-from pupil_apriltags import Detector
 
 # from avena_commons.camera.camera import Camera
 from avena_commons.pepper_camera.pepper_camera import PepperCamera as Camera
-from avena_commons.camera.driver.general import CameraState
-from avena_commons.event_listener import EventListenerState
 from avena_commons.util.logger import (
     LoggerPolicyPeriod,
     MessageLogger,
-    debug,
-    error,
-    info,
 )
 
 if __name__ == "__main__":

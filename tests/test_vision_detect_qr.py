@@ -5,7 +5,6 @@ import random
 from pathlib import Path
 
 import cv2
-import numpy as np
 from pupil_apriltags import Detector
 
 from avena_commons.util.catchtime import Catchtime

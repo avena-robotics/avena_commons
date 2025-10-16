@@ -1,6 +1,3 @@
-import os
-import traceback
-from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
@@ -10,9 +7,8 @@ import pkg_resources
 import avena_commons.vision.camera as camera
 import avena_commons.vision.image_preprocess as preprocess
 import avena_commons.vision.tag_reconstruction as tag_reconstruction
-import avena_commons.vision.vision as vision
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import debug, error
+from avena_commons.util.logger import error
 
 # Global detector cache dla optymalizacji
 _DETECTOR_CACHE = None

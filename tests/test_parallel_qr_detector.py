@@ -1,5 +1,4 @@
 # pytest tests/test_parallel_qr_detector.py::TestParallelQRDetection::test_parallel_9_configs -v -s
-import asyncio
 import json
 import os
 import random
@@ -7,14 +6,11 @@ import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import cv2
-import numpy as np
 import pytest
 from pupil_apriltags import Detector
 
-import avena_commons.vision.detector as detector
 import avena_commons.vision.merge as merge
 import avena_commons.vision.sorter as sorter
 from avena_commons.util.catchtime import Catchtime

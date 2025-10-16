@@ -12,7 +12,6 @@ from .utils_functions import (
 
 # MARK: PEPPER PRESENCE
 
-from .catchtime import Catchtime
 
 
 def pepper_presence(rgb, nozzle_mask, section="top_left"):

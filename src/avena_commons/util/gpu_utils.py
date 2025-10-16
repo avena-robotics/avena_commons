@@ -21,7 +21,7 @@ Exposes:
 """
 
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 import cv2
 import numpy as np

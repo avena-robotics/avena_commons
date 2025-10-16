@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import concurrent.futures
 import json
 import multiprocessing as mp
@@ -7,25 +6,14 @@ import multiprocessing as mp
 # import logging
 import os
 import pickle
-import random
-import signal
-import sys
-import threading
-import time
 from pathlib import Path
 
 import cv2
 import numpy as np
-from pupil_apriltags import Detector
 
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.logger import (
-    LoggerPolicyPeriod,
-    MessageLogger,
-    debug,
     error,
-    info,
-    warning,
 )
 from avena_commons.vision.detector import box_detector
 from avena_commons.vision.old import ObjectDetector

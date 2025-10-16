@@ -2,11 +2,9 @@ import asyncio
 import concurrent.futures
 import os
 import threading
-import time
 import traceback
 from enum import Enum
-from math import atan2, degrees
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np

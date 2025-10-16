@@ -11,19 +11,16 @@ Eksponuje:
 """
 
 import base64
-import copy
 import json
 import os
 import threading
-import traceback
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import numpy as np
 from dotenv import load_dotenv
 
 from avena_commons.event_listener import (
-    Event,
     EventListener,
     EventListenerState,
     Result,
