@@ -1,35 +1,12 @@
+# AI: BaseAction implementuje template rendering z zachowaniem typów dla pojedynczych zmiennych Jinja2 oraz standardowe renderowanie dla mieszanego tekstu. Obsługuje zagnieżdżone struktury i notację kropkową. Zawiera globalne śledzenie błędów akcji poprzez zmienne klasowe.
 """
-Bazowa klasa abstrakcyjna dla wszystkich akcji scenariuszy.
+BaseAction - klasa bazowa dla wszystkich akcji scenariuszy z ScenarioContext.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from avena_commons.util.logger import MessageLogger
-
-
-@dataclass
-class ActionContext:
-    """
-    Kontekst wykonania akcji scenariusza.
-    Zawiera wszystkie dane potrzebne do wykonania akcji.
-    """
-
-    # Referencja do Orchestratora dla dostępu do jego metod
-    orchestrator: Any  # Unikamy circular import
-
-    # Logger dla akcji
-    message_logger: Optional[MessageLogger] = None
-
-    # Dane z triggera scenariusza (dla zmiennych {{ trigger.* }})
-    trigger_data: Optional[Dict[str, Any]] = None
-
-    # Nazwa aktualnie wykonywanego scenariusza
-    scenario_name: Optional[str] = None
-
-    # Dodatkowe dane kontekstowe
-    additional_data: Optional[Dict[str, Any]] = None
+from ..models.scenario_models import ScenarioContext
 
 
 class BaseAction(ABC):
@@ -38,60 +15,392 @@ class BaseAction(ABC):
 
     Każda akcja musi implementować metodę execute() która przyjmuje:
     - action_config: słownik z konfiguracją akcji z YAML
-    - context: ActionContext z danymi potrzebnymi do wykonania
+    - context: ScenarioContext z danymi potrzebnymi do wykonania
+
+    Zawiera metody pomocnicze do zarządzania błędami akcji i ich licznikami.
+    Liczniki błędów są przechowywane jako zmienne klasowe, więc są wspólne
+    dla wszystkich instancji akcji.
     """
+
+    # Globalne liczniki kolejnych błędów akcji (wg typu akcji)
+    # Klucze: np. "send_sms", "send_email"
+    _action_error_counts: Dict[str, int] = {}
 
     @abstractmethod
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Any:
         """
         Wykonuje akcję na podstawie konfiguracji i kontekstu.
 
         Args:
             action_config: Konfiguracja akcji z pliku YAML
-            context: Kontekst wykonania z danymi Orchestratora
+            context: Kontekst scenariusza z danymi do wykonania
 
         Returns:
-            Wynik wykonania akcji (opcjonalny)
+            Any: Wynik wykonania akcji
 
         Raises:
-            ActionExecutionError: W przypadku błędu wykonania akcji
+            ActionExecutionError: Gdy wystąpi błąd podczas wykonywania akcji
         """
         pass
 
-    def _resolve_template_variables(self, text: str, context: ActionContext) -> str:
+    # ==== Metody pomocnicze do zarządzania błędami akcji ====
+
+    @classmethod
+    def get_action_error_count(cls, action_type: str) -> int:
         """
-        Rozwiązuje zmienne szablonowe w tekście typu {{ trigger.source }}.
+        Zwraca liczbę kolejnych błędów dla danego typu akcji.
 
         Args:
-            text: Tekst z potencjalnymi zmiennymi szablonowymi
-            context: Kontekst z danymi do podstawienia
+            action_type: Typ akcji (np. "send_sms", "send_email")
 
         Returns:
-            Tekst z podstawionymi zmiennymi
+            int: Liczba kolejnych błędów
         """
-        if not isinstance(text, str) or not context.trigger_data:
+        return int(cls._action_error_counts.get(action_type, 0))
+
+    @classmethod
+    def increment_action_error_count(cls, action_type: str) -> int:
+        """
+        Zwiększa licznik kolejnych błędów dla danego typu akcji i zwraca aktualną wartość.
+
+        Args:
+            action_type: Typ akcji (np. "send_sms", "send_email")
+
+        Returns:
+            int: Aktualna liczba kolejnych błędów
+        """
+        current = int(cls._action_error_counts.get(action_type, 0)) + 1
+        cls._action_error_counts[action_type] = current
+        return current
+
+    @classmethod
+    def reset_action_error_count(cls, action_type: str) -> None:
+        """
+        Zeruje licznik kolejnych błędów dla danego typu akcji.
+
+        Args:
+            action_type: Typ akcji (np. "send_sms", "send_email")
+        """
+        if action_type in cls._action_error_counts:
+            del cls._action_error_counts[action_type]
+
+    @classmethod
+    def should_skip_action_due_to_errors(
+        cls, action_type: str, max_attempts: int
+    ) -> bool:
+        """
+        Sprawdza czy należy pominąć wykonanie akcji z powodu przekroczenia
+        dozwolonej liczby kolejnych błędów.
+
+        Args:
+            action_type: Typ akcji (np. "send_sms", "send_email")
+            max_attempts: Maksymalna liczba prób (None lub <= 0 = bez limitu)
+
+        Returns:
+            bool: True jeśli akcja powinna być pominięta, False w przeciwnym razie
+        """
+        if max_attempts is None:
+            return False
+        try:
+            max_attempts_int = int(max_attempts)
+        except Exception:
+            max_attempts_int = 0
+        if max_attempts_int <= 0:
+            return False
+        return cls.get_action_error_count(action_type) >= max_attempts_int
+
+    @classmethod
+    def get_all_error_counts(cls) -> Dict[str, int]:
+        """
+        Zwraca kopię wszystkich liczników błędów akcji.
+
+        Returns:
+            Dict[str, int]: Słownik z licznikami błędów dla każdego typu akcji
+        """
+        return cls._action_error_counts.copy()
+
+    def _initialize_placeholders(self, context: ScenarioContext) -> None:
+        """
+        Inicjalizuje placeholdery w kontekście scenariusza na podstawie danych z 'clients'.
+
+        Tworzy placeholdery:
+        - clients_in_fault: lista klientów w stanie FAULT
+        - clients_error_messages: sformatowane komunikaty błędów klientów (dla e-mail)
+        - clients_error_messages_sms: uproszczone komunikaty błędów (dla SMS)
+
+        Args:
+            context: Kontekst scenariusza do zaktualizowania
+        """
+        try:
+            # clients_in_fault
+            clients_in_fault = []
+            for client_name, client_data in context.clients.items():
+                fsm_state = client_data.get("fsm_state")
+                if fsm_state == "FAULT":
+                    clients_in_fault.append(client_name)
+
+            clients_in_fault_str = (
+                ", ".join(sorted(clients_in_fault)) if clients_in_fault else "(brak)"
+            )
+            context.set("clients_in_fault", clients_in_fault_str)
+
+            # clients_error_messages dla e-mail (z formatowaniem)
+            formatted_entries = []
+            for client_name, client_data in sorted(
+                context.clients.items(), key=lambda x: x[0]
+            ):
+                try:
+                    if (
+                        client_data.get("error")
+                        and client_data.get("error_message") is not None
+                    ):
+                        raw_msg = client_data.get("error_message")
+                        if isinstance(raw_msg, (list, tuple)):
+                            raw_msg = ", ".join(str(m) for m in raw_msg)
+                        msg = str(raw_msg)
+
+                        # Podziel komunikat na część opisową i szczegóły słownika
+                        first_line = msg.strip()
+                        details_line = None
+                        if ", {" in msg:
+                            pre, rest = msg.split(", {", 1)
+                            first_line = pre.strip()
+                            details_line = "{" + rest.strip()
+
+                        entry_lines = [
+                            f"- {client_name}:",
+                            f"  --> {first_line}",
+                        ]
+                        if details_line:
+                            # Sformatuj szczegóły słownika do: key: value => key: value
+                            def _format_details_line(details: str) -> str:
+                                s = (details or "").strip()
+                                if s.startswith("{") and s.endswith("}"):
+                                    s = s[1:-1]
+                                parts = []
+                                for chunk in s.split(","):
+                                    if ":" not in chunk:
+                                        continue
+                                    key, val = chunk.split(":", 1)
+                                    key = key.strip().strip("'\"")
+                                    val = val.strip().strip("'\"")
+                                    parts.append(f"{key}: {val}")
+                                return " => ".join(parts) if parts else details
+
+                            formatted_details = _format_details_line(details_line)
+                            entry_lines.append(f"      {formatted_details}")
+
+                        formatted_entries.append("\n".join(entry_lines))
+                except Exception:
+                    continue
+
+            clients_error_messages_str = (
+                "\n".join(formatted_entries) if formatted_entries else "(brak)"
+            )
+            context.set("clients_error_messages", clients_error_messages_str)
+
+            # clients_error_messages_sms - uproszczona wersja dla SMS (bez formatowania)
+            sms_entries = []
+            for client_name, client_data in sorted(
+                context.clients.items(), key=lambda x: x[0]
+            ):
+                try:
+                    if (
+                        client_data.get("error")
+                        and client_data.get("error_message") is not None
+                    ):
+                        raw_msg = client_data.get("error_message")
+                        if isinstance(raw_msg, (list, tuple)):
+                            raw_msg = ", ".join(str(m) for m in raw_msg)
+                        msg = str(raw_msg)
+                        sms_entries.append(f"{client_name}: {msg}")
+                except Exception:
+                    continue
+
+            clients_error_messages_sms_str = (
+                "\n".join(sms_entries) if sms_entries else "(brak)"
+            )
+            context.set("clients_error_messages_sms", clients_error_messages_sms_str)
+
+        except Exception:
+            # W przypadku błędu ustaw domyślne wartości
+            context.set("clients_in_fault", "(brak)")
+            context.set("clients_error_messages", "(brak)")
+            context.set("clients_error_messages_sms", "(brak)")
+
+    def _resolve_template_variables(self, text: str, context: ScenarioContext) -> Any:
+        """
+        Rozwiązuje zmienne templatów w tekście używając kontekstu scenariusza.
+
+        Jeśli cały tekst to jedna zmienna Jinja ({{ var }}), zwraca oryginalną wartość
+        zachowując typ. W przeciwnym razie renderuje jako string.
+
+        Args:
+            text: Tekst z potencjalnymi zmiennymi template
+            context: Kontekst scenariusza z danymi
+
+        Returns:
+            Any: Wartość zmiennej z zachowanym typem lub wyrenderowany string
+        """
+        if not text or not isinstance(text, str):
+            return str(text) if text is not None else ""
+
+        import re
+
+        # Przygotowanie danych kontekstowych dla templateów
+        template_data = {}
+
+        # Dodanie danych z kontekstu scenariusza
+        if hasattr(context, "context") and context.context:
+            template_data.update(context.context)
+
+        # Dodanie podstawowych danych z context
+        template_data["scenario_name"] = context.scenario_name
+
+        # Sprawdź czy cały tekst to jedna zmienna (np. "{{ variable }}" lub "{{ var.attr }}")
+        single_var_pattern = r"^\s*\{\{\s*([^}]+)\s*\}\}\s*$"
+        match = re.match(single_var_pattern, text)
+
+        if match:
+            # Wyciągnij nazwę zmiennej
+            var_expression = match.group(1).strip()
+
+            try:
+                # Obsługa zagnieżdżonych kluczy jak "data.key" lub "var.attribute"
+                if "." in var_expression:
+                    keys = var_expression.split(".")
+                    value = template_data
+                    for key in keys:
+                        if isinstance(value, dict):
+                            value = value[key]
+                        else:
+                            # Dla obiektów użyj getattr
+                            value = getattr(value, key)
+                    return value
+                else:
+                    # Prosty klucz
+                    return template_data[var_expression]
+
+            except (KeyError, AttributeError, TypeError) as e:
+                from avena_commons.util.logger import error
+
+                error(
+                    f"Nie można pobrać zmiennej '{var_expression}': {e}",
+                    message_logger=context.message_logger,
+                )
+                return None
+
+        # Jeśli to nie jest pojedyncza zmienna, użyj standardowego renderowania Jinja2
+        from jinja2 import BaseLoader, Environment
+
+        env = Environment(loader=BaseLoader())
+
+        try:
+            template = env.from_string(text)
+            result = template.render(**template_data)
+            return result
+        except Exception as e:
+            from avena_commons.util.logger import error
+
+            error(
+                f"Błąd podczas renderowania template: {e}",
+                message_logger=context.message_logger,
+            )
             return text
 
-        result = text
+    def _get_config_value(
+        self,
+        action_config: Dict[str, Any],
+        key: str,
+        default: Any = None,
+        required: bool = False,
+        context: Optional[ScenarioContext] = None,
+    ) -> Any:
+        """
+        Pobiera wartość z konfiguracji akcji z obsługą templateów.
 
-        # Podstawowe zmienne trigger.*
-        if "{{ trigger.source }}" in result and context.trigger_data.get("source"):
-            result = result.replace(
-                "{{ trigger.source }}", str(context.trigger_data["source"])
+        Args:
+            action_config: Konfiguracja akcji
+            key: Klucz do pobrania
+            default: Wartość domyślna
+            required: Czy wartość jest wymagana
+            context: Kontekst scenariusza dla templateów
+
+        Returns:
+            Any: Wartość z konfiguracji z zachowanymi typami danych
+
+        Raises:
+            ActionExecutionError: Gdy wymagana wartość nie istnieje
+        """
+        value = action_config.get(key, default)
+
+        if required and value is None:
+            raise ActionExecutionError(
+                action_config.get("type", "unknown"),
+                f"Brak wymaganego parametru '{key}' w konfiguracji akcji",
             )
 
-        if "{{ trigger.payload.error_code }}" in result:
-            payload = context.trigger_data.get("payload", {})
-            if payload.get("error_code"):
-                result = result.replace(
-                    "{{ trigger.payload.error_code }}", str(payload["error_code"])
-                )
+        # Rozwiąż templaty zachowując oryginalne typy
+        if context:
+            return self._resolve_nested_templates(value, context)
 
-        # Można dodać więcej zmiennych w przyszłości
+        return value
 
-        return result
+    def _resolve_nested_templates(self, data: Any, context: ScenarioContext) -> Any:
+        """
+        Rekurencyjnie rozwiązuje templaty w zagnieżdżonych strukturach danych.
+
+        Args:
+            data: Dane do przetworzenia (może być string, lista, słownik, etc.)
+            context: Kontekst scenariusza
+
+        Returns:
+            Any: Przetworzone dane z rozwiązanymi templateami i zachowanymi typami
+        """
+        if isinstance(data, str):
+            return self._resolve_template_variables(data, context)
+        elif isinstance(data, dict):
+            return {
+                key: self._resolve_nested_templates(value, context)
+                for key, value in data.items()
+            }
+        elif isinstance(data, list):
+            return [self._resolve_nested_templates(item, context) for item in data]
+        else:
+            # Dla innych typów (int, float, bool, None, etc.) zwróć bez zmian
+            return data
+
+    def _validate_config(
+        self,
+        action_config: Dict[str, Any],
+        required_keys: list,
+        context: Optional[ScenarioContext] = None,
+    ) -> Dict[str, Any]:
+        """
+        Waliduje konfigurację akcji i zwraca przetworzone wartości.
+
+        Args:
+            action_config: Konfiguracja akcji do walidacji
+            required_keys: Lista wymaganych kluczy
+            context: Kontekst scenariusza dla templateów
+
+        Returns:
+            Dict[str, Any]: Przetworzona konfiguracja
+
+        Raises:
+            ActionExecutionError: Gdy brakuje wymaganych parametrów
+        """
+        processed_config = {}
+        action_type = action_config.get("type", "unknown")
+
+        for key in required_keys:
+            processed_config[key] = self._get_config_value(
+                action_config, key, required=True, context=context
+            )
+
+        return processed_config
 
     def _parse_timeout(self, timeout_str: str) -> float:
         """
@@ -121,7 +430,7 @@ class BaseAction(ABC):
 
 class ActionExecutionError(Exception):
     """
-    Wyjątek rzucany w przypadku błędu wykonania akcji scenariusza.
+    Wyjątek rzucany podczas błędów wykonywania akcji.
     """
 
     def __init__(
@@ -130,6 +439,27 @@ class ActionExecutionError(Exception):
         message: str,
         original_exception: Optional[Exception] = None,
     ):
+        """
+        Inicjalizuje wyjątek ActionExecutionError.
+
+        Args:
+            action_type: Typ akcji która spowodowała błąd
+            message: Wiadomość błędu
+            original_exception: Oryginalny wyjątek (opcjonalny)
+        """
+        super().__init__(message)
         self.action_type = action_type
+        self.message = message
         self.original_exception = original_exception
-        super().__init__(f"Action '{action_type}' failed: {message}")
+
+    def __str__(self):
+        if self.original_exception:
+            return f"[{self.action_type}] {self.message} (Causa: {self.original_exception})"
+        return f"[{self.action_type}] {self.message}"
+
+    def __repr__(self):
+        return (
+            f"ActionExecutionError(action_type='{self.action_type}', "
+            f"message='{self.message}', "
+            f"original_exception={repr(self.original_exception)})"
+        )

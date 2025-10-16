@@ -2,20 +2,8 @@
 Modele danych dla systemu scenariuszy orkiestratora.
 """
 
-from .scenario_models import (
-    ActionModel,
-    ScenarioCollection,
-    ScenarioExecutionContext,
-    ScenarioExecutionResult,
-    ScenarioModel,
-    TriggerModel,
-)
+from .scenario_models import ScenarioContext
 
 __all__ = [
-    "ActionModel",
-    "ScenarioModel",
-    "ScenarioCollection",
-    "ScenarioExecutionContext",
-    "ScenarioExecutionResult",
-    "TriggerModel",
+    "ScenarioContext",
 ]

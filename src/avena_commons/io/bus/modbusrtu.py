@@ -11,6 +11,20 @@ from avena_commons.util.worker import Connector, Worker
 
 
 class ModbusRTUWorker(Worker):
+    """Worker asynchroniczny obsługujący klienta Modbus RTU.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        serial_port (str): Port szeregowy (np. "/dev/ttyUSB0").
+        baudrate (int): Prędkość transmisji.
+        timeout_ms (int): Czas oczekiwania (ms).
+        trace_connect (bool): Włącza log śledzenia połączenia.
+        trace_packet (bool): Włącza logowanie pakietów (hex).
+        trace_pdu (bool): Włącza logowanie PDU.
+        retry (int): Liczba ponowień żądania.
+        message_logger: Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -44,6 +58,7 @@ class ModbusRTUWorker(Worker):
         super().__init__(message_logger=self._message_logger)
 
     async def init(self):
+        """Tworzy i łączy klienta `AsyncModbusSerialClient`. Zwraca self po sukcesie."""
         self._client = AsyncModbusSerialClient(
             port=self._serial_port,
             baudrate=self._baudrate,
@@ -72,12 +87,14 @@ class ModbusRTUWorker(Worker):
             raise Exception(f"{self.device_name} - ModbusRTU client is not connected.")
 
     def __trace_connect(self):
+        """Loguje stan połączenia klienta (gdy śledzenie włączone)."""
         debug(
             f"{self.device_name} Connection: {self._client.connect()}",
             message_logger=self._message_logger,
         )
 
     def __trace_packet(self, is_sending: bool, packet: bytes) -> bytes:
+        """Loguje pakiet wyjściowy/wejściowy (hex) oraz czas przejścia OUT→IN."""
         current_time = time.time()
         debug(
             f"{self.device_name} Packet {'OUT' if is_sending else ' IN'}: [{' '.join(f'{b:02X}' for b in packet)}]",
@@ -105,6 +122,7 @@ class ModbusRTUWorker(Worker):
         return packet
 
     def __trace_pdu(self, is_sending: bool, pdu) -> object:
+        """Loguje PDU wysłane i odebrane (gdy śledzenie włączone)."""
         if is_sending:
             self.__last_pdu = pdu
         else:
@@ -115,6 +133,7 @@ class ModbusRTUWorker(Worker):
         return pdu
 
     async def _run(self, pipe_in):
+        """Pętla główna worker'a obsługująca komendy przychodzące przez pipe."""
         try:
             await self.init()
             last_debug_time = time.time()
@@ -324,6 +343,22 @@ class ModbusRTUWorker(Worker):
 
 
 class ModbusRTU(Connector):
+    """Konektor Modbus RTU uruchamiany w procesie potomnym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        serial_port (str): Port szeregowy.
+        baudrate (int): Prędkość transmisji.
+        timeout_ms (int): Czas oczekiwania (ms).
+        trace_connect (bool): Włącza śledzenie connect.
+        trace_packet (bool): Włącza śledzenie pakietów.
+        trace_pdu (bool): Włącza śledzenie PDU.
+        core (int): Rdzeń CPU dla procesu potomnego.
+        retry (int): Liczba ponowień.
+        message_logger: Logger wiadomości.
+        max_send_failures (int): Limit porażek wysyłki przed eskalacją.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -336,6 +371,7 @@ class ModbusRTU(Connector):
         core: int = 8,
         retry: int = 3,
         message_logger=None,
+        max_send_failures: int = 3,
     ):
         self.device_name = device_name
         self.__trace_connect: bool = trace_connect
@@ -347,6 +383,12 @@ class ModbusRTU(Connector):
         self.retry = retry
         self.message_logger = message_logger
         self._state = None
+        # Eskalacja błędów do IO/Orchestratora
+        self._error: bool = False
+        self._error_message: str | None = None
+        self._consecutive_send_failures: int = 0
+        self._per_slave_failures: dict[int, int] = {}
+        self._max_send_failures: int = max(1, int(max_send_failures))
         super().__init__(core=core, message_logger=self.message_logger)
         super()._connect()
         self.__lock = threading.Lock()
@@ -356,13 +398,16 @@ class ModbusRTU(Connector):
         )
 
     def __getstate__(self):
+        """Serializuje stan obiektu (dla picklingu procesu)."""
         state = self.__dict__.copy()
         return state
 
     def __setstate__(self, state):
+        """Przywraca stan obiektu (dla picklingu procesu)."""
         self.__dict__.update(state)
 
     def _run(self, pipe_in, message_logger):
+        """Wejście procesu potomnego: uruchamia `ModbusRTUWorker` w asyncio."""
         self.__lock = threading.Lock()
         debug(
             f"{self.device_name} Starting {self.__class__.__name__} subprocess: {self._serial_port} {self._baudrate}bps {self.timeout_ms}ms",
@@ -409,20 +454,54 @@ class ModbusRTU(Connector):
 
     @property
     def serial_port(self):
+        """Zwraca skonfigurowany port szeregowy."""
         return self._serial_port
 
     @property
     def baudrate(self):
+        """Zwraca skonfigurowaną prędkość transmisji."""
         return self._baudrate
 
     def configure(self, physical_devices: dict):
+        """Konfiguracja urządzeń fizycznych (placeholder)."""
         pass
 
     def __execute_command(self, data: list = []):
+        """Wysyła komendę do procesu worker'a i obsługuje liczniki błędów/timeouty."""
         start_time = time.time()
+        # Wyciągnij adres slave (drugi element danych) jeśli jest liczbą całkowitą
+        slave_id = None
+        try:
+            if isinstance(data, list) and len(data) > 1 and isinstance(data[1], int):
+                slave_id = data[1]
+        except Exception:
+            slave_id = None
         with self.__lock:
             after_lock_time = time.time()
-            response: ModbusPDU = super()._send_thru_pipe(self._pipe_out, data)
+            try:
+                response: ModbusPDU = super()._send_thru_pipe(self._pipe_out, data)
+            except Exception as e:
+                # Nie udało się wysłać komendy do procesu/urządzenia
+                self._consecutive_send_failures += 1
+                if slave_id is not None:
+                    self._per_slave_failures[slave_id] = (
+                        self._per_slave_failures.get(slave_id, 0) + 1
+                    )
+                self._error = True
+                self._error_message = (
+                    f"{self.device_name} - Nie udało się wykonać polecenia {data[0]}"
+                    f"{(f' (slave {slave_id})' if slave_id is not None else '')}: {e}"
+                )
+                if (
+                    slave_id is not None
+                    and self._per_slave_failures.get(slave_id, 0)
+                    >= self._max_send_failures
+                ) or (self._consecutive_send_failures >= self._max_send_failures):
+                    error(
+                        f"{self.device_name} - Exceeded max_send_failures={self._max_send_failures}: {self._error_message}",
+                        message_logger=self.message_logger,
+                    )
+                return None
         now = time.time()
         locking_time = (after_lock_time - start_time) * 1000
         communication_time = (now - after_lock_time) * 1000
@@ -434,6 +513,26 @@ class ModbusRTU(Connector):
                 f"{self.device_name} - No response received for command: {data[0]}",
                 message_logger=self.message_logger,
             )
+            # Traktuj jako niepowodzenie wysyłki
+            self._consecutive_send_failures += 1
+            if slave_id is not None:
+                self._per_slave_failures[slave_id] = (
+                    self._per_slave_failures.get(slave_id, 0) + 1
+                )
+            self._error = True
+            self._error_message = (
+                f"{self.device_name} - Nie otrzymano odpowiedzi na polecenie {data[0]}"
+                f"{(f' (slave {slave_id})' if slave_id is not None else '')}"
+                f" (failures {self._per_slave_failures.get(slave_id, 0) if slave_id is not None else self._consecutive_send_failures}/{self._max_send_failures})"
+            )
+            if (
+                slave_id is not None
+                and self._per_slave_failures.get(slave_id, 0) >= self._max_send_failures
+            ) or (self._consecutive_send_failures >= self._max_send_failures):
+                error(
+                    f"{self.device_name} - Exceeded max_send_failures={self._max_send_failures}: {self._error_message}",
+                    message_logger=self.message_logger,
+                )
             return ModbusPDU()
 
         message = f"{self.device_name} - {data[0]} took LOCK:{locking_time:.2f}ms COMM:{communication_time:.2f}ms value:{response.registers} status:{response.status} exception:{response.exception_code} response:{response}"
@@ -443,36 +542,89 @@ class ModbusRTU(Connector):
             or communication_time > self.timeout_ms * 2
         ):
             error(message, message_logger=self.message_logger)
+            # Błąd odpowiedzi/time-out → licznik porażek
+            self._consecutive_send_failures += 1
+            if slave_id is not None:
+                self._per_slave_failures[slave_id] = (
+                    self._per_slave_failures.get(slave_id, 0) + 1
+                )
+            self._error = True
+            self._error_message = (
+                f"{self.device_name} - Błąd podczas wykonywania polecenia {data[0]}"
+                f"{(f' (slave {slave_id})' if slave_id is not None else '')}"
+                f" (failures {self._per_slave_failures.get(slave_id, 0) if slave_id is not None else self._consecutive_send_failures}/{self._max_send_failures}), resp={response}"
+            )
+            if (
+                slave_id is not None
+                and self._per_slave_failures.get(slave_id, 0) >= self._max_send_failures
+            ) or (self._consecutive_send_failures >= self._max_send_failures):
+                error(
+                    f"{self.device_name} - Exceeded max_send_failures={self._max_send_failures}: {self._error_message}",
+                    message_logger=self.message_logger,
+                )
         elif locking_time > self.timeout_ms * 2:
             warning(message, message_logger=self.message_logger)
         else:
             debug(message, message_logger=self.message_logger)
+            # Sukces → wyczyść stan błędów
+            self._consecutive_send_failures = 0
+            if slave_id is not None:
+                self._per_slave_failures[slave_id] = 0
+            # Wyczyść globalny stan błędu tylko, gdy żaden slave nie przekracza limitu
+            try:
+                any_over = any(
+                    v >= self._max_send_failures
+                    for v in self._per_slave_failures.values()
+                )
+            except Exception:
+                any_over = False
+            if not any_over:
+                self._error = False
+                self._error_message = None
         return response
 
     def read_discrete_inputs(self, address: int, register: int, count: int):
+        """Czyta rejestry typu Discrete Inputs.
+
+        Returns:
+            list[int]: Lista bitów (0/1) odczytanych z urządzenia.
+        """
         return (
             self.__execute_command(["READ_DISCRETE_INPUTS", address, register, count])
         ).registers
 
     def read_coils(self, address: int, register: int, count: int):
+        """Czyta rejestry typu Coils.
+
+        Returns:
+            list[int]: Lista bitów (0/1) odczytanych z urządzenia.
+        """
         return (self.__execute_command(["READ_COILS", address, register, count])).bits
 
     def write_coils(self, address: int, register: int, values: list):
+        """Zapisuje wartości do rejestrów typu Coils.
+
+        Returns:
+            bool: True, jeśli operacja zakończyła się powodzeniem.
+        """
         return not (
             self.__execute_command(["WRITE_COILS", address, register, values])
         ).isError()
 
     def read_holding_register(self, address: int, register: int):
+        """Czyta pojedynczy rejestr Holding Register."""
         return (
             self.__execute_command(["READ_HOLDING_REGISTER", address, register])
         ).registers[0]
 
     def write_holding_register(self, address: int, register: int, value: int):
+        """Zapisuje wartość do pojedynczego rejestru Holding Register."""
         return not (
             self.__execute_command(["WRITE_HOLDING_REGISTER", address, register, value])
         ).isError()
 
     def read_holding_registers(self, address: int, first_register: int, count: int):
+        """Czyta wiele rejestrów Holding Registers."""
         return (
             self.__execute_command([
                 "READ_HOLDING_REGISTERS",
@@ -483,6 +635,7 @@ class ModbusRTU(Connector):
         ).registers
 
     def read_input_registers(self, address: int, first_register: int, count: int):
+        """Czyta wiele rejestrów Input Registers."""
         return (
             self.__execute_command([
                 "READ_INPUT_REGISTERS",
@@ -493,6 +646,7 @@ class ModbusRTU(Connector):
         ).registers
 
     def write_holding_registers(self, address: int, first_register: int, values: list):
+        """Zapisuje wiele rejestrów Holding Registers."""
         return not (
             self.__execute_command([
                 "WRITE_HOLDING_REGISTERS",
@@ -503,7 +657,7 @@ class ModbusRTU(Connector):
         ).isError()
 
     def __del__(self):
-        self.message_logger = None
+        """Zamyka proces potomny i kanały IPC przy usuwaniu obiektu."""
         self.__execute_command(["STOP"])
         self.pipe_out.close()
         # self.process.join()
@@ -512,3 +666,68 @@ class ModbusRTU(Connector):
             f"{self.device_name} - ModbusRTU Connector subprocess stopped.",
             message_logger=self.message_logger,
         )
+        self.message_logger = None
+
+    # === Interfejs dla IO_server (health-check i monitoring) ===
+    def check_device_connection(self):
+        """
+        Lekki health-check procesu i stanu wysyłki.
+
+        - Jeśli proces potomny nie działa → błąd połączenia z portem
+        - Jeśli przekroczono max_send_failures → błąd wysyłki pakietów
+        """
+        try:
+            # Sprawdź proces (brak procesu zwykle oznacza brak połączenia/wyjątek inicjalizacji)
+            proc = getattr(self, "_process", None)
+            if proc is None or (hasattr(proc, "is_alive") and not proc.is_alive()):
+                self._error = True
+                self._error_message = f"{self.device_name} - ModbusRTU process nie uruchomiony (port={self._serial_port})"
+                return False
+
+            # Sprawdź przekroczenie limitu niepowodzeń wysyłki (per-slave priorytetowo)
+            for sid, cnt in self._per_slave_failures.items():
+                if cnt >= self._max_send_failures:
+                    self._error = True
+                    self._error_message = f"{self.device_name} - Przekroczono max_send_failures={self._max_send_failures} dla slave {sid}"
+                    return False
+
+            # Fallback: globalny licznik
+            if self._consecutive_send_failures >= self._max_send_failures:
+                self._error = True
+                if not self._error_message:
+                    self._error_message = f"{self.device_name} - Przekroczono max_send_failures={self._max_send_failures}"
+                return False
+
+            return True
+        except Exception as e:
+            self._error = True
+            self._error_message = f"{self.device_name} - Błąd podczas sprawdzania połączenia check_device_connection: {e}"
+            return False
+
+    @property
+    def is_connected(self) -> bool:
+        """Zwraca True, jeśli proces żyje i brak stanu błędu."""
+        try:
+            proc = getattr(self, "_process", None)
+            alive = proc is not None and (
+                not hasattr(proc, "is_alive") or proc.is_alive()
+            )
+            return bool(alive) and not bool(self._error)
+        except Exception:
+            return False
+
+    def to_dict(self) -> dict:
+        """Minimalna reprezentacja stanu busa dla monitoringu IO_server."""
+        return {
+            "name": self.device_name,
+            "type": self.__class__.__name__,
+            "serial_port": self._serial_port,
+            "baudrate": self._baudrate,
+            "timeout_ms": self.timeout_ms,
+            "retry": self.retry,
+            "error": self._error,
+            "error_message": self._error_message,
+            "consecutive_send_failures": self._consecutive_send_failures,
+            "max_send_failures": self._max_send_failures,
+            "per_slave_failures": self._per_slave_failures.copy(),
+        }

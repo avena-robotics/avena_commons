@@ -6,6 +6,16 @@ from avena_commons.util.logger import MessageLogger, error, info, warning
 
 
 class AS228P:
+    """Czujnik/enkoder AS228P odczytywany przez Modbus z wątkiem monitorującym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        period (float): Okres odczytu rejestrów (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -30,6 +40,7 @@ class AS228P:
         self.check_device_connection()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek monitorujący enkodery."""
         try:
             if self._thread is None or not self._thread.is_alive():
                 self._stop_event.clear()
@@ -49,10 +60,12 @@ class AS228P:
             return None
 
     def __reset(self):
+        """Resetuje enkodery w urządzeniu (zapis do odpowiedniego rejestru)."""
         with self.__lock:
             self.bus.write_holding_register(address=self.address, register=10, value=7)
 
     def _encoder_thread(self):
+        """Wątek cyklicznie odczytujący trzy wartości enkoderów i aktualizujący cache."""
         while not self._stop_event.is_set():
             now = time.time()
 
@@ -97,14 +110,17 @@ class AS228P:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def read_encoder_1(self):
+        """Zwraca bieżącą wartość enkodera 1."""
         with self.__lock:
             return self.encoder_1
 
     def read_encoder_2(self):
+        """Zwraca bieżącą wartość enkodera 2."""
         with self.__lock:
             return self.encoder_2
 
     def read_encoder_3(self):
+        """Zwraca bieżącą wartość enkodera 3."""
         with self.__lock:
             return self.encoder_3
 

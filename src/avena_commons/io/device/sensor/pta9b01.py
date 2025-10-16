@@ -6,6 +6,16 @@ from avena_commons.util.logger import MessageLogger, error, info
 
 
 class PTA9B01:
+    """Czujnik temperatury PTA9B01 z wątkiem okresowego odczytu.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        loop_temperature_read_frequency (int): Częstotliwość odczytu [Hz].
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -27,6 +37,7 @@ class PTA9B01:
         self.check_device_connection()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek odczytu temperatury."""
         try:
             if self._thread is None or not self._thread.is_alive():
                 self._stop_event.clear()
@@ -43,13 +54,10 @@ class PTA9B01:
             return None
 
     def __read_temperature(self):
-        """
-        Read temperature from device
-
-        Args:
+        """Czyta temperaturę z urządzenia; aktualizuje bufor pomocniczy.
 
         Returns:
-            bool: True if successful, False otherwise
+            bool: True w razie sukcesu, False w przeciwnym wypadku.
         """
         try:
             # read temperature (address 0x00)
@@ -84,6 +92,7 @@ class PTA9B01:
             loop.loop_end()
 
     def read_temperature(self):
+        """Zwraca bieżącą temperaturę."""
         return self.temperature
 
     def __str__(self) -> str:

@@ -1,0 +1,19 @@
+{
+    "name": "test_execution_counter",
+    "description": "Scenariusz testowy dla licznika wykonań - maksymalnie 3 wykonania",
+    "version": "1.0",
+    "priority": 10,
+    "cooldown": 5,
+    "max_executions": 3,
+    "trigger": {
+        "type": "manual",
+        "description": "Uruchamiany manualnie dla testów licznika wykonań"
+    },
+    "actions": [
+        {
+            "type": "log_event",
+            "level": "info",
+            "message": "Test licznika wykonań - to wykonanie zostanie policzone!"
+        }
+    ]
+}

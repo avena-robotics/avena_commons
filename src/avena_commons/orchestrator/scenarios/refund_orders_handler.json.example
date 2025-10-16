@@ -1,0 +1,66 @@
+{
+  "name": "Obsługa zamówień do zwrotu",
+  "description": "Automatyczny scenariusz obsługujący zamówienia w stanie refund",
+  "version": "1.0",
+  "author": "System",
+  "priority": 80,
+  "cooldown": 300,
+  "trigger": {
+    "type": "automatic",
+    "description": "Uruchomienie gdy istnieją zamówienia do zwrotu",
+    "conditions": {
+      "database_list": {
+        "component": "main_database",
+        "table": "zamowienia",
+        "columns": [
+          "id",
+          "numer_zamowienia",
+          "klient_id",
+          "stan_zamowienia",
+          "wartosc_zamowienia",
+          "data_utworzenia"
+        ],
+        "where": {
+          "stan_zamowienia": "refund"
+        },
+        "result_key": "zamowienia_do_zwrotu",
+        "limit": 50,
+        "order_by": "data_utworzenia ASC"
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "🔄 Rozpoczynam obsługę zamówień do zwrotu - znaleziono {{ trigger.zamowienia_do_zwrotu|length }} zamówień",
+      "description": "Informacja o rozpoczęciu procesu obsługi zwrotów"
+    },
+    {
+      "type": "send_email",
+      "description": "Powiadomienie o zamówieniach do zwrotu",
+      "to": [
+        "zwroty@firma.pl",
+        "kierownik@firma.pl"
+      ],
+      "subject": "Zamówienia do zwrotu - {{ trigger.zamowienia_do_zwrotu|length }} pozycji",
+      "body": "Wykryto następujące zamówienia do zwrotu:\n\n{% for zamowienie in trigger.zamowienia_do_zwrotu %}• Zamówienie {{ zamowienie.numer_zamowienia }} - Klient {{ zamowienie.klient_id }} - Wartość {{ zamowienie.wartosc_zamowienia }} PLN\n{% endfor %}\n\nProszę o pilne przetworzenie."
+    },
+    {
+      "type": "log_event",
+      "level": "success", 
+      "message": "✅ Powiadomienia o zwrotach zostały wysłane",
+      "description": "Potwierdzenie wysłania powiadomień"
+    },
+    {
+      "type": "aps_database_update",
+      "description": "Oznaczenie zamówień jako przetwarzane",
+      "component": "main_database",
+      "table": "zamowienia",
+      "update_column": "stan_zamowienia",
+      "update_value": "refund_processing",
+      "where_column": "stan_zamowienia",
+      "where_value": "refund"
+    }
+  ]
+}

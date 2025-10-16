@@ -4,10 +4,16 @@ ActionExecutor - klasa zarządzająca wykonywaniem akcji scenariuszy.
 
 from typing import Any, Dict
 
-
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 from .log_action import LogAction
+from .lynx_refund_action import LynxRefundAction
+from .lynx_refund_approve_action import LynxRefundApproveAction
 from .send_command_action import SendCommandAction
+from .send_custom_command_action import SendCustomCommandAction
+from .send_email_action import SendEmailAction
+from .send_sms_action import SendSmsAction
+from .send_sms_to_customer_action import SendSmsToCustomerAction
 from .systemctl_action import SystemctlAction
 from .wait_for_state_action import WaitForStateAction
 
@@ -35,8 +41,16 @@ class ActionExecutor:
         """Rejestruje wszystkie domyślne akcje scenariuszy."""
         self._actions["log_event"] = LogAction()
         self._actions["send_command"] = SendCommandAction()
+        self._actions["send_custom_command"] = SendCustomCommandAction()
         self._actions["wait_for_state"] = WaitForStateAction()
         self._actions["systemctl"] = SystemctlAction()
+        self._actions["send_email"] = SendEmailAction()
+        self._actions["send_sms"] = SendSmsAction()
+        self._actions["send_sms_to_customer"] = SendSmsToCustomerAction()
+
+        # NOWE: Akcje Lynx API
+        self._actions["lynx_refund"] = LynxRefundAction()
+        self._actions["lynx_refund_approve"] = LynxRefundApproveAction()
 
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """
@@ -58,20 +72,19 @@ class ActionExecutor:
         return self._actions.copy()
 
     async def execute_action(
-        self, action_config: Dict[str, Any], context: ActionContext
-    ) -> Any:
-        """
-        Wykonuje akcję na podstawie konfiguracji.
+        self, action_config: Dict[str, Any], context: ScenarioContext
+    ) -> bool:
+        """Wykonuje akcję na podstawie konfiguracji.
 
         Args:
-            action_config: Konfiguracja akcji z pliku YAML (musi zawierać klucz 'type')
-            context: Kontekst wykonania akcji
+            action_config: Konfiguracja akcji do wykonania.
+            context: Kontekst scenariusza z danymi do wykonania akcji.
 
         Returns:
-            Wynik wykonania akcji (zależny od typu akcji)
+            bool: True jeśli akcja została wykonana pomyślnie, False w przeciwnym razie.
 
         Raises:
-            ActionExecutionError: W przypadku błędu wykonania lub nieznanego typu akcji
+            ActionExecutionError: Gdy wystąpi błąd podczas wykonywania akcji.
         """
         action_type = action_config.get("type")
 

@@ -2,6 +2,18 @@ from avena_commons.util.logger import MessageLogger
 
 
 class EtherCatSlave:
+    """Bazowa klasa reprezentująca urządzenie podrzędne (slave) EtherCAT.
+
+    Ustawia funkcję konfiguracyjną w masterze oraz dostarcza szkielety metod
+    do odczytu/zapisu PDO i przetwarzania logiki urządzenia.
+
+    Args:
+        master: Obiekt mastera EtherCAT (pysoem.Master).
+        address: Adres urządzenia w sieci EtherCAT.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self, master, address, message_logger: MessageLogger | None = None, debug=True
     ):
@@ -12,15 +24,19 @@ class EtherCatSlave:
         self.master.slaves[self.address].config_func = self._config_function
 
     def _config_function(self, slave_pos):
+        """Funkcja konfiguracyjna wywoływana przez mastera dla tego slave'a."""
         pass
 
     def _read_pdo(self):
+        """Odczytuje dane procesu (PDO) z urządzenia (do nadpisania w klasach potomnych)."""
         pass
 
     def _write_pdo(self):
+        """Zapisuje dane procesu (PDO) do urządzenia (do nadpisania w klasach potomnych)."""
         pass
 
     def _process(self):
+        """Główna logika przetwarzania urządzenia (do nadpisania w klasach potomnych)."""
         pass
 
     def __str__(self) -> str:
@@ -61,6 +77,18 @@ class EtherCatSlave:
 
 
 class EtherCatDevice:
+    """Reprezentacja urządzenia EtherCAT skojarzonego z magistralą i konfiguracją.
+
+    Args:
+        bus: Magistrala (obiekt konektora) do której podłączone jest urządzenie.
+        vendor_code: Kod producenta urządzenia.
+        product_code: Kod produktu urządzenia.
+        address: Adres urządzenia w sieci EtherCAT.
+        configuration: Słownik konfiguracji urządzenia.
+        message_logger (MessageLogger | None): Logger wiadomości.
+        debug (bool): Flaga debugowania.
+    """
+
     def __init__(
         self,
         bus,

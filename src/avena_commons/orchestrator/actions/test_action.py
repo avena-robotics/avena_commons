@@ -6,7 +6,8 @@ from typing import Any, Dict
 
 from avena_commons.util.logger import info
 
-from .base_action import ActionContext, BaseAction
+from .base_action import BaseAction
+from ..models.scenario_models import ScenarioContext
 
 
 class TestAction(BaseAction):
@@ -18,7 +19,7 @@ class TestAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Any:
         """
         Wykonuje akcję testową - wypisuje wiadomość z konfiguracją.
@@ -72,7 +73,7 @@ class CustomProcessAction(BaseAction):
     action_type = "custom_process"
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> Any:
         """
         Wykonuje niestandardowe przetwarzanie.

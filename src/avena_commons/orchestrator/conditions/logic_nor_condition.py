@@ -1,12 +1,22 @@
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class LogicNorCondition(BaseCondition):
     """Warunek logiczny NOR - żaden warunek nie może być spełniony."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
+        """
+        Zwraca True, jeśli żaden zagnieżdżony warunek nie jest spełniony.
+
+        Args:
+            context (ScenarioContext): Kontekst ewaluacji przekazywany do pod-warunków.
+
+        Returns:
+            bool: Wynik NOR warunków.
+        """
         conditions_config = self.config.get("conditions", [])
         if not conditions_config:
             if self.message_logger:

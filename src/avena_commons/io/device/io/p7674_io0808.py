@@ -5,6 +5,8 @@ from .p7674 import P7674
 
 
 class P7674_IO0808(P7674):
+    """Wariant P7674 z 8 DI i 8 DO (offset=0)."""
+
     def __init__(
         self,
         device_name: str,

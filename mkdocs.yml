@@ -1,0 +1,20 @@
+site_name: APS Docs
+theme:
+  name: material
+plugins:
+  - search
+  - literate-nav
+  - section-index
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: google     # albo: numpy
+            show_source: true
+nav:
+  - Wprowadzenie: index.md
+  - API:
+      - io_event_listener: io_event_listener.md
+      - orchestrator: orchestrator.md

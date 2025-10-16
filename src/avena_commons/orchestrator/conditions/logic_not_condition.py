@@ -1,12 +1,22 @@
 from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
+from ..models.scenario_models import ScenarioContext
 
 
 class LogicNotCondition(BaseCondition):
     """Warunek logiczny NOT - neguje wynik warunku."""
 
-    async def evaluate(self, context: Dict[str, Any]) -> bool:
+    async def evaluate(self, context: ScenarioContext) -> bool:
+        """
+        Zwraca negację wyniku zagnieżdżonego warunku.
+
+        Args:
+            context (ScenarioContext): Kontekst ewaluacji przekazywany do pod-warunku.
+
+        Returns:
+            bool: Zanegowany wynik warunku.
+        """
         condition_config = self.config.get("condition")
         if not condition_config:
             if self.message_logger:

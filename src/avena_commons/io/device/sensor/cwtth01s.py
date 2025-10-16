@@ -6,6 +6,17 @@ from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
 class CWTTH01S:
+    """Czujnik temperatury i wilgotności z buforowaniem odczytów i wątkiem monitorującym.
+
+    Args:
+        device_name (str): Nazwa urządzenia.
+        bus: Magistrala Modbus/komunikacyjna.
+        address: Adres urządzenia.
+        period (float): Okres odczytu danych (s).
+        cache_time (float): Czas ważności cache (s).
+        message_logger (MessageLogger | None): Logger wiadomości.
+    """
+
     def __init__(
         self,
         device_name: str,
@@ -37,6 +48,7 @@ class CWTTH01S:
         self.check_device_connection()
 
     def __setup(self):
+        """Inicjalizuje i uruchamia wątek cyklicznych odczytów."""
         try:
             if self._thread is None or not self._thread.is_alive():
                 self._stop_event.clear()
@@ -55,6 +67,7 @@ class CWTTH01S:
             return None
 
     def _sensor_thread(self):
+        """Wątek cyklicznie odczytujący i aktualizujący temperaturę oraz wilgotność."""
         while not self._stop_event.is_set():
             now = time.time()
             try:
@@ -74,10 +87,10 @@ class CWTTH01S:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def __read_humidity(self):
-        """Read humidity value from the sensor.
+        """Odczytuje wilgotność z sensora.
 
-        Returns:
-            float: Humidity in %RH or None if failed
+        Zwraca:
+            float: Wilgotność w %RH lub None w przypadku niepowodzenia.
         """
         current_time = time.time()
         # Check if cache is valid
@@ -124,10 +137,10 @@ class CWTTH01S:
             return None
 
     def __read_temperature(self):
-        """Read temperature value from the sensor.
+        """Odczytuje temperaturę z sensora.
 
-        Returns:
-            float: Temperature in °C or None if failed
+        Zwraca:
+            float: Temperatura w °C lub None w przypadku niepowodzenia.
         """
         current_time = time.time()
         # Check if cache is valid
@@ -182,28 +195,28 @@ class CWTTH01S:
             return None
 
     def read_humidity(self):
-        """Get the current humidity value.
+        """Zwraca bieżącą wartość wilgotności.
 
-        Returns:
-            float: Humidity in %RH or None if not available
+        Zwraca:
+            float: Wilgotność w %RH lub None, jeśli niedostępna.
         """
         with self.__lock:
             return self.humidity
 
     def read_temperature(self):
-        """Get the current temperature value.
+        """Zwraca bieżącą wartość temperatury.
 
-        Returns:
-            float: Temperature in °C or None if not available
+        Zwraca:
+            float: Temperatura w °C lub None, jeśli niedostępna.
         """
         with self.__lock:
             return self.temperature
 
     def read_temp_calibration(self):
-        """Read temperature calibration value
+        """Odczytuje wartość kalibracji temperatury.
 
-        Returns:
-            float: Temperature calibration value in °C or None if failed
+        Zwraca:
+            float: Wartość kalibracji temperatury w °C lub None w przypadku błędu.
         """
         try:
             with self.__lock:
@@ -227,10 +240,10 @@ class CWTTH01S:
             return None
 
     def read_humid_calibration(self):
-        """Read humidity calibration value
+        """Odczytuje wartość kalibracji wilgotności.
 
-        Returns:
-            float: Humidity calibration value in %RH or None if failed
+        Zwraca:
+            float: Wartość kalibracji wilgotności w %RH lub None w przypadku błędu.
         """
         try:
             with self.__lock:
@@ -254,13 +267,13 @@ class CWTTH01S:
             return None
 
     def write_temp_calibration(self, cal_value):
-        """Write temperature calibration value
+        """Zapisuje wartość kalibracji temperatury.
 
-        Args:
-            cal_value (float): Temperature calibration value in °C
+        Argumenty:
+            cal_value (float): Wartość kalibracji temperatury w °C.
 
-        Returns:
-            bool: True if successful, False otherwise
+        Zwraca:
+            bool: True w przypadku powodzenia, False w przeciwnym razie.
         """
         # Convert to register value (0.1°C resolution)
         register_value = int(cal_value * 10)
@@ -290,13 +303,13 @@ class CWTTH01S:
             return False
 
     def write_humid_calibration(self, cal_value):
-        """Write humidity calibration value
+        """Zapisuje wartość kalibracji wilgotności.
 
-        Args:
-            cal_value (float): Humidity calibration value in %RH
+        Argumenty:
+            cal_value (float): Wartość kalibracji wilgotności w %RH.
 
-        Returns:
-            bool: True if successful, False otherwise
+        Zwraca:
+            bool: True w przypadku powodzenia, False w przeciwnym razie.
         """
         # Convert to register value (0.1%rh resolution)
         register_value = int(cal_value * 10)
@@ -427,6 +440,7 @@ class CWTTH01S:
         return result
 
     def __del__(self):
+        """Zatrzymuje wątek sensora i czyści referencje loggera przy usuwaniu obiektu."""
         self.message_logger = None
         try:
             if (
@@ -443,6 +457,11 @@ class CWTTH01S:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie z urządzeniem poprzez odczyt rejestru kontrolnego.
+
+        Zwraca:
+            bool: True jeśli urządzenie odpowiada, w przeciwnym razie False.
+        """
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

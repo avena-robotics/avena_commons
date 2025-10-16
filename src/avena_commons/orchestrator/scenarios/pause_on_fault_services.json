@@ -1,13 +1,28 @@
 {
   "name": "Wstrzymanie systemu przy błędach (@all)",
   "description": "Autonomiczny scenariusz bezpieczeństwa - wstrzymuje wszystkie usługi gdy wykryty zostanie błąd",
-  "priority": 10,
-  "cooldown": 10,
+  "priority": 90,
+  "cooldown": 60,
   "trigger": {
     "type": "automatic",
     "conditions": {
-      "client_state": {
-        "any_service_in_state": ["ON_FAULT", "FAULT"]
+      "and": {
+        "conditions": [
+          {
+            "client_state": {
+              "any_service_in_state": [
+                "FAULT"
+              ]
+            }
+          },
+          {
+            "client_state": {
+              "no_service_in_state": [
+                "PAUSE"
+              ]
+            }
+          }
+        ]
       }
     }
   },
@@ -17,6 +32,26 @@
       "level": "error",
       "message": "🚨 BŁĄD KRYTYCZNY: Wykryto komponent w stanie błędu - uruchamiam procedurę bezpieczeństwa",
       "description": "Alert o wykryciu błędu krytycznego"
+    },
+    {
+      "type": "send_sms",
+      "description": "Powiadomienie SMS o wykryciu błędu",
+      "to": [
+        "48517383507"
+      ],
+      "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Błędy {{ clients_error_messages_sms }}"
+    },
+    {
+      "type": "send_email",
+      "description": "Powiadomienie o wykryciu błędu",
+      "to": [
+        "norbert.niemc@pomagier.info",
+        "mikolaj.galant@pomagier.info",
+        "damian.gawin@pomagier.info",
+        "lukasz.lecki@pomagier.info"
+      ],
+      "subject": "[ALERT] Wykryto FAULT w {{ clients_in_fault }}",
+      "body": "Wykryto stan FAULT. Lista klientów w błędzie: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "log_event",
@@ -39,7 +74,10 @@
     {
       "type": "wait_for_state",
       "target": "@all",
-      "target_state": "PAUSED",
+      "target_state": [
+        "PAUSE",
+        "FAULT"
+      ],
       "timeout": "30s",
       "description": "Oczekiwanie na wstrzymanie wszystkich komponentów"
     },
@@ -48,6 +86,26 @@
       "level": "warning",
       "message": "🛑 SYSTEM ZABEZPIECZONY: Wszystkie usługi wstrzymane z powodu wykrycia błędu",
       "description": "Potwierdzenie zabezpieczenia systemu"
+    },
+    {
+      "type": "send_sms",
+      "description": "Raport po wstrzymaniu usług (SMS)",
+      "to": [
+        "48517383507"
+      ],
+      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages_sms }}"
+    },
+    {
+      "type": "send_email",
+      "description": "Raport po wstrzymaniu usług",
+      "to": [
+        "norbert.niemc@pomagier.info",
+        "mikolaj.galant@pomagier.info",
+        "damian.gawin@pomagier.info",
+        "lukasz.lecki@pomagier.info"
+      ],
+      "subject": "[INFO] System wstrzymany - komponenty w błędzie: {{ clients_in_fault }}",
+      "body": "Wszystkie komponenty zostały wstrzymane (PAUSED). Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages }}"
     },
     {
       "type": "log_event",

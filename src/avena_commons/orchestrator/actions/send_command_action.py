@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 
 from avena_commons.util.logger import debug, info
 
-from .base_action import ActionContext, ActionExecutionError, BaseAction
+from ..models.scenario_models import ScenarioContext
+from .base_action import ActionExecutionError, BaseAction
 
 
 class SendCommandAction(BaseAction):
@@ -30,7 +31,7 @@ class SendCommandAction(BaseAction):
     """
 
     async def execute(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> None:
         """
         Wykonuje akcję wysyłania komendy.
@@ -78,7 +79,7 @@ class SendCommandAction(BaseAction):
             raise ActionExecutionError("send_command", f"Nieoczekiwany błąd: {str(e)}")
 
     def _resolve_target_clients(
-        self, action_config: Dict[str, Any], context: ActionContext
+        self, action_config: Dict[str, Any], context: ScenarioContext
     ) -> List[str]:
         """
         Rozwiązuje komponenty docelowe na podstawie selektorów.
@@ -95,7 +96,7 @@ class SendCommandAction(BaseAction):
 
         # Sprawdź selektor "@all"
         if "target" in action_config and action_config["target"] == "@all":
-            target_clients.extend(self._get_all_clients(orchestrator))
+            target_clients.extend(context.clients)
 
         # Sprawdź pojedynczy komponent
         elif "client" in action_config and action_config["client"]:
@@ -143,21 +144,21 @@ class SendCommandAction(BaseAction):
 
         return clients
 
-    def _get_all_clients(self, orchestrator) -> List[str]:
-        """
-        Pobiera wszystkie zarejestrowane serwisy.
+    # def _get_all_clients(self, orchestrator) -> List[str]:
+    #     """
+    #     Pobiera wszystkie zarejestrowane serwisy.
 
-        Args:
-            orchestrator: Referencja do Orchestratora
+    #     Args:
+    #         orchestrator: Referencja do Orchestratora
 
-        Returns:
-            Lista nazw wszystkich serwisów
-        """
-        config = orchestrator._configuration.get("clients", {})
-        return list(config.keys())
+    #     Returns:
+    #         Lista nazw wszystkich serwisów
+    #     """
+    #     config = orchestrator._configuration.get("clients", {})
+    #     return list(config.keys())
 
     async def _send_command_to_client(
-        self, client_name: str, command: str, context: ActionContext
+        self, client_name: str, command: str, context: ScenarioContext
     ) -> None:
         """
         Wysyła komendę do konkretnego komponentu.
@@ -170,23 +171,18 @@ class SendCommandAction(BaseAction):
         Raises:
             ActionExecutionError: W przypadku błędu wysyłania
         """
-        orchestrator = context.orchestrator
-        config = orchestrator._configuration.get("clients", {})
-
-        if client_name not in config:
+        if client_name not in context.clients:
             raise ActionExecutionError(
                 "send_command",
                 f'Serwis "{client_name}" nie znaleziony w konfiguracji',
             )
 
-        client_config = config[client_name]
-
         try:
             # Użyj metody _event z Orchestratora do wysłania komendy
-            event = await orchestrator._event(
+            event = await context.orchestrator._event(
                 destination=client_name,
-                destination_address=client_config["address"],
-                destination_port=client_config["port"],
+                destination_address=context.clients[client_name]["address"],
+                destination_port=context.clients[client_name]["port"],
                 event_type=command,
                 data={},
                 to_be_processed=True,
