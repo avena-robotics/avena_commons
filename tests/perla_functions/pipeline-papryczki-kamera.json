@@ -1,0 +1,53 @@
+{
+  "camera_pipeline": {
+    "camera_number": 1,
+    "image_config": {
+      "resolution": [640, 400],
+      "color_format": "BGR",
+      "depth_format": "Y16"
+    },
+    "framerate": 30,
+    "fragments": [
+      {
+        "fragment_id": 0,
+        "name": "camera1_1",
+        "position": "top-left",
+        "roi": {
+          "x": [100, 280],
+          "y": [20, 200]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": true,
+            "source_path": "/resources/pepper_vision/nozzle_mask_camera1.png",
+            "crop_to_roi": true,
+            "operations": ["erode:2", "dilate:1"]
+          },
+          "exclusion_mask": {
+            "enabled": false,
+            "source_path": null
+          }
+        },
+        "address": "192.168.11.1"
+      },
+      {
+        "fragment_id": 1,
+        "name": "camera1_2",
+        "position": "top-right",
+        "roi": {
+          "x": [320, 500],
+          "y": [20, 200]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": true,
+            "source_path": "/resources/pepper_vision/nozzle_mask_camera1.png",
+            "crop_to_roi": true,
+            "operations": []
+          }
+        },
+        "address": "192.168.11.2"
+      }
+    ]
+  }
+}

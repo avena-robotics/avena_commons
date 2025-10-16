@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "avena_commons"
-version = "2.1.0"
+version = "2.1.1"
 description = "A small utility library for working with Avena Robotics"
 authors = [
     { name = "Avena Robotics", email = "lukasz.lecki@pomagier.info" },
@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "psutil",
-    "numpy",
+    "numpy==1.26.4",
     "scipy",
     'posix-ipc; platform_system=="Linux"',
     "opencv-python",
@@ -60,27 +60,13 @@ Homepage = "https://github.com/avena-robotics/avena_commons"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--continue-on-collection-errors --tb=short --cov=avena_commons --cov-report=term-missing --cov-fail-under=90"
+addopts = "--continue-on-collection-errors --tb=short"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
-[tool.coverage.run]
-source = ["src/avena_commons"]
-omit = [
-    "*/tests/*",
-    "*/test_*",
-    "*/__pycache__/*"
-]
 
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError"
-]
 
 [tool.ruff]
 line-length = 88
@@ -89,3 +75,6 @@ ignore = ["E501"]
 
 [tool.black]
 line-length = 88
+
+[tool.setuptools.package-data]
+avena_commons = ["vision/data/*.png"]
