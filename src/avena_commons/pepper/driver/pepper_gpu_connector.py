@@ -39,38 +39,38 @@ from avena_commons.util.worker import Connector, Worker
 
 def gpumat_to_cupy(gpu_mat):
     """Convert cv2.cuda.GpuMat to CuPy array (zero-copy GPU-to-GPU).
-    
+
     Eliminates GPU→CPU→GPU round-trip for CuPy operations.
     Uses direct CUDA pointer access to share GPU memory between OpenCV and CuPy.
-    
+
     Args:
         gpu_mat: OpenCV GpuMat object on GPU
-        
+
     Returns:
         cp.ndarray: CuPy array sharing same GPU memory (zero-copy)
-        
+
     Raises:
         AttributeError: If CuPy not available or GPU mat doesn't support cudaPtr()
     """
     if gpu_mat is None:
         return None
-    
+
     if cp is None:
         raise AttributeError("CuPy not available")
-    
+
     # Get CUDA pointer from GpuMat
     ptr = gpu_mat.cudaPtr()
-    
+
     # Determine shape based on dimensions and channels
     rows = gpu_mat.size()[1]  # height
     cols = gpu_mat.size()[0]  # width
     channels = gpu_mat.channels()
-    
+
     if channels > 1:
         shape = (rows, cols, channels)
     else:
         shape = (rows, cols)
-    
+
     # Map OpenCV type to numpy dtype
     dtype_map = {
         cv2.CV_8UC1: cp.uint8,
@@ -79,25 +79,23 @@ def gpumat_to_cupy(gpu_mat):
         cv2.CV_32FC1: cp.float32,
     }
     dtype = dtype_map.get(gpu_mat.type(), cp.uint8)
-    
+
     # Calculate total memory size (step includes padding)
     mem_size = gpu_mat.step * rows
-    
+
     # Create CuPy array from GPU pointer (zero-copy!)
     cupy_array = cp.ndarray(
         shape=shape,
         dtype=dtype,
-        memptr=cp.cuda.MemoryPointer(
-            cp.cuda.UnownedMemory(ptr, mem_size, None),
-            0
-        )
+        memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(ptr, mem_size, None), 0),
     )
-    
+
     return cupy_array
 
 
 class PepperState(Enum):
     """Pepper Vision Worker states."""
+
     IDLE = 0
     INITIALIZING = 1
     INITIALIZED = 2
@@ -111,7 +109,7 @@ class PepperState(Enum):
 
 class PepperGPUWorker(Worker):
     """GPU-accelerated worker for batch pepper vision processing.
-    
+
     Processes all fragments in batch on GPU for maximum performance.
     Uses GPUBatchProcessor for parallel operations on all fragments.
     """
@@ -167,7 +165,7 @@ class PepperGPUWorker(Worker):
 
     # Import all CPU utility functions from base pepper_connector
     # (These are kept for CPU fallback and CPU-only operations like contour finding)
-    
+
     def get_white_percentage_in_mask(self, rgb, mask, hsv_range):
         """Calculate percentage of white pixels in mask (CPU operation)."""
         debug_dict = {}
@@ -197,7 +195,9 @@ class PepperGPUWorker(Worker):
         cv2.circle(nozzle_mask, (center_x, center_y), radius, 255, -1)
         return nozzle_mask
 
-    def config(self, nozzle_mask, section, pepper_type="big_pepper", reflective_nozzle=False):
+    def config(
+        self, nozzle_mask, section, pepper_type="big_pepper", reflective_nozzle=False
+    ):
         """Create full pepper vision configuration (same as CPU version)."""
         match section:
             case "top_left":
@@ -223,8 +223,14 @@ class PepperGPUWorker(Worker):
         pepper_mask_dict = {}
         pepper_mask_dict["red_bottom_range"] = [[0, 140, 50], [30, 255, 255]]
         pepper_mask_dict["red_top_range"] = [[150, 140, 50], [180, 255, 255]]
-        pepper_mask_dict["mask_de_noise_open_params"] = {"kernel": (5, 5), "iterations": 1}
-        pepper_mask_dict["mask_de_noise_close_params"] = {"kernel": (10, 10), "iterations": 1}
+        pepper_mask_dict["mask_de_noise_open_params"] = {
+            "kernel": (5, 5),
+            "iterations": 1,
+        }
+        pepper_mask_dict["mask_de_noise_close_params"] = {
+            "kernel": (10, 10),
+            "iterations": 1,
+        }
         pepper_mask_dict["min_mask_area"] = 100
         config_dict["pepper_mask_config"] = pepper_mask_dict
 
@@ -236,8 +242,14 @@ class PepperGPUWorker(Worker):
         hole_detection_dict["clahe_params"] = {"clipLimit": 2.0, "tileGridSize": (8, 8)}
         hole_detection_dict["threshold_param"] = 0.5
         hole_detection_dict["open_on_l_params"] = {"kernel": (5, 5), "iterations": 1}
-        hole_detection_dict["open_on_center_params"] = {"kernel": (5, 5), "iterations": 2}
-        hole_detection_dict["open_on_center_raw_params"] = {"kernel": (2, 2), "iterations": 1}
+        hole_detection_dict["open_on_center_params"] = {
+            "kernel": (5, 5),
+            "iterations": 2,
+        }
+        hole_detection_dict["open_on_center_raw_params"] = {
+            "kernel": (2, 2),
+            "iterations": 1,
+        }
         hole_detection_dict["max_distance_from_center"] = 30
         hole_detection_dict["close_params"] = {"kernel": (5, 5), "iterations": 1}
         hole_detection_dict["min_hole_area"] = 30
@@ -260,15 +272,31 @@ class PepperGPUWorker(Worker):
         config_dict["depth_measurement_zones_config"] = {
             "line_width": 50,
             "nozzle_mask_de_noise_open_params": {"kernel": (5, 5), "iterations": 1},
-            "outer_mask_dilate_params": {"kernel": (3, 3), "near_iterations": 1, "far_iterations": 14},
-            "nozzle_mask_extended_outer_dilate_params": {"kernel": (5, 5), "iterations": 4},
-            "nozzle_mask_extended_inner_dilate_params": {"kernel": (4, 4), "iterations": 2},
+            "outer_mask_dilate_params": {
+                "kernel": (3, 3),
+                "near_iterations": 1,
+                "far_iterations": 14,
+            },
+            "nozzle_mask_extended_outer_dilate_params": {
+                "kernel": (5, 5),
+                "iterations": 4,
+            },
+            "nozzle_mask_extended_inner_dilate_params": {
+                "kernel": (4, 4),
+                "iterations": 2,
+            },
             "inner_zone_erode_params": {"kernel": (3, 3), "iterations": 2},
         }
 
-        config_dict["overflow_mask_config"] = {"kernel": (8, 8), "erode_iter": 3, "dilate_iter": 4}
-        config_dict["outer_overflow_mask_config"] = {"erode_params": {"kernel": (5, 5), "iterations": 1}}
-        
+        config_dict["overflow_mask_config"] = {
+            "kernel": (8, 8),
+            "erode_iter": 3,
+            "dilate_iter": 4,
+        }
+        config_dict["outer_overflow_mask_config"] = {
+            "erode_params": {"kernel": (5, 5), "iterations": 1}
+        }
+
         config_dict["min_mask_size_config"] = {
             "inner_zone_mask": 50,
             "outer_zone_mask": 50,
@@ -293,8 +321,14 @@ class PepperGPUWorker(Worker):
         }
 
         if pepper_type == "small_prime":
-            config_dict["pepper_mask_config"]["red_bottom_range"] = [[0, 100, 20], [30, 255, 255]]
-            config_dict["pepper_mask_config"]["red_top_range"] = [[150, 100, 20], [180, 255, 255]]
+            config_dict["pepper_mask_config"]["red_bottom_range"] = [
+                [0, 100, 20],
+                [30, 255, 255],
+            ]
+            config_dict["pepper_mask_config"]["red_top_range"] = [
+                [150, 100, 20],
+                [180, 255, 255],
+            ]
             config_dict["hole_detection_config"]["threshold_param"] = 1
             config_dict["hole_detection_config"]["max_distance_from_center"] = 20
             config_dict["overflow_mask_config"]["kernel"] = (4, 4)
@@ -329,10 +363,13 @@ class PepperGPUWorker(Worker):
 
             with Catchtime() as total_batch_timer:
                 results = {}
-                
+
                 if not self.gpu_enabled or not self.gpu_processor:
                     # Fallback to CPU processing
-                    info("GPU not enabled, falling back to CPU processing", self._message_logger)
+                    info(
+                        "GPU not enabled, falling back to CPU processing",
+                        self._message_logger,
+                    )
                     return await self._process_fragments_cpu(fragments)
 
                 # Prepare fragments for batch processing
@@ -343,10 +380,10 @@ class PepperGPUWorker(Worker):
                 for fragment_key, fragment_data in fragments.items():
                     fragment_id = fragment_data.get("fragment_id", fragment_key)
                     section = self.fragment_to_section.get(fragment_id, "top_left")
-                    
+
                     color_fragment = fragment_data["color"]
                     depth_fragment = fragment_data["depth"]
-                    
+
                     fragment_list.append({
                         "color": color_fragment,
                         "depth": depth_fragment,
@@ -354,61 +391,72 @@ class PepperGPUWorker(Worker):
                         "fragment_id": fragment_id,
                     })
                     fragment_keys.append(fragment_key)
-                    
+
                     # Create nozzle mask and config for each fragment
-                    nozzle_mask = self.create_simple_nozzle_mask(color_fragment.shape, section)
-                    params = self.config(nozzle_mask, section, "big_pepper", reflective_nozzle=False)
+                    nozzle_mask = self.create_simple_nozzle_mask(
+                        color_fragment.shape, section
+                    )
+                    params = self.config(
+                        nozzle_mask, section, "big_pepper", reflective_nozzle=False
+                    )
                     fragment_configs.append((nozzle_mask, params))
 
-                debug(f"Batch processing {len(fragment_list)} fragments on GPU", self._message_logger)
+                debug(
+                    f"Batch processing {len(fragment_list)} fragments on GPU",
+                    self._message_logger,
+                )
 
                 # STEP 1: Upload all images (color + depth) to GPU in batch
                 with Catchtime() as upload_timer:
                     color_images = [f["color"] for f in fragment_list]
                     depth_images = [f["depth"] for f in fragment_list]
-                    
+
                     gpu_colors = self.gpu_processor.upload_to_gpu(color_images)
                     gpu_depths = self.gpu_processor.upload_to_gpu(depth_images)
-                
+
                 self.performance_metrics["gpu_upload_times"].append(upload_timer.ms)
-                debug(f"Uploaded {len(gpu_colors)} color + {len(gpu_depths)} depth to GPU in {upload_timer.ms:.2f}ms", self._message_logger)
+                debug(
+                    f"Uploaded {len(gpu_colors)} color + {len(gpu_depths)} depth to GPU in {upload_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 2: Batch color space conversions (BGR→HSV and BGR→LAB)
                 with Catchtime() as conversion_timer:
                     gpu_hsv_batch = self.gpu_processor.batch_color_convert(
-                        gpu_colors,
-                        cv2.COLOR_BGR2HSV,
-                        use_streams=True
+                        gpu_colors, cv2.COLOR_BGR2HSV, use_streams=True
                     )
-                    
+
                     gpu_lab_batch = self.gpu_processor.batch_color_convert(
-                        gpu_colors,
-                        cv2.COLOR_BGR2LAB,
-                        use_streams=True
+                        gpu_colors, cv2.COLOR_BGR2LAB, use_streams=True
                     )
-                
-                self.performance_metrics["batch_conversion_times"].append(conversion_timer.ms)
-                debug(f"Batch color conversions (HSV+LAB) in {conversion_timer.ms:.2f}ms", self._message_logger)
+
+                self.performance_metrics["batch_conversion_times"].append(
+                    conversion_timer.ms
+                )
+                debug(
+                    f"Batch color conversions (HSV+LAB) in {conversion_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 3: Batch pepper mask creation (inRange for all fragments)
                 with Catchtime() as mask_timer:
                     lower_bounds = []
                     upper_bounds = []
-                    
+
                     for _, params in fragment_configs:
                         pepper_config = params["pepper_mask_config"]
                         # Use bottom range (would need OR for top range in full implementation)
                         lower_bounds.append(tuple(pepper_config["red_bottom_range"][0]))
                         upper_bounds.append(tuple(pepper_config["red_bottom_range"][1]))
-                    
+
                     gpu_masks_batch = self.gpu_processor.batch_inrange(
-                        gpu_hsv_batch,
-                        lower_bounds,
-                        upper_bounds,
-                        use_streams=True
+                        gpu_hsv_batch, lower_bounds, upper_bounds, use_streams=True
                     )
-                
-                debug(f"Batch pepper mask creation in {mask_timer.ms:.2f}ms", self._message_logger)
+
+                debug(
+                    f"Batch pepper mask creation in {mask_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 4: Batch morphological operations (open + close for all masks)
                 with Catchtime() as morph_timer:
@@ -418,20 +466,25 @@ class PepperGPUWorker(Worker):
                         cv2.MORPH_OPEN,
                         (5, 5),
                         iterations=1,
-                        use_streams=True
+                        use_streams=True,
                     )
-                    
+
                     # Close operation - reduced kernel size for better performance
                     gpu_masks_refined = self.gpu_processor.batch_morphology(
                         gpu_masks_opened,
                         cv2.MORPH_CLOSE,
                         (7, 7),  # Reduced from (10, 10) for ~2x speedup
                         iterations=1,
-                        use_streams=True
+                        use_streams=True,
                     )
-                
-                self.performance_metrics["batch_morphology_times"].append(morph_timer.ms)
-                debug(f"Batch morphology operations in {morph_timer.ms:.2f}ms", self._message_logger)
+
+                self.performance_metrics["batch_morphology_times"].append(
+                    morph_timer.ms
+                )
+                debug(
+                    f"Batch morphology operations in {morph_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 5: Batch pepper presence check on GPU (countNonZero)
                 with Catchtime() as presence_timer:
@@ -439,17 +492,22 @@ class PepperGPUWorker(Worker):
                     for gpu_mask in gpu_masks_refined:
                         pixel_count = cv2.cuda.countNonZero(gpu_mask)
                         gpu_mask_pixel_counts.append(pixel_count)
-                
-                debug(f"Batch pepper presence check in {presence_timer.ms:.2f}ms", self._message_logger)
+
+                debug(
+                    f"Batch pepper presence check in {presence_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 6: Batch depth statistics on GPU (CuPy if available)
                 with Catchtime() as depth_stats_timer:
                     depth_means = []
-                    
+
                     if self.cupy_available:
                         # Use CuPy for GPU depth statistics with zero-copy conversion
-                        try:                            
-                            for idx, (gpu_mask, gpu_depth) in enumerate(zip(gpu_masks_refined, gpu_depths)):
+                        try:
+                            for idx, (gpu_mask, gpu_depth) in enumerate(
+                                zip(gpu_masks_refined, gpu_depths)
+                            ):
                                 try:
                                     # Direct GPU-to-GPU conversion (zero-copy!)
                                     try:
@@ -457,50 +515,63 @@ class PepperGPUWorker(Worker):
                                         depth_cp = gpumat_to_cupy(gpu_depth)
                                     except Exception as direct_gpu_error:
                                         # Fallback to CPU if direct conversion fails
-                                        debug(f"Direct GPU conversion failed: {direct_gpu_error}, using CPU fallback", self._message_logger)
+                                        debug(
+                                            f"Direct GPU conversion failed: {direct_gpu_error}, using CPU fallback",
+                                            self._message_logger,
+                                        )
                                         mask_cpu = gpu_mask.download()
                                         depth_cpu = gpu_depth.download()
                                         mask_cp = cp.array(mask_cpu)
                                         depth_cp = cp.array(depth_cpu)
-                                    
+
                                     # Extract depth values where mask == 255 (on GPU)
                                     depth_in_mask = depth_cp[mask_cp == 255]
                                     depth_valid = depth_in_mask[depth_in_mask > 0]
-                                    
+
                                     # Calculate mean on GPU
                                     if len(depth_valid) > 0:
                                         depth_mean = float(cp.mean(depth_valid))
                                     else:
                                         depth_mean = 0.0
-                                    
+
                                     depth_means.append(depth_mean)
                                 except Exception as cupy_error:
-                                    debug(f"CuPy depth stats failed for fragment {idx}: {cupy_error}", self._message_logger)
+                                    debug(
+                                        f"CuPy depth stats failed for fragment {idx}: {cupy_error}",
+                                        self._message_logger,
+                                    )
                                     depth_means.append(0.0)
                         except ImportError:
                             self.cupy_available = False
                             # Fallback below
-                    
-                    if not self.cupy_available or len(depth_means) != len(fragment_list):
+
+                    if not self.cupy_available or len(depth_means) != len(
+                        fragment_list
+                    ):
                         # Fallback to CPU for depth statistics
-                        cpu_masks = self.gpu_processor.download_from_gpu(gpu_masks_refined)
+                        cpu_masks = self.gpu_processor.download_from_gpu(
+                            gpu_masks_refined
+                        )
                         depth_means = []
-                        
+
                         for idx, fragment_data in enumerate(fragment_list):
                             depth_fragment = fragment_data["depth"]
                             mask_cpu = cpu_masks[idx]
-                            
+
                             depth_in_mask = depth_fragment[mask_cpu == 255]
                             depth_valid = depth_in_mask[depth_in_mask > 0]
-                            
+
                             if len(depth_valid) > 0:
                                 depth_mean = float(np.mean(depth_valid))
                             else:
                                 depth_mean = 0.0
-                            
+
                             depth_means.append(depth_mean)
-                
-                debug(f"Batch depth statistics in {depth_stats_timer.ms:.2f}ms (CuPy={self.cupy_available})", self._message_logger)
+
+                debug(
+                    f"Batch depth statistics in {depth_stats_timer.ms:.2f}ms (CuPy={self.cupy_available})",
+                    self._message_logger,
+                )
 
                 # STEP 7: LAB L-channel extraction + CLAHE batch (for hole detection)
                 with Catchtime() as clahe_timer:
@@ -513,25 +584,25 @@ class PepperGPUWorker(Worker):
                         # channels[0] may be a view which doesn't have proper memory allocation
                         l_channel = channels[0].clone()
                         gpu_l_channels.append(l_channel)  # L channel
-                    
+
                     # Batch Gaussian blur on L channels
                     gpu_l_blurred = self.gpu_processor.batch_gaussian_blur(
-                        gpu_l_channels,
-                        kernel_size=(3, 3),
-                        sigma=0,
-                        use_streams=True
+                        gpu_l_channels, kernel_size=(3, 3), sigma=0, use_streams=True
                     )
-                    
+
                     # Batch CLAHE on L channels
                     gpu_l_clahe_batch = self.gpu_processor.batch_clahe(
                         gpu_l_blurred,
                         clip_limit=2.0,
                         tile_grid_size=(8, 8),
-                        use_streams=True
+                        use_streams=True,
                     )
-                
+
                 self.performance_metrics["batch_clahe_times"].append(clahe_timer.ms)
-                debug(f"Batch LAB L-channel + CLAHE in {clahe_timer.ms:.2f}ms", self._message_logger)
+                debug(
+                    f"Batch LAB L-channel + CLAHE in {clahe_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 7.5: SINGLE stream synchronization at end of GPU pipeline
                 # This allows all GPU operations to execute in parallel across streams
@@ -539,8 +610,11 @@ class PepperGPUWorker(Worker):
                     if self.gpu_processor.streams:
                         for stream in self.gpu_processor.streams:
                             stream.waitForCompletion()
-                
-                debug(f"GPU pipeline synchronization in {sync_timer.ms:.2f}ms", self._message_logger)
+
+                debug(
+                    f"GPU pipeline synchronization in {sync_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 8: Minimal download - only what's needed for CPU operations
                 with Catchtime() as download_timer:
@@ -548,37 +622,42 @@ class PepperGPUWorker(Worker):
                     cpu_masks = self.gpu_processor.download_from_gpu(gpu_masks_refined)
                     # Colors downloaded only if needed for final result
                     # cpu_colors = self.gpu_processor.download_from_gpu(gpu_colors)
-                
-                debug(f"Downloaded minimal results from GPU in {download_timer.ms:.2f}ms", self._message_logger)
+
+                debug(
+                    f"Downloaded minimal results from GPU in {download_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
                 # STEP 9: Minimal CPU operations - only contours and final decision logic
                 with Catchtime() as cpu_ops_timer:
-                    for idx, (fragment_key, fragment_data) in enumerate(zip(fragment_keys, fragment_list)):
+                    for idx, (fragment_key, fragment_data) in enumerate(
+                        zip(fragment_keys, fragment_list)
+                    ):
                         with Catchtime() as fragment_timer:
                             try:
                                 mask_cpu = cpu_masks[idx]
                                 nozzle_mask, params = fragment_configs[idx]
-                                
+
                                 # Pepper presence check (from GPU pixel count)
                                 pixel_count = gpu_mask_pixel_counts[idx]
                                 min_area = params["pepper_mask_config"]["min_mask_area"]
                                 pepper_presence = pixel_count > min_area
-                                
+
                                 # Depth check (from GPU depth mean)
                                 depth_mean = depth_means[idx]
                                 max_depth = params["pepper_presence_max_depth"]
                                 if pepper_presence and depth_mean > 0:
                                     pepper_presence = depth_mean < max_depth
-                                
+
                                 # Log results per fragment
                                 fragment_section = fragment_data["section"]
                                 debug(
                                     f"Fragment {fragment_key} ({fragment_section}): "
                                     f"pixels={pixel_count}, depth_mean={depth_mean:.1f}, "
                                     f"presence={pepper_presence}",
-                                    self._message_logger
+                                    self._message_logger,
                                 )
-                                
+
                                 results[fragment_key] = {
                                     "fragment_id": fragment_data["fragment_id"],
                                     "section": fragment_section,
@@ -593,13 +672,18 @@ class PepperGPUWorker(Worker):
                                         "depth_mean": float(depth_mean),
                                         "min_area_threshold": int(min_area),
                                         "max_depth_threshold": int(max_depth),
-                                    }
+                                    },
                                 }
-                                
+
                             except Exception as fragment_error:
-                                error(f"Error processing fragment {fragment_key}: {fragment_error}", self._message_logger)
+                                error(
+                                    f"Error processing fragment {fragment_key}: {fragment_error}",
+                                    self._message_logger,
+                                )
                                 results[fragment_key] = {
-                                    "fragment_id": fragment_data.get("fragment_id", "unknown"),
+                                    "fragment_id": fragment_data.get(
+                                        "fragment_id", "unknown"
+                                    ),
                                     "section": fragment_data.get("section", "unknown"),
                                     "search_state": False,
                                     "overflow_state": False,
@@ -607,21 +691,26 @@ class PepperGPUWorker(Worker):
                                     "success": False,
                                     "error": str(fragment_error),
                                 }
-                        
-                        self.performance_metrics["per_fragment_times"].append(fragment_timer.ms)
-                
-                debug(f"CPU operations (minimal) in {cpu_ops_timer.ms:.2f}ms", self._message_logger)
+
+                        self.performance_metrics["per_fragment_times"].append(
+                            fragment_timer.ms
+                        )
+
+                debug(
+                    f"CPU operations (minimal) in {cpu_ops_timer.ms:.2f}ms",
+                    self._message_logger,
+                )
 
             total_time = total_batch_timer.ms
             self.performance_metrics["total_batch_times"].append(total_time)
-            
+
             info(
                 f"GPU batch processed {len(fragments)} fragments in {total_time:.2f}ms "
                 f"(upload={upload_timer.ms:.2f}ms, convert={conversion_timer.ms:.2f}ms, "
                 f"morph={morph_timer.ms:.2f}ms, clahe={clahe_timer.ms:.2f}ms, "
                 f"presence={presence_timer.ms:.2f}ms, depth={depth_stats_timer.ms:.2f}ms, "
                 f"download={download_timer.ms:.2f}ms, cpu={cpu_ops_timer.ms:.2f}ms)",
-                self._message_logger
+                self._message_logger,
             )
 
             # Store result
@@ -640,7 +729,7 @@ class PepperGPUWorker(Worker):
                     "batch_depth_stats_ms": depth_stats_timer.ms,
                     "gpu_download_ms": download_timer.ms,
                     "cpu_operations_ms": cpu_ops_timer.ms,
-                }
+                },
             }
 
             self.state = PepperState.STARTED
@@ -650,7 +739,7 @@ class PepperGPUWorker(Worker):
             error(f"Error in GPU batch processing: {e}", self._message_logger)
             error(f"Traceback: {traceback.format_exc()}", self._message_logger)
             self.state = PepperState.ERROR
-            
+
             # Reset GPU processor to clear potentially corrupted CUDA state
             if self.gpu_processor:
                 try:
@@ -660,40 +749,50 @@ class PepperGPUWorker(Worker):
                     self.state = PepperState.STARTED
                 except Exception as reset_error:
                     error(f"GPU reset failed: {reset_error}", self._message_logger)
-            
+
             # Fallback to CPU
-            info("GPU batch processing failed, falling back to CPU", self._message_logger)
+            info(
+                "GPU batch processing failed, falling back to CPU", self._message_logger
+            )
             return await self._process_fragments_cpu(fragments)
 
     async def _process_fragments_cpu(self, fragments: Dict[str, Dict]) -> Dict:
         """CPU fallback for fragment processing (simplified version)."""
         results = {}
-        
+
         for fragment_key, fragment_data in fragments.items():
             fragment_id = fragment_data.get("fragment_id", fragment_key)
             section = self.fragment_to_section.get(fragment_id, "top_left")
-            
+
             try:
                 color_fragment = fragment_data["color"]
                 depth_fragment = fragment_data["depth"]
-                
-                nozzle_mask = self.create_simple_nozzle_mask(color_fragment.shape, section)
-                params = self.config(nozzle_mask, section, "big_pepper", reflective_nozzle=False)
-                
+
+                nozzle_mask = self.create_simple_nozzle_mask(
+                    color_fragment.shape, section
+                )
+                params = self.config(
+                    nozzle_mask, section, "big_pepper", reflective_nozzle=False
+                )
+
                 # Basic pepper mask
                 hsv = cv2.cvtColor(color_fragment, cv2.COLOR_BGR2HSV)
                 pepper_config = params["pepper_mask_config"]
                 lower = np.array(pepper_config["red_bottom_range"][0])
                 upper = np.array(pepper_config["red_bottom_range"][1])
                 mask = cv2.inRange(hsv, lower, upper)
-                
+
                 # Morphology
                 mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((10, 10), np.uint8))
-                
+                mask = cv2.morphologyEx(
+                    mask, cv2.MORPH_CLOSE, np.ones((10, 10), np.uint8)
+                )
+
                 # Presence check
-                pepper_presence = np.count_nonzero(mask) > pepper_config["min_mask_area"]
-                
+                pepper_presence = (
+                    np.count_nonzero(mask) > pepper_config["min_mask_area"]
+                )
+
                 results[fragment_key] = {
                     "search_state": pepper_presence,
                     "overflow_state": False,
@@ -701,9 +800,12 @@ class PepperGPUWorker(Worker):
                     "success": True,
                     "gpu_accelerated": False,
                 }
-                
+
             except Exception as e:
-                error(f"CPU processing error for fragment {fragment_key}: {e}", self._message_logger)
+                error(
+                    f"CPU processing error for fragment {fragment_key}: {e}",
+                    self._message_logger,
+                )
                 results[fragment_key] = {
                     "search_state": False,
                     "overflow_state": False,
@@ -711,7 +813,7 @@ class PepperGPUWorker(Worker):
                     "success": False,
                     "error": str(e),
                 }
-        
+
         return {
             "results": results,
             "total_processing_time_ms": 0,
@@ -724,14 +826,17 @@ class PepperGPUWorker(Worker):
         """Initialize pepper vision worker with GPU settings."""
         try:
             self.state = PepperState.INITIALIZING
-            debug(f"{self.device_name} - Initializing GPU pepper vision", self._message_logger)
+            debug(
+                f"{self.device_name} - Initializing GPU pepper vision",
+                self._message_logger,
+            )
 
             self.pepper_config = pepper_settings
 
             # Initialize GPU processor
             gpu_config = pepper_settings.get("gpu_acceleration", {})
             gpu_enabled = gpu_config.get("enabled", True)
-            
+
             if gpu_enabled:
                 # IMPORTANT: Use init_device=True since we're in worker process (after fork)
                 # This safely initializes CUDA in the worker process, not the parent
@@ -739,19 +844,28 @@ class PepperGPUWorker(Worker):
                 if gpu_available:
                     self.gpu_processor = GPUBatchProcessor(
                         num_streams=gpu_config.get("num_streams", 4),
-                        use_cupy=gpu_config.get("use_cupy", True)
+                        use_cupy=gpu_config.get("use_cupy", True),
                     )
                     self.gpu_enabled = True
-                    info(f"GPU acceleration enabled in worker: {gpu_info}", self._message_logger)
+                    info(
+                        f"GPU acceleration enabled in worker: {gpu_info}",
+                        self._message_logger,
+                    )
                 else:
-                    info(f"GPU not available: {gpu_info}, will use CPU", self._message_logger)
+                    info(
+                        f"GPU not available: {gpu_info}, will use CPU",
+                        self._message_logger,
+                    )
                     self.gpu_enabled = False
             else:
                 info("GPU acceleration disabled by configuration", self._message_logger)
                 self.gpu_enabled = False
 
             self.state = PepperState.INITIALIZED
-            debug(f"{self.device_name} - GPU pepper vision initialized", self._message_logger)
+            debug(
+                f"{self.device_name} - GPU pepper vision initialized",
+                self._message_logger,
+            )
             return True
 
         except Exception as e:
@@ -763,10 +877,14 @@ class PepperGPUWorker(Worker):
         """Start pepper vision processing."""
         try:
             self.state = PepperState.STARTING
-            debug(f"{self.device_name} - Starting GPU pepper vision", self._message_logger)
+            debug(
+                f"{self.device_name} - Starting GPU pepper vision", self._message_logger
+            )
             self.last_result = None
             self.state = PepperState.STARTED
-            debug(f"{self.device_name} - GPU pepper vision started", self._message_logger)
+            debug(
+                f"{self.device_name} - GPU pepper vision started", self._message_logger
+            )
             return True
         except Exception as e:
             error(f"{self.device_name} - Start failed: {e}", self._message_logger)
@@ -777,15 +895,19 @@ class PepperGPUWorker(Worker):
         """Stop pepper vision processing and cleanup GPU resources."""
         try:
             self.state = PepperState.STOPPING
-            debug(f"{self.device_name} - Stopping GPU pepper vision", self._message_logger)
-            
+            debug(
+                f"{self.device_name} - Stopping GPU pepper vision", self._message_logger
+            )
+
             # Cleanup GPU resources
             if self.gpu_processor:
                 self.gpu_processor.cleanup()
-            
+
             self.last_result = None
             self.state = PepperState.STOPPED
-            debug(f"{self.device_name} - GPU pepper vision stopped", self._message_logger)
+            debug(
+                f"{self.device_name} - GPU pepper vision stopped", self._message_logger
+            )
             return True
         except Exception as e:
             error(f"{self.device_name} - Stop failed: {e}", self._message_logger)
@@ -823,36 +945,57 @@ class PepperGPUWorker(Worker):
                     match data[0]:
                         case "PEPPER_INIT":
                             try:
-                                debug(f"{self.device_name} - Received PEPPER_INIT", self._message_logger)
+                                debug(
+                                    f"{self.device_name} - Received PEPPER_INIT",
+                                    self._message_logger,
+                                )
                                 result = await self.init_pepper(data[1])
                                 pipe_in.send(result)
                             except Exception as e:
-                                error(f"{self.device_name} - Error in PEPPER_INIT: {e}", self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error in PEPPER_INIT: {e}",
+                                    self._message_logger,
+                                )
                                 pipe_in.send(False)
 
                         case "PEPPER_START":
                             try:
-                                debug(f"{self.device_name} - Starting GPU pepper processing", self._message_logger)
+                                debug(
+                                    f"{self.device_name} - Starting GPU pepper processing",
+                                    self._message_logger,
+                                )
                                 result = await self.start_pepper()
                                 pipe_in.send(result)
                             except Exception as e:
-                                error(f"{self.device_name} - Error starting pepper: {e}", self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error starting pepper: {e}",
+                                    self._message_logger,
+                                )
                                 pipe_in.send(False)
 
                         case "PEPPER_STOP":
                             try:
-                                debug(f"{self.device_name} - Stopping GPU pepper processing", self._message_logger)
+                                debug(
+                                    f"{self.device_name} - Stopping GPU pepper processing",
+                                    self._message_logger,
+                                )
                                 result = await self.stop_pepper()
                                 pipe_in.send(result)
                             except Exception as e:
-                                error(f"{self.device_name} - Error stopping pepper: {e}", self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error stopping pepper: {e}",
+                                    self._message_logger,
+                                )
                                 pipe_in.send(False)
 
                         case "GET_STATE":
                             try:
                                 pipe_in.send(self.state)
                             except Exception as e:
-                                error(f"{self.device_name} - Error getting state: {e}", self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error getting state: {e}",
+                                    self._message_logger,
+                                )
                                 pipe_in.send(None)
 
                         case "PROCESS_FRAGMENTS":
@@ -862,11 +1005,20 @@ class PepperGPUWorker(Worker):
                                     self._message_logger,
                                 )
                                 fragments = data[1]
-                                result = await self.process_fragments_gpu_batch(fragments)
+                                result = await self.process_fragments_gpu_batch(
+                                    fragments
+                                )
                                 pipe_in.send(result)
                             except Exception as e:
-                                error(f"{self.device_name} - Error processing fragments: {e}", self._message_logger)
-                                pipe_in.send({"results": {}, "success": False, "error": str(e)})
+                                error(
+                                    f"{self.device_name} - Error processing fragments: {e}",
+                                    self._message_logger,
+                                )
+                                pipe_in.send({
+                                    "results": {},
+                                    "success": False,
+                                    "error": str(e),
+                                })
 
                         case "GET_LAST_RESULT":
                             try:
@@ -874,11 +1026,17 @@ class PepperGPUWorker(Worker):
                                 if self.last_result is not None:
                                     self.last_result = None
                             except Exception as e:
-                                error(f"{self.device_name} - Error getting last result: {e}", self._message_logger)
+                                error(
+                                    f"{self.device_name} - Error getting last result: {e}",
+                                    self._message_logger,
+                                )
                                 pipe_in.send(None)
 
                         case _:
-                            error(f"{self.device_name} - Unknown command: {data[0]}", self._message_logger)
+                            error(
+                                f"{self.device_name} - Unknown command: {data[0]}",
+                                self._message_logger,
+                            )
 
                 await asyncio.sleep(0.001)
 
@@ -893,7 +1051,7 @@ class PepperGPUWorker(Worker):
 
 class PepperGPUConnector(Connector):
     """Thread-safe connector for PepperGPUWorker.
-    
+
     Provides synchronous API using pipe communication to GPU worker process.
     """
 
@@ -917,7 +1075,9 @@ class PepperGPUConnector(Connector):
     def init(self, configuration: dict = {}):
         """Initialize GPU pepper vision with configuration."""
         with self.__lock:
-            return super()._send_thru_pipe(self._pipe_out, ["PEPPER_INIT", configuration])
+            return super()._send_thru_pipe(
+                self._pipe_out, ["PEPPER_INIT", configuration]
+            )
 
     def start(self):
         """Start GPU pepper vision processing."""
@@ -937,7 +1097,9 @@ class PepperGPUConnector(Connector):
     def process_fragments(self, fragments: Dict) -> Dict:
         """Process fragments with GPU batch operations."""
         with self.__lock:
-            return super()._send_thru_pipe(self._pipe_out, ["PROCESS_FRAGMENTS", fragments])
+            return super()._send_thru_pipe(
+                self._pipe_out, ["PROCESS_FRAGMENTS", fragments]
+            )
 
     def get_last_result(self):
         """Get last processing result."""

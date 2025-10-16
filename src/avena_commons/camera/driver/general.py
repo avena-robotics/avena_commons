@@ -812,7 +812,7 @@ class GeneralCameraWorker(Worker):
             error(f"Błąd podczas tworzenia workerów: {e}", self._message_logger)
             self.executor = None
             return False
-    
+
     def _run(self, pipe_in):
         """Synchroniczna pętla pipe"""
         loop = asyncio.new_event_loop()
@@ -859,7 +859,7 @@ class GeneralCameraWorker(Worker):
             self._message_logger,
         )
         try:
-            while True:                
+            while True:
                 if pipe_in.poll(0.0001):
                     data = pipe_in.recv()
                     response = None
@@ -1021,7 +1021,7 @@ class GeneralCameraWorker(Worker):
                                     message_logger=self._message_logger,
                                 )
                                 pipe_in.send(False)
-                                
+
                         case "RUN_POSTPROCESS":
                             try:
                                 debug(
@@ -1030,7 +1030,9 @@ class GeneralCameraWorker(Worker):
                                 )
                                 frames = data[1]
                                 # Użyj current event loop zamiast tworzenia nowego
-                                task = asyncio.create_task(self._run_image_processing_workers(frames))
+                                task = asyncio.create_task(
+                                    self._run_image_processing_workers(frames)
+                                )
                                 self.state = CameraState.RUNNING
                                 pipe_in.send(True)
                             except Exception as e:
@@ -1084,7 +1086,7 @@ class GeneralCameraWorker(Worker):
                 f"{self.device_name} - Worker has shut down",
                 message_logger=self._message_logger,
             )
-            
+
 
 class GeneralCameraConnector(Connector):
     """Wątkowo-bezpieczny łącznik do `GeneralCameraWorker`.
@@ -1118,7 +1120,7 @@ class GeneralCameraConnector(Connector):
         super().__init__(core=core, message_logger=message_logger)
         super()._connect()
         self._local_message_logger = message_logger
-        
+
     def _run(self, pipe_in, message_logger=None):
         """Uruchom worker w osobnym procesie."""
         worker = GeneralCameraWorker(message_logger=message_logger)

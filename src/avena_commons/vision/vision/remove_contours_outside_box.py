@@ -27,6 +27,7 @@ def remove_contours_outside_box(
         ... }
         >>> filtered_contours = remove_contours_outside_box(contours, config)
     """
+
     def distance_from_center(cnt, center_point):
         """Oblicza odległość konturu od punktu centralnego."""
         x, y, w, h = cv2.boundingRect(cnt)

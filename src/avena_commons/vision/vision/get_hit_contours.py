@@ -27,6 +27,7 @@ def get_hit_contours(mask, cnts, config):  # MARK: GET HIT CONTOURS
         ... }
         >>> hit_contours, labeled_mask = get_hit_contours(mask, contours, config)
     """
+
     def label_contours(image_shape, contours):
         """Tworzy maskę z etykietami gdzie każdy kontur ma unikalną etykietę."""
         labeled_mask = np.zeros(image_shape, dtype=np.int32)

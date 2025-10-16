@@ -106,10 +106,12 @@ print("Kompletne konfiguracje QR (9 konfiguracji):")
 for i, (config, name) in enumerate(zip(qr_configs_complete, config_names.values())):
     print(f"{i}: {name}")
     print(f"   mode: {config['mode']}")
-    if 'clahe' in config:
+    if "clahe" in config:
         print(f"   clahe: {config['clahe']}")
-    if 'binarization' in config:
-        print(f"   binarization: {config.get('binarization', {}).get('binarization', {})}")
-    if 'tag_reconstruction' in config:
+    if "binarization" in config:
+        print(
+            f"   binarization: {config.get('binarization', {}).get('binarization', {})}"
+        )
+    if "tag_reconstruction" in config:
         print(f"   tag_reconstruction: {config['tag_reconstruction']}")
     print()

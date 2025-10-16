@@ -255,15 +255,33 @@ if __name__ == "__main__":
             print(t7)
             print(t8)
             print(t9)
-            print(f"result1: {len(result1)} {'sukces' if len(result1) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result2: {len(result2)} {'sukces' if len(result2) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result3: {len(result3)} {'sukces' if len(result3) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result4: {len(result4)} {'sukces' if len(result4) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result5: {len(result5)} {'sukces' if len(result5) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result6: {len(result6)} {'sukces' if len(result6) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result7: {len(result7)} {'sukces' if len(result7) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result8: {len(result8)} {'sukces' if len(result8) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
-            print(f"result9: {len(result9)} {'sukces' if len(result9) == oczekiwana_ilosc_kodow else 'niepowodzenie'}")
+            print(
+                f"result1: {len(result1)} {'sukces' if len(result1) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result2: {len(result2)} {'sukces' if len(result2) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result3: {len(result3)} {'sukces' if len(result3) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result4: {len(result4)} {'sukces' if len(result4) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result5: {len(result5)} {'sukces' if len(result5) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result6: {len(result6)} {'sukces' if len(result6) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result7: {len(result7)} {'sukces' if len(result7) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result8: {len(result8)} {'sukces' if len(result8) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
+            print(
+                f"result9: {len(result9)} {'sukces' if len(result9) == oczekiwana_ilosc_kodow else 'niepowodzenie'}"
+            )
             # print(result)
             break
     except KeyboardInterrupt:

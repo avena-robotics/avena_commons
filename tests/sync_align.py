@@ -28,13 +28,16 @@ MIN_DEPTH = 20  # 20mm
 MAX_DEPTH = 10000  # 10000mm
 # Temporal filter for smoothing depth data over time
 
+
 def main(argv):
     ctx = Context()
     dev = ctx.create_net_device("192.168.1.10", 8090)
     pipeline = Pipeline(dev)
     config = Config()
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--enable_sync", help="enable sync", type=bool, default=True)
+    parser.add_argument(
+        "-s", "--enable_sync", help="enable sync", type=bool, default=True
+    )
     args = parser.parse_args(argv)
 
     enable_sync = args.enable_sync
@@ -47,7 +50,9 @@ def main(argv):
         config.enable_stream(color_profile)
 
         depth_profile_list = pipeline.get_stream_profile_list(OBSensorType.DEPTH_SENSOR)
-        depth_profile = depth_profile_list.get_video_stream_profile(1280, 800, OBFormat.Y16, 30)
+        depth_profile = depth_profile_list.get_video_stream_profile(
+            1280, 800, OBFormat.Y16, 30
+        )
         config.enable_stream(depth_profile)
     except Exception as e:
         print(e)
@@ -81,7 +86,7 @@ def main(argv):
             frames = align_filter.process(frames)
             if not frames:
                 continue
-            frames  = frames.as_frame_set()
+            frames = frames.as_frame_set()
             color_frame = frames.get_color_frame()
             depth_frame = frames.get_depth_frame()
             if not color_frame or not depth_frame:
@@ -92,20 +97,25 @@ def main(argv):
                 print("Failed to convert frame to image")
                 continue
             try:
-                depth_data = np.frombuffer(depth_frame.get_data(), dtype=np.uint16).reshape(
-                    (depth_frame.get_height(), depth_frame.get_width()))
+                depth_data = np.frombuffer(
+                    depth_frame.get_data(), dtype=np.uint16
+                ).reshape((depth_frame.get_height(), depth_frame.get_width()))
             except ValueError:
                 print("Failed to reshape depth data")
                 continue
             depth_data = depth_data.astype(np.float32) * depth_frame.get_depth_scale()
-            depth_data = np.where((depth_data > MIN_DEPTH) & (depth_data < MAX_DEPTH), depth_data, 0)
+            depth_data = np.where(
+                (depth_data > MIN_DEPTH) & (depth_data < MAX_DEPTH), depth_data, 0
+            )
             depth_data = depth_data.astype(np.uint16)
             depth_image = cv2.normalize(depth_data, None, 0, 255, cv2.NORM_MINMAX)
-            depth_image = cv2.applyColorMap(depth_image.astype(np.uint8), cv2.COLORMAP_JET)
+            depth_image = cv2.applyColorMap(
+                depth_image.astype(np.uint8), cv2.COLORMAP_JET
+            )
             depth_image = cv2.addWeighted(color_image, 0.5, depth_image, 0.5, 0)
 
             cv2.imshow("SyncAlignViewer", depth_image)
-            if cv2.waitKey(1) in [ord('q'), ESC_KEY]:
+            if cv2.waitKey(1) in [ord("q"), ESC_KEY]:
                 break
         except KeyboardInterrupt:
             break

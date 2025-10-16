@@ -15,6 +15,7 @@ UTIL_THRESHOLD_PCT = 85.0
 DROP_PCT_THRESHOLD = 10.0
 CONSEC_SECONDS = 5
 
+
 def read_cur_freqs_mhz():
     freqs = []
     cpu_dirs = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*"))
@@ -25,7 +26,7 @@ def read_cur_freqs_mhz():
                 try:
                     khz = int(p.read_text().strip())
                     if khz > 0:
-                        freqs.append(khz/1000.0)
+                        freqs.append(khz / 1000.0)
                         break
                 except Exception:
                     pass
@@ -33,7 +34,7 @@ def read_cur_freqs_mhz():
         return freqs
     try:
         mhz_vals = []
-        with open("/proc/cpuinfo","r") as f:
+        with open("/proc/cpuinfo", "r") as f:
             for line in f:
                 if "cpu MHz" in line:
                     mhz_vals.append(float(line.split(":")[1].strip()))
@@ -41,24 +42,26 @@ def read_cur_freqs_mhz():
     except Exception:
         return []
 
+
 def read_ref_max_freq_mhz():
     max_mhz = 0.0
     for cpu_dir in glob.glob("/sys/devices/system/cpu/cpu[0-9]*"):
-        for fn in ("cpuinfo_max_freq","scaling_max_freq"):
-            p = Path(cpu_dir)/"cpufreq"/fn
+        for fn in ("cpuinfo_max_freq", "scaling_max_freq"):
+            p = Path(cpu_dir) / "cpufreq" / fn
             if p.exists():
                 try:
-                    mhz = int(p.read_text().strip())/1000.0
+                    mhz = int(p.read_text().strip()) / 1000.0
                     max_mhz = max(max_mhz, mhz)
                 except Exception:
                     pass
     return max_mhz or None
 
+
 def read_amd_temps():
     res = {"tctl": None, "tdie": None, "ccd_max": None, "ccd_avg": None}
     hwmons = []
     for dev in glob.glob("/sys/class/hwmon/hwmon*"):
-        name_p = Path(dev)/"name"
+        name_p = Path(dev) / "name"
         if name_p.exists():
             name = name_p.read_text().strip().lower()
             if "k10temp" in name or "zenpower" in name:
@@ -66,14 +69,14 @@ def read_amd_temps():
     temps = []
     for dev in hwmons:
         for i in range(1, 32):
-            tin = Path(dev)/f"temp{i}_input"
+            tin = Path(dev) / f"temp{i}_input"
             if not tin.exists():
                 continue
             try:
-                val = int(tin.read_text().strip())/1000.0
+                val = int(tin.read_text().strip()) / 1000.0
             except Exception:
                 continue
-            tlabel = Path(dev)/f"temp{i}_label"
+            tlabel = Path(dev) / f"temp{i}_label"
             label = tlabel.read_text().strip().lower() if tlabel.exists() else ""
             if "tctl" in label:
                 res["tctl"] = val
@@ -87,24 +90,27 @@ def read_amd_temps():
                 temps.append(val)
     if temps:
         res["ccd_max"] = max(temps)
-        res["ccd_avg"] = sum(temps)/len(temps)
+        res["ccd_avg"] = sum(temps) / len(temps)
     return res
+
 
 def percentiles(values, ps=(50, 90, 95, 99)):
     if not values:
         return {}
     res = {}
     for p in ps:
-        k = (len(values)-1) * (p/100.0)
-        f = int(k); c = min(f+1, len(values)-1)
+        k = (len(values) - 1) * (p / 100.0)
+        f = int(k)
+        c = min(f + 1, len(values) - 1)
         if f == c:
             val = values[f]
         else:
-            d0 = values[f]*(c-k)
-            d1 = values[c]*(k-f)
-            val = d0+d1
+            d0 = values[f] * (c - k)
+            d1 = values[c] * (k - f)
+            val = d0 + d1
         res[p] = val
     return res
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -117,12 +123,20 @@ def main():
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = Path(args.csv or f"./cpu_monitor_amd_{ts}.csv").resolve()
-    md_path  = Path(args.md  or f"./cpu_report_amd_{ts}.md").resolve()
+    md_path = Path(args.md or f"./cpu_report_amd_{ts}.md").resolve()
 
     psutil.cpu_percent(interval=None, percpu=True)
 
-    fields = ["time","cpu_total_percent","avg_freq_mhz",
-              "tctl_c","tdie_c","ccd_max_c","ccd_avg_c","freq_drop_pct"]
+    fields = [
+        "time",
+        "cpu_total_percent",
+        "avg_freq_mhz",
+        "tctl_c",
+        "tdie_c",
+        "ccd_max_c",
+        "ccd_avg_c",
+        "freq_drop_pct",
+    ]
     rows = []
 
     total_series, freq_series, drop_series = [], [], []
@@ -144,48 +158,81 @@ def main():
             break
 
         per_core = psutil.cpu_percent(interval=None, percpu=True)
-        total = sum(per_core)/len(per_core) if per_core else psutil.cpu_percent(interval=None)
+        total = (
+            sum(per_core) / len(per_core)
+            if per_core
+            else psutil.cpu_percent(interval=None)
+        )
 
         freqs = read_cur_freqs_mhz()
-        avg_freq = sum(freqs)/len(freqs) if freqs else None
+        avg_freq = sum(freqs) / len(freqs) if freqs else None
         if avg_freq and avg_freq > observed_max_avg_freq:
             observed_max_avg_freq = avg_freq
-        ref = ref_max_freq or (observed_max_avg_freq if observed_max_avg_freq>0 else None)
+        ref = ref_max_freq or (
+            observed_max_avg_freq if observed_max_avg_freq > 0 else None
+        )
         drop_pct = None
         if ref and avg_freq:
-            drop_pct = max(0.0, (ref-avg_freq)/ref*100.0)
+            drop_pct = max(0.0, (ref - avg_freq) / ref * 100.0)
 
         temps = read_amd_temps()
-        tctl, tdie, tccdm, tccda = temps["tctl"], temps["tdie"], temps["ccd_max"], temps["ccd_avg"]
+        tctl, tdie, tccdm, tccda = (
+            temps["tctl"],
+            temps["tdie"],
+            temps["ccd_max"],
+            temps["ccd_avg"],
+        )
 
         rows.append({
             "time": datetime.now().isoformat(),
-            "cpu_total_percent": round(total,2),
-            "avg_freq_mhz": round(avg_freq,1) if avg_freq else "",
-            "tctl_c": round(tctl,1) if isinstance(tctl,(int,float)) else "",
-            "tdie_c": round(tdie,1) if isinstance(tdie,(int,float)) else "",
-            "ccd_max_c": round(tccdm,1) if isinstance(tccdm,(int,float)) else "",
-            "ccd_avg_c": round(tccda,1) if isinstance(tccda,(int,float)) else "",
-            "freq_drop_pct": round(drop_pct,2) if isinstance(drop_pct,(int,float)) else ""
+            "cpu_total_percent": round(total, 2),
+            "avg_freq_mhz": round(avg_freq, 1) if avg_freq else "",
+            "tctl_c": round(tctl, 1) if isinstance(tctl, (int, float)) else "",
+            "tdie_c": round(tdie, 1) if isinstance(tdie, (int, float)) else "",
+            "ccd_max_c": round(tccdm, 1) if isinstance(tccdm, (int, float)) else "",
+            "ccd_avg_c": round(tccda, 1) if isinstance(tccda, (int, float)) else "",
+            "freq_drop_pct": round(drop_pct, 2)
+            if isinstance(drop_pct, (int, float))
+            else "",
         })
 
-        if isinstance(total,(int,float)): total_series.append(float(total))
-        if isinstance(avg_freq,(int,float)): freq_series.append(float(avg_freq))
-        if isinstance(drop_pct,(int,float)): drop_series.append(float(drop_pct))
-        if isinstance(tctl,(int,float)): tctl_s.append(float(tctl))
-        if isinstance(tdie,(int,float)): tdie_s.append(float(tdie))
-        if isinstance(tccdm,(int,float)): tccdm_s.append(float(tccdm))
-        if isinstance(tccda,(int,float)): tccda_s.append(float(tccda))
+        if isinstance(total, (int, float)):
+            total_series.append(float(total))
+        if isinstance(avg_freq, (int, float)):
+            freq_series.append(float(avg_freq))
+        if isinstance(drop_pct, (int, float)):
+            drop_series.append(float(drop_pct))
+        if isinstance(tctl, (int, float)):
+            tctl_s.append(float(tctl))
+        if isinstance(tdie, (int, float)):
+            tdie_s.append(float(tdie))
+        if isinstance(tccdm, (int, float)):
+            tccdm_s.append(float(tccdm))
+        if isinstance(tccda, (int, float)):
+            tccda_s.append(float(tccda))
 
-        temp_for_heur = tdie if isinstance(tdie,(int,float)) else (tctl if isinstance(tctl,(int,float)) else None)
-        cond = (isinstance(temp_for_heur,(int,float)) and temp_for_heur>=TEMP_THRESHOLD_C and
-                isinstance(total,(int,float)) and total>=UTIL_THRESHOLD_PCT and
-                isinstance(drop_pct,(int,float)) and drop_pct>=DROP_PCT_THRESHOLD)
+        temp_for_heur = (
+            tdie
+            if isinstance(tdie, (int, float))
+            else (tctl if isinstance(tctl, (int, float)) else None)
+        )
+        cond = (
+            isinstance(temp_for_heur, (int, float))
+            and temp_for_heur >= TEMP_THRESHOLD_C
+            and isinstance(total, (int, float))
+            and total >= UTIL_THRESHOLD_PCT
+            and isinstance(drop_pct, (int, float))
+            and drop_pct >= DROP_PCT_THRESHOLD
+        )
         if cond:
             consec += 1
             if not in_event and consec >= CONSEC_SECONDS:
                 in_event = True
-                cur_event = {"start": datetime.now().isoformat(), "max_drop": drop_pct, "peak_temp": temp_for_heur}
+                cur_event = {
+                    "start": datetime.now().isoformat(),
+                    "max_drop": drop_pct,
+                    "peak_temp": temp_for_heur,
+                }
             elif in_event:
                 cur_event["max_drop"] = max(cur_event["max_drop"], drop_pct)
                 cur_event["peak_temp"] = max(cur_event["peak_temp"], temp_for_heur)
@@ -215,18 +262,18 @@ def main():
             return None
         ss = sorted(series)
         return {
-            "avg": sum(series)/len(series),
+            "avg": sum(series) / len(series),
             "max": max(series),
             "min": min(series),
-            "stdev": stats.pstdev(series) if len(series)>1 else 0.0,
-            "p": percentiles(ss, (50,90,95,99))
+            "stdev": stats.pstdev(series) if len(series) > 1 else 0.0,
+            "p": percentiles(ss, (50, 90, 95, 99)),
         }
 
     s_total = summarize(total_series)
-    s_freq  = summarize(freq_series)
-    s_drop  = summarize(drop_series)
-    s_tctl  = summarize(tctl_s)
-    s_tdie  = summarize(tdie_s)
+    s_freq = summarize(freq_series)
+    s_drop = summarize(drop_series)
+    s_tctl = summarize(tctl_s)
+    s_tdie = summarize(tdie_s)
     s_tccdm = summarize(tccdm_s)
     s_tccda = summarize(tccda_s)
 
@@ -244,10 +291,14 @@ def main():
     lines = []
     lines.append("# CPU Test Report (AMD)\n")
     lines.append(f"- Timestamp: `{datetime.now().isoformat()}`")
-    lines.append(f"- Duration: `{len(rows)} samples @ {args.interval}s` ≈ `{len(rows)*args.interval:.1f}s`")
-    if args.tag: lines.append(f"- Tag: `{args.tag}`")
+    lines.append(
+        f"- Duration: `{len(rows)} samples @ {args.interval}s` ≈ `{len(rows) * args.interval:.1f}s`"
+    )
+    if args.tag:
+        lines.append(f"- Tag: `{args.tag}`")
     ref_max = read_ref_max_freq_mhz()
-    if ref_max: lines.append(f"- Reference max frequency: `{ref_max:.1f} MHz` (sysfs)")
+    if ref_max:
+        lines.append(f"- Reference max frequency: `{ref_max:.1f} MHz` (sysfs)")
     lines.append(f"- CSV: `{csv_path}`\n")
 
     def block(title, s, unit):
@@ -266,7 +317,7 @@ def main():
             f"| p90 | {p.get(90, float('nan')):.2f}{unit} |",
             f"| p95 | {p.get(95, float('nan')):.2f}{unit} |",
             f"| p99 | {p.get(99, float('nan')):.2f}{unit} |",
-            ""
+            "",
         ]
 
     lines += block("CPU total utilization (%)", s_total, "%")
@@ -277,9 +328,13 @@ def main():
     lines += block("AMD CCD avg (°C)", s_tccda, "°C")
 
     lines.append("## AMD thermal downclock heuristic\n")
-    lines.append(f"- Conditions: temp ≥ {TEMP_THRESHOLD_C}°C, CPU ≥ {UTIL_THRESHOLD_PCT}%, freq drop ≥ {DROP_PCT_THRESHOLD}% for ≥ {CONSEC_SECONDS}s.\n")
+    lines.append(
+        f"- Conditions: temp ≥ {TEMP_THRESHOLD_C}°C, CPU ≥ {UTIL_THRESHOLD_PCT}%, freq drop ≥ {DROP_PCT_THRESHOLD}% for ≥ {CONSEC_SECONDS}s.\n"
+    )
     if events:
-        lines.append(f"- Events detected: **{len(events)}**, total time: **{total_event_seconds}s**, worst drop: **{worst_drop:.2f}%**\n")
+        lines.append(
+            f"- Events detected: **{len(events)}**, total time: **{total_event_seconds}s**, worst drop: **{worst_drop:.2f}%**\n"
+        )
         lines.append("| Start | End | Duration [s] | Max drop [%] | Peak temp [°C] |")
         lines.append("|---|---|---:|---:|---:|")
         for e in events:
@@ -289,18 +344,25 @@ def main():
                 dur = int((t_end - t_start).total_seconds())
             except Exception:
                 dur = ""
-            lines.append(f"| {e.get('start','')} | {e.get('end','')} | {dur} | {e.get('max_drop',0.0):.2f} | {e.get('peak_temp',0.0):.1f} |")
+            lines.append(
+                f"| {e.get('start', '')} | {e.get('end', '')} | {dur} | {e.get('max_drop', 0.0):.2f} | {e.get('peak_temp', 0.0):.1f} |"
+            )
         lines.append("")
     else:
         lines.append("- No AMD downclock events matched the heuristic.\n")
 
     lines.append("## Notes\n")
-    lines.append("- Temps read from `/sys/class/hwmon` (k10temp/zenpower). If empty, check BIOS/UEFI sensor exposure or kernel modules.")
-    lines.append("- `sudo sensors-detect` may help assign labels, but is not required.\n")
+    lines.append(
+        "- Temps read from `/sys/class/hwmon` (k10temp/zenpower). If empty, check BIOS/UEFI sensor exposure or kernel modules."
+    )
+    lines.append(
+        "- `sudo sensors-detect` may help assign labels, but is not required.\n"
+    )
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"CSV: {csv_path}")
     print(f"Report: {md_path}")
+
 
 if __name__ == "__main__":
     main()

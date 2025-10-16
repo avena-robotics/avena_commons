@@ -55,6 +55,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
     See Also:
         - `GeneralCameraWorker`: bazowa implementacja cyklu życia kamery.
     """
+
     def __init__(self, camera_ip: str, message_logger: Optional[MessageLogger] = None):
         """Utwórz workera kamery Orbbec Gemini 335LE.
 
@@ -79,7 +80,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         self.spatial_filter = None
         self.temporal_filter = None
         self.frame_number = 0
-    
+
     def set_int_property(self, device: Device, property_id: OBPropertyID, value: int):
         """Ustaw właściwość całkowitoliczbową urządzenia.
 
@@ -180,7 +181,9 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             """
 
             # camera_settings = configuration
-            debug(f"CAMERA_INIT: camera_settings: {camera_settings}", self._message_logger)
+            debug(
+                f"CAMERA_INIT: camera_settings: {camera_settings}", self._message_logger
+            )
             color_settings = camera_settings.get("color", {})
             depth_settings = camera_settings.get("depth", {})
 
@@ -371,7 +374,9 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                             )
                         )
                         depth_profile = sw_d2c_profile_list[0]
-                        self.align_filter = AlignFilter(align_to_stream=OBStreamType.COLOR_STREAM)
+                        self.align_filter = AlignFilter(
+                            align_to_stream=OBStreamType.COLOR_STREAM
+                        )
                     else:
                         # 2. Jeśli jest, to użyj go
                         # self.camera_config.set_align_mode(OBAlignMode.HW_MODE)
@@ -390,7 +395,6 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 case _:
                     # nie bedziemy wyrownywac strumieni
                     pass
-
 
             self.camera_config.enable_stream(depth_profile)
             debug(
@@ -457,7 +461,7 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             # self.camera_pipeline.start(self.camera_config, lambda frames: self._async_grab_frames(frames))
             self.camera_pipeline.start(self.camera_config)
             return True
-        
+
         except Exception as e:
             error(f"{self.device_name} - Starting failed: {e}", self._message_logger)
             return False
@@ -506,29 +510,29 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
             True
         """
         # return self.last_frame
-        
+
         try:
             frames = self.camera_pipeline.wait_for_frames(3)
-            
+
             if frames is None:
                 return None
 
             # ZAWSZE pobierz ramki z oryginalnego FrameSet PRZED filtrami
             frame_color = frames.get_color_frame()
-            frame_depth = frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+            frame_depth = frames.get_depth_frame()  # ← ZACHOWAJ ORYGINALNĄ
 
             if frame_color is None or frame_depth is None:
                 debug("Brak jednej z ramek. Skip...", self._message_logger)
                 return None
 
-            self.frame_number += 1 # zwiekszamy numer ramki - obie sa i sa poprawne
+            self.frame_number += 1  # zwiekszamy numer ramki - obie sa i sa poprawne
             # debug(f"Pobrano zestaw ramek nr {self.frame_number} - czas kolor: {frame_color.get_timestamp()} czas głębi: {frame_depth.get_timestamp()} roznica: {frame_color.get_timestamp() - frame_depth.get_timestamp()}", self._message_logger)
 
             # Zastosuj filtry na kopii
             if self.align_filter:
                 aligned_frames = self.align_filter.process(frames)
                 aligned_frames = aligned_frames.as_frame_set()
-                frame_depth = aligned_frames.get_depth_frame() # ← ZACHOWAJ ORYGINALNĄ
+                frame_depth = aligned_frames.get_depth_frame()  # ← ZACHOWAJ ORYGINALNĄ
                 debug("Filtr wyrównania zastosowany", self._message_logger)
 
             if self.spatial_filter and frame_depth:
@@ -606,8 +610,13 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
                 self._message_logger,
             )
 
-            return {"timestamp": frame_color.get_timestamp(), "number": self.frame_number, "color": color_image, "depth": depth_image}
-            
+            return {
+                "timestamp": frame_color.get_timestamp(),
+                "number": self.frame_number,
+                "color": color_image,
+                "depth": depth_image,
+            }
+
         except Exception as e:
             error(f"Błąd przetwarzania ramek: {e}", self._message_logger)
             error(f"Traceback: {traceback.format_exc()}", self._message_logger)
@@ -628,7 +637,13 @@ class OrbecGemini335Le(GeneralCameraConnector):
     See Also:
         - `OrbecGemini335LeWorker`: logika asynchroniczna i przetwarzanie ramek.
     """
-    def __init__(self, camera_ip: str, core: int = 8, message_logger: Optional[MessageLogger] = None):
+
+    def __init__(
+        self,
+        camera_ip: str,
+        core: int = 8,
+        message_logger: Optional[MessageLogger] = None,
+    ):
         """Utwórz konektor i uruchom proces workera.
 
         Args:

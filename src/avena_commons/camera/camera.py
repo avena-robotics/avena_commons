@@ -133,14 +133,16 @@ class Camera(EventListener):
         match self.__camera_config.get("model", None):
             case "orbec_gemini_335le":
                 self.camera = OrbecGemini335Le(
-                    core=self.__camera_config.get("core", 8), camera_ip=self.camera_address, message_logger=self._message_logger
+                    core=self.__camera_config.get("core", 8),
+                    camera_ip=self.camera_address,
+                    message_logger=self._message_logger,
                 )
             case _:
                 error(
                     f"EVENT_LISTENER_INIT: Brak obsługiwanej kamery {self.__camera_config.get('model', None)} obsługiwane modele: orbec_gemini_335le",
                     self._message_logger,
                 )
-                
+
         # self.camera.init(self.__camera_config) #TODO: usunąć po testach performance
         # self.camera.start() #TODO: usunąć po testach performance
 
@@ -417,7 +419,7 @@ class Camera(EventListener):
 
             case CameraState.RUNNING:
                 result = self.camera.get_last_result()
-                
+
                 if result is not None:
                     debug(
                         f"Otrzymano wynik z run_postprocess_workers: result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",

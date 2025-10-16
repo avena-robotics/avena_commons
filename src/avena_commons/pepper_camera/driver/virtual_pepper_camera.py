@@ -47,7 +47,9 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
     - Fragmentation and serialization support
     """
 
-    def __init__(self, camera_id: str = "virtual", message_logger: Optional[MessageLogger] = None):
+    def __init__(
+        self, camera_id: str = "virtual", message_logger: Optional[MessageLogger] = None
+    ):
         """Initialize virtual camera worker.
 
         Args:
@@ -89,7 +91,10 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         """
         try:
             self.state = CameraState.INITIALIZING
-            debug(f"{self.device_name} - Initializing virtual camera", self._message_logger)
+            debug(
+                f"{self.device_name} - Initializing virtual camera",
+                self._message_logger,
+            )
 
             # Extract camera settings
             color_settings = camera_settings.get("color", {})
@@ -130,7 +135,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
 
             self.frame_number = 0
             self.state = CameraState.STARTED
-            
+
             debug(f"{self.device_name} - Virtual camera started", self._message_logger)
             return True
 
@@ -173,7 +178,8 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
 
                 # Generate synthetic depth image (uint16 like real camera)
                 depth_image = self._generate_synthetic_depth(
-                    self.color_width, self.color_height  # Aligned to color
+                    self.color_width,
+                    self.color_height,  # Aligned to color
                 )
 
                 self.frame_number += 1
@@ -196,7 +202,10 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
                 return result
 
             except Exception as e:
-                error(f"{self.device_name} - Frame generation error: {e}", self._message_logger)
+                error(
+                    f"{self.device_name} - Frame generation error: {e}",
+                    self._message_logger,
+                )
                 return None
 
     def _generate_synthetic_color(self, width: int, height: int) -> np.ndarray:
@@ -216,7 +225,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         """
         # Create base gradient (gray-ish background)
         color = np.zeros((height, width, 3), dtype=np.uint8)
-        
+
         # Add gradient
         for y in range(height):
             intensity = int(80 + (y / height) * 60)  # 80-140 range
@@ -228,7 +237,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
 
         # Add simulated red pepper regions (4 regions for 4 fragments)
         regions = [
-            (width // 4, height // 4),      # Top-left region
+            (width // 4, height // 4),  # Top-left region
             (3 * width // 4, height // 4),  # Top-right region
             (width // 4, 3 * height // 4),  # Bottom-left region
             (3 * width // 4, 3 * height // 4),  # Bottom-right region
@@ -237,7 +246,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         for cx, cy in regions:
             # Random size and shape for variety
             radius = np.random.randint(20, 40)
-            
+
             # Draw red-ish circle (simulating pepper)
             cv2.circle(
                 color,
@@ -623,32 +632,34 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
 
     async def _sync_grid_loop(self, pipe_in, sync_hz, sync_phase_ns, sync_overrun_mode):
         """Grid-synchronized frame capture loop.
-        
+
         All cameras sync to same time grid for simultaneous capture.
         """
         period_ns = int(round(1_000_000_000 / sync_hz))
         k = 0
-        
+
         # Calculate first grid point
         n0 = now_ns()
         next_ns = ((n0 - sync_phase_ns) // period_ns + 1) * period_ns + sync_phase_ns
-        
+
         info(
             f"{self.device_name} - Starting SYNC mode @ {sync_hz}Hz, phase={sync_phase_ns}ns, overrun={sync_overrun_mode}",
             self._message_logger,
         )
-        
+
         while True:
             # Sleep until grid point (with pipe checking)
             target_ns = next_ns
             while now_ns() < target_ns:
                 if pipe_in.poll(0.0001):
                     await self._handle_pipe_command(pipe_in)
-                await asyncio.sleep(0.0001)  # Essential to prevent busy-waiting and high CPU usage
-            
+                await asyncio.sleep(
+                    0.0001
+                )  # Essential to prevent busy-waiting and high CPU usage
+
             # TICK at grid point
             t_ns = now_ns()
-            
+
             # Capture frame if camera started
             if self.state == CameraState.STARTED:
                 frames = await self.grab_frames_from_camera()
@@ -660,7 +671,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
                     # frames['sync_actual_ns'] = t_ns
                     # frames['sync_drift_us'] = (t_ns - next_ns) // 1000
                     self.last_frame = frames
-                    
+
                     # Log significant drift
                     drift_us = abs(t_ns - next_ns) // 1000
                     if drift_us > 1000:  # > 1ms
@@ -668,11 +679,11 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
                             f"{self.device_name} - Tick {k}: drift {drift_us}us",
                             self._message_logger,
                         )
-            
+
             # Advance to next grid
             k += 1
             next_ns += period_ns
-            
+
             # Handle overrun
             n = now_ns()
             if n > next_ns:
@@ -682,7 +693,9 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
                         f"{self.device_name} - Overrun: skipping {missed_ticks} tick(s)",
                         self._message_logger,
                     )
-                    next_ns = ((n - sync_phase_ns) // period_ns + 1) * period_ns + sync_phase_ns
+                    next_ns = (
+                        (n - sync_phase_ns) // period_ns + 1
+                    ) * period_ns + sync_phase_ns
                     k = (next_ns - sync_phase_ns) // period_ns
                 elif sync_overrun_mode == "skip_all":
                     missed = max(0, (n - next_ns + period_ns - 1) // period_ns)
@@ -696,33 +709,33 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         """Autonomous frame generation loop (fallback mode)."""
         start_time = asyncio.get_event_loop().time()
         frame_grabbed = False
-        
+
         info(
             f"{self.device_name} - Starting AUTONOMOUS mode @ {self.fps}Hz",
             self._message_logger,
         )
-        
+
         while True:
             # Check for pipe commands
             if pipe_in.poll(0.0001):
                 await self._handle_pipe_command(pipe_in)
-            
+
             # Continuous frame generation when started
             if self.state == CameraState.STARTED:
                 current_time = asyncio.get_event_loop().time()
-                
+
                 # Reset frame_grabbed flag based on FPS
                 frame_interval = 1.0 / self.fps
                 if current_time - start_time >= frame_interval:
                     frame_grabbed = False
                     start_time = current_time
-                
+
                 if not frame_grabbed:
                     frames = await self.grab_frames_from_camera()
                     if frames is not None:
                         frame_grabbed = True
                         self.last_frame = frames
-            
+
             # Sleep based on FPS to prevent excessive CPU usage
             # For 30 FPS: 1/30 = 0.0333s, use 1/10 of that for responsiveness
             await asyncio.sleep(1.0 / (self.fps * 10))
@@ -745,14 +758,26 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         )
 
         # Determine sync mode from pipeline config
-        sync_enabled = self.pipeline_config.get("sync_enabled", True) if self.pipeline_config else True
+        sync_enabled = (
+            self.pipeline_config.get("sync_enabled", True)
+            if self.pipeline_config
+            else True
+        )
         sync_hz = self.fps
-        sync_phase_ns = self.pipeline_config.get("sync_phase_ns", 0) if self.pipeline_config else 0
-        sync_overrun_mode = self.pipeline_config.get("sync_overrun_mode", "skip_one") if self.pipeline_config else "skip_one"
+        sync_phase_ns = (
+            self.pipeline_config.get("sync_phase_ns", 0) if self.pipeline_config else 0
+        )
+        sync_overrun_mode = (
+            self.pipeline_config.get("sync_overrun_mode", "skip_one")
+            if self.pipeline_config
+            else "skip_one"
+        )
 
         try:
             if sync_enabled:
-                await self._sync_grid_loop(pipe_in, sync_hz, sync_phase_ns, sync_overrun_mode)
+                await self._sync_grid_loop(
+                    pipe_in, sync_hz, sync_phase_ns, sync_overrun_mode
+                )
             else:
                 await self._autonomous_loop(pipe_in)
         except asyncio.CancelledError:
@@ -760,6 +785,7 @@ class VirtualPepperCameraWorker(GeneralCameraWorker):
         except Exception as e:
             error(f"{self.device_name} - Error in Worker: {e}", self._message_logger)
             import traceback
+
             error(f"Traceback:\n{traceback.format_exc()}", self._message_logger)
         finally:
             info(

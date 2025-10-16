@@ -47,32 +47,39 @@ if __name__ == "__main__":
     run(seconds, base_load)
 """
 
+
 def parse_cores(spec: str):
     cores = []
     for part in spec.split(","):
         part = part.strip()
-        if not part: 
+        if not part:
             continue
         m = re.match(r"^(\d+)-(\d+)$", part)
         if m:
-            a,b = int(m.group(1)), int(m.group(2))
-            cores.extend(range(min(a,b), max(a,b)+1))
+            a, b = int(m.group(1)), int(m.group(2))
+            cores.extend(range(min(a, b), max(a, b) + 1))
         else:
             cores.append(int(part))
     return sorted(set(cores))
 
+
 def cpus_allowed_list(pid: int) -> str:
-    with open(f"/proc/{pid}/status","r") as f:
+    with open(f"/proc/{pid}/status", "r") as f:
         for line in f:
             if line.startswith("Cpus_allowed_list"):
                 return line.split(":")[1].strip()
     return ""
 
+
 def main():
-    ap = argparse.ArgumentParser(description="Constant per-core CPU load via taskset (no bursts).")
+    ap = argparse.ArgumentParser(
+        description="Constant per-core CPU load via taskset (no bursts)."
+    )
     ap.add_argument("--seconds", type=int, default=3600)
     ap.add_argument("--cores", type=str, required=True, help="CPU list like 0-9,12,14")
-    ap.add_argument("--load", type=float, default=95.0, help="Target load percent (e.g., 95.0)")
+    ap.add_argument(
+        "--load", type=float, default=95.0, help="Target load percent (e.g., 95.0)"
+    )
     args = ap.parse_args()
 
     if not shutil.which("taskset"):
@@ -87,12 +94,26 @@ def main():
     procs = []
     try:
         for c in cores:
-            cmd = ["taskset","-c",str(c), sys.executable,"-u","-c", WORKER_CODE, str(args.seconds), str(args.load)]
-            p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd = [
+                "taskset",
+                "-c",
+                str(c),
+                sys.executable,
+                "-u",
+                "-c",
+                WORKER_CODE,
+                str(args.seconds),
+                str(args.load),
+            ]
+            p = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
             time.sleep(0.05)
             allowed = cpus_allowed_list(p.pid)
             if allowed not in (str(c), f"{c}-{c}"):
-                raise RuntimeError(f"Worker PID {p.pid} NOT pinned to CPU {c} (Cpus_allowed_list={allowed})")
+                raise RuntimeError(
+                    f"Worker PID {p.pid} NOT pinned to CPU {c} (Cpus_allowed_list={allowed})"
+                )
             print(f"[OK] PID {p.pid} pinned to CPU {c} (Cpus_allowed_list={allowed})")
             procs.append(p)
 
@@ -105,17 +126,23 @@ def main():
         for p in procs:
             p.terminate()
         for p in procs:
-            try: p.wait(timeout=1.0)
-            except Exception: p.kill()
+            try:
+                p.wait(timeout=1.0)
+            except Exception:
+                p.kill()
         sys.exit(1)
     finally:
         for p in procs:
             if p.poll() is None:
                 p.terminate()
         for p in procs:
-            try: p.wait(timeout=1.0)
-            except Exception: p.kill()
+            try:
+                p.wait(timeout=1.0)
+            except Exception:
+                p.kill()
+
 
 if __name__ == "__main__":
     import shutil
+
     main()

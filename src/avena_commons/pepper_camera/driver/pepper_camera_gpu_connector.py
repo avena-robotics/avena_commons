@@ -125,7 +125,7 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
             # Initialize GPU processor
             gpu_config = camera_settings.get("gpu_acceleration", {})
             gpu_enabled = gpu_config.get("enabled", True)
-            
+
             if gpu_enabled:
                 # IMPORTANT: Use init_device=True since we're in worker process (after fork)
                 # This safely initializes CUDA in the worker process, not the parent
@@ -133,12 +133,18 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                 if gpu_available:
                     self.gpu_processor = GPUBatchProcessor(
                         num_streams=gpu_config.get("num_streams", 4),
-                        use_cupy=gpu_config.get("use_cupy", True)
+                        use_cupy=gpu_config.get("use_cupy", True),
                     )
                     self.gpu_enabled = True
-                    info(f"GPU acceleration enabled in worker: {gpu_info}", self._message_logger)
+                    info(
+                        f"GPU acceleration enabled in worker: {gpu_info}",
+                        self._message_logger,
+                    )
                 else:
-                    info(f"GPU not available: {gpu_info}, will use CPU", self._message_logger)
+                    info(
+                        f"GPU not available: {gpu_info}, will use CPU",
+                        self._message_logger,
+                    )
                     self.gpu_enabled = False
             else:
                 info("GPU acceleration disabled by configuration", self._message_logger)
@@ -399,11 +405,11 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
         try:
             debug(f"{self.device_name} - Stopping camera", self._message_logger)
             self.camera_pipeline.stop()
-            
+
             # Cleanup GPU resources
             if self.gpu_processor:
                 self.gpu_processor.cleanup()
-            
+
             return True
         except Exception as e:
             error(f"{self.device_name} - Stopping failed: {e}", self._message_logger)
@@ -544,7 +550,7 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                     gpu_depth = cv2.cuda.GpuMat()
                     gpu_color.upload(color_image)
                     gpu_depth.upload(depth_image)
-                
+
                 self.performance_metrics["gpu_upload_times"].append(upload_timer.ms)
 
                 # Fragment using GPU slicing (zero-copy)
@@ -580,8 +586,12 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                             )
 
                             # GPU slicing - creates view, not copy
-                            color_fragment_gpu = gpu_color.rowRange(y_min, y_max).colRange(x_min, x_max)
-                            depth_fragment_gpu = gpu_depth.rowRange(y_min, y_max).colRange(x_min, x_max)
+                            color_fragment_gpu = gpu_color.rowRange(
+                                y_min, y_max
+                            ).colRange(x_min, x_max)
+                            depth_fragment_gpu = gpu_depth.rowRange(
+                                y_min, y_max
+                            ).colRange(x_min, x_max)
 
                             fragments[fragment_name] = {
                                 "color_gpu": color_fragment_gpu,
@@ -612,29 +622,45 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
 
                     fragments = {
                         "top_left": {
-                            "color_gpu": gpu_color.rowRange(0, mid_h).colRange(0, mid_w),
-                            "depth_gpu": gpu_depth.rowRange(0, mid_h).colRange(0, mid_w),
+                            "color_gpu": gpu_color.rowRange(0, mid_h).colRange(
+                                0, mid_w
+                            ),
+                            "depth_gpu": gpu_depth.rowRange(0, mid_h).colRange(
+                                0, mid_w
+                            ),
                             "fragment_id": 0,
                             "position": "top-left",
                             "on_gpu": True,
                         },
                         "top_right": {
-                            "color_gpu": gpu_color.rowRange(0, mid_h).colRange(mid_w, w),
-                            "depth_gpu": gpu_depth.rowRange(0, mid_h).colRange(mid_w, w),
+                            "color_gpu": gpu_color.rowRange(0, mid_h).colRange(
+                                mid_w, w
+                            ),
+                            "depth_gpu": gpu_depth.rowRange(0, mid_h).colRange(
+                                mid_w, w
+                            ),
                             "fragment_id": 1,
                             "position": "top-right",
                             "on_gpu": True,
                         },
                         "bottom_left": {
-                            "color_gpu": gpu_color.rowRange(mid_h, h).colRange(0, mid_w),
-                            "depth_gpu": gpu_depth.rowRange(mid_h, h).colRange(0, mid_w),
+                            "color_gpu": gpu_color.rowRange(mid_h, h).colRange(
+                                0, mid_w
+                            ),
+                            "depth_gpu": gpu_depth.rowRange(mid_h, h).colRange(
+                                0, mid_w
+                            ),
                             "fragment_id": 2,
                             "position": "bottom-left",
                             "on_gpu": True,
                         },
                         "bottom_right": {
-                            "color_gpu": gpu_color.rowRange(mid_h, h).colRange(mid_w, w),
-                            "depth_gpu": gpu_depth.rowRange(mid_h, h).colRange(mid_w, w),
+                            "color_gpu": gpu_color.rowRange(mid_h, h).colRange(
+                                mid_w, w
+                            ),
+                            "depth_gpu": gpu_depth.rowRange(mid_h, h).colRange(
+                                mid_w, w
+                            ),
                             "fragment_id": 3,
                             "position": "bottom-right",
                             "on_gpu": True,
@@ -670,9 +696,7 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
 
             for fragment_config in fragment_configs:
                 fragment_id = fragment_config.get("fragment_id", 0)
-                fragment_name = fragment_config.get(
-                    "name", f"fragment_{fragment_id}"
-                )
+                fragment_name = fragment_config.get("name", f"fragment_{fragment_id}")
                 roi = fragment_config.get("roi", {})
 
                 if "x" in roi and "y" in roi:
@@ -760,8 +784,10 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                             cpu_array = value.download()
                             # Serialize to base64
                             array_bytes = cpu_array.tobytes()
-                            encoded_array = base64.b64encode(array_bytes).decode("utf-8")
-                            
+                            encoded_array = base64.b64encode(array_bytes).decode(
+                                "utf-8"
+                            )
+
                             serializable_fragment[key.replace("_gpu", "")] = {
                                 "data": encoded_array,
                                 "dtype": str(cpu_array.dtype),
@@ -770,8 +796,10 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                         elif isinstance(value, np.ndarray):
                             # CPU array - serialize directly
                             array_bytes = value.tobytes()
-                            encoded_array = base64.b64encode(array_bytes).decode("utf-8")
-                            
+                            encoded_array = base64.b64encode(array_bytes).decode(
+                                "utf-8"
+                            )
+
                             serializable_fragment[key] = {
                                 "data": encoded_array,
                                 "dtype": str(value.dtype),
@@ -792,13 +820,11 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
                 return serializable_fragments
 
             except Exception as e:
-                error(
-                    f"Error serializing fragments: {e}", self._message_logger
-                )
+                error(f"Error serializing fragments: {e}", self._message_logger)
                 error(f"Traceback: {traceback.format_exc()}", self._message_logger)
                 return {}
-        
-    #save fragments to file
+
+    # save fragments to file
     async def save_image_opencv(self, image, filename, folder="temp/images"):
         # Create directory if it doesn't exist
         os.makedirs(folder, exist_ok=True)
@@ -827,7 +853,7 @@ class PepperCameraGPUWorker(GeneralCameraWorker):
             if not fragments:
                 error("Failed to fragment images", self._message_logger)
                 return None
-            
+
             # for key, fragment in fragments.items():
             #     # img = cv2.imread(fragment)
             #     await self.save_image_opencv(fragment['color'], f"fragment_{key}.jpg")

@@ -1,12 +1,12 @@
 # ******************************************************************************
 #  Copyright (c) 2024 Orbbec 3D Technology, Inc
-#  
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.  
+#  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  
+#
 #      http:# www.apache.org/licenses/LICENSE-2.0
-#  
+#
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -36,8 +36,8 @@ def uyvy_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
 
 def i420_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
     y = frame[0:height, :]
-    u = frame[height:height + height // 4].reshape(height // 2, width // 2)
-    v = frame[height + height // 4:].reshape(height // 2, width // 2)
+    u = frame[height : height + height // 4].reshape(height // 2, width // 2)
+    v = frame[height + height // 4 :].reshape(height // 2, width // 2)
     yuv_image = cv2.merge([y, u, v])
     bgr_image = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_I420)
     return bgr_image
@@ -45,7 +45,7 @@ def i420_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
 
 def nv21_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
     y = frame[0:height, :]
-    uv = frame[height:height + height // 2].reshape(height // 2, width)
+    uv = frame[height : height + height // 2].reshape(height // 2, width)
     yuv_image = cv2.merge([y, uv])
     bgr_image = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_NV21)
     return bgr_image
@@ -53,7 +53,7 @@ def nv21_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
 
 def nv12_to_bgr(frame: np.ndarray, width: int, height: int) -> np.ndarray:
     y = frame[0:height, :]
-    uv = frame[height:height + height // 2].reshape(height // 2, width)
+    uv = frame[height : height + height // 2].reshape(height // 2, width)
     yuv_image = cv2.merge([y, uv])
     bgr_image = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_NV12)
     return bgr_image

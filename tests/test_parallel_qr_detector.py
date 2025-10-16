@@ -33,6 +33,7 @@ def process_single_config(args):
     try:
         # Dynamiczny import detektora zgodnie z nowym schematem z general.py
         import importlib
+
         detector_module = importlib.import_module("avena_commons.vision.detector")
         detector_function = getattr(detector_module, "qr_detector")
 
@@ -380,7 +381,9 @@ class TestParallelQRDetection:
         if not test_images_data:
             pytest.skip("Brak danych testowych z katalogu")
 
-        print(f"=== SEKWENCYJNE WYKRYWANIE - 9 konfiguracji (nowy schemat z general.py) ===")
+        print(
+            f"=== SEKWENCYJNE WYKRYWANIE - 9 konfiguracji (nowy schemat z general.py) ==="
+        )
         print(f"Test na {len(test_images_data)} obrazach")
 
         all_times = []
@@ -401,7 +404,10 @@ class TestParallelQRDetection:
                     try:
                         # Użycie nowego schematu z dynamicznym importem detektora
                         import importlib
-                        detector_module = importlib.import_module("avena_commons.vision.detector")
+
+                        detector_module = importlib.import_module(
+                            "avena_commons.vision.detector"
+                        )
                         detector_function = getattr(detector_module, "qr_detector")
 
                         # Przygotuj ramki w formacie oczekiwanym przez detektor
@@ -468,7 +474,9 @@ class TestParallelQRDetection:
         if not test_images_data:
             pytest.skip("Brak danych testowych z katalogu")
 
-        print(f"=== RÓWNOLEGŁE WYKRYWANIE - 9 konfiguracji na procesach (nowy schemat z general.py) ===")
+        print(
+            f"=== RÓWNOLEGŁE WYKRYWANIE - 9 konfiguracji na procesach (nowy schemat z general.py) ==="
+        )
         print(f"Test na {len(test_images_data)} obrazach")
 
         all_times = []
@@ -534,9 +542,13 @@ class TestParallelQRDetection:
                                         print(
                                             f"    ✓ {config_name}: Unsorted {i} {detection.center}"
                                         )
-                                    sorted_detections = sorter.sort_qr_by_center_position(
-                                        expected_count=test_data["expected_qr_count"],
-                                        detections=detections,
+                                    sorted_detections = (
+                                        sorter.sort_qr_by_center_position(
+                                            expected_count=test_data[
+                                                "expected_qr_count"
+                                            ],
+                                            detections=detections,
+                                        )
                                     )
                                     for key, value in sorted_detections.items():
                                         print(
@@ -602,11 +614,12 @@ class TestParallelQRDetection:
         expected_total = len(test_images_data) * len(qr_configs)
         actual_total = len(all_times)
         print(f"Przetestowano {actual_total}/{expected_total} konfiguracji")
-        assert actual_total > 0, "Żadna konfiguracja nie została przetestowana pomyślnie"
+        assert actual_total > 0, (
+            "Żadna konfiguracja nie została przetestowana pomyślnie"
+        )
 
         # Sprawdź czy równoległość daje korzyści
         assert total_parallel_time > 0, "Brak wyników z równoległego przetwarzania"
-
 
     def test_parallel_9_configs_with_break(
         self,
@@ -619,7 +632,9 @@ class TestParallelQRDetection:
         if not test_images_data:
             pytest.skip("Brak danych testowych z katalogu")
 
-        print(f"=== RÓWNOLEGŁE WYKRYWANIE - 9 konfiguracji na procesach z break (nowy schemat z general.py) ===")
+        print(
+            f"=== RÓWNOLEGŁE WYKRYWANIE - 9 konfiguracji na procesach z break (nowy schemat z general.py) ==="
+        )
         print(f"Test na {len(test_images_data)} obrazach")
 
         all_times = []
@@ -685,9 +700,13 @@ class TestParallelQRDetection:
                                         print(
                                             f"    ✓ {config_name}: Unsorted {i} {detection.center}"
                                         )
-                                    sorted_detections = sorter.sort_qr_by_center_position(
-                                        expected_count=test_data["expected_qr_count"],
-                                        detections=detections,
+                                    sorted_detections = (
+                                        sorter.sort_qr_by_center_position(
+                                            expected_count=test_data[
+                                                "expected_qr_count"
+                                            ],
+                                            detections=detections,
+                                        )
                                     )
                                     for key, value in sorted_detections.items():
                                         print(
@@ -753,7 +772,9 @@ class TestParallelQRDetection:
         expected_total = len(test_images_data) * len(qr_configs)
         actual_total = len(all_times)
         print(f"Przetestowano {actual_total}/{expected_total} konfiguracji")
-        assert actual_total > 0, "Żadna konfiguracja nie została przetestowana pomyślnie"
+        assert actual_total > 0, (
+            "Żadna konfiguracja nie została przetestowana pomyślnie"
+        )
 
         # Sprawdź czy równoległość daje korzyści
         assert total_parallel_time > 0, "Brak wyników z równoległego przetwarzania"

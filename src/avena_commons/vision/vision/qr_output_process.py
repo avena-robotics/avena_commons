@@ -22,7 +22,7 @@ def qr_output_process(detection_list: list, middle_point_y: int = 540) -> dict:
     Returns:
         dict: Słownik z kluczami 1-4 reprezentującymi pozycje w siatce:
             - 1: Górny lewy
-            - 2: Dolny lewy  
+            - 2: Dolny lewy
             - 3: Górny prawy
             - 4: Dolny prawy
             Wartości to None jeśli brak detekcji w danej pozycji
