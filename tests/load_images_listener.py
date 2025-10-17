@@ -37,7 +37,7 @@ listener._change_fsm_state(EventListenerState.STARTING)
 time.sleep(1)
 
 # Data directory
-DATA_DIR = "/home/avena/avena_commons/resources/tests/test_2024_07_18/22"
+DATA_DIR = "/home/avena/avena_commons/resources/tests/test_2024_07_18/24"
 
 # Fragment configuration
 FRAGMENT_CONFIG = {

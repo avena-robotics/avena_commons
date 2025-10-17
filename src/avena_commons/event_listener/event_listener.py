@@ -1245,37 +1245,6 @@ class EventListener:
                     case EventListenerState.RUN:
                         await self.on_run()
                         await self._check_local_data()
-                    except Exception as e:
-                        error(
-                            f"Error in check_local_data: {e}",
-                            message_logger=self._message_logger,
-                        )
-                        self._change_fsm_state(EventListenerState.ON_ERROR)
-
-                    if (
-                        loop.loop_counter % self.__check_local_data_frequency == 0
-                    ):  # co 1 sekunde
-                        self.__received_events_per_second = (
-                            self.__received_events - self.__prev_received_events
-                        )
-                        self.__sended_events_per_second = (
-                            self.__sended_events - self.__prev_sended_events
-                        )
-
-                        if (
-                            loop.loop_counter % self.__check_local_data_frequency == 0
-                        ):  # co 1 sekunde
-                            self.__received_events_per_second = (
-                                self.__received_events - self.__prev_received_events
-                            )
-                            self.__sended_events_per_second = (
-                                self.__sended_events - self.__prev_sended_events
-                            )
-
-                            # Aktualizacja poprzednich wartości i czasu
-                            self.__prev_received_events = self.__received_events
-                            self.__prev_sended_events = self.__sended_events
-
                     case EventListenerState.PAUSING:
                         await self.on_pausing()
                         self._change_fsm_state(EventListenerState.PAUSE)
