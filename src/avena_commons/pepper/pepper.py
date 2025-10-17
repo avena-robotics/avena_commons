@@ -14,6 +14,7 @@ import base64
 import json
 import os
 import threading
+import time
 from datetime import datetime
 from typing import Any, Dict
 
@@ -27,7 +28,7 @@ from avena_commons.event_listener import (
 )
 from avena_commons.pepper.driver.pepper_connector import PepperConnector, PepperState
 from avena_commons.util.catchtime import Catchtime
-from avena_commons.util.logger import MessageLogger, debug, error, info
+from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 load_dotenv(override=True)
 
@@ -75,7 +76,7 @@ class Pepper(EventListener):
             )
 
         self.name = name
-        self.check_local_data_frequency = 60  # Check every 60Hz = ~16ms
+        self.check_local_data_frequency = 120  # Check every 120Hz = ~8ms
 
         super().__init__(
             name=name,
@@ -105,6 +106,7 @@ class Pepper(EventListener):
         self.processing_enabled = True
         self.last_processing_result = None
         self._is_processing = False
+        self._processing_timer_start = None
         self.fragment_buffer = []  # Buffer for incoming fragments
 
         self._fragments_lock = threading.Lock()  # Thread safety
@@ -265,7 +267,7 @@ class Pepper(EventListener):
         __logger = self._message_logger
         self._message_logger = None
 
-    def _deserialize_fragments(
+    async def _deserialize_fragments(
         self, fragments_data: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Dict[str, np.ndarray]]:
         """Odtwarza fragmenty z formatu JSON na numpy arrays.
@@ -403,6 +405,42 @@ class Pepper(EventListener):
         with self._fragments_lock:
             fragments_ready = len(self.fragment_buffer) >= self.expected_fragments
 
+        if self._is_processing:
+            result = self.pepper_connector.get_last_result()
+
+            if result and result.get("success", False):
+                processing_timer = (
+                    time.perf_counter() - self._processing_timer_start
+                ) * 1000  # ms
+                # Record processing metrics
+                self.performance_metrics["processing_times"].append(processing_timer)
+                self.performance_metrics["total_processing_times"].append(
+                    processing_timer
+                )
+                self.performance_metrics["processing_sessions"] += 1
+
+                debug(
+                    f"Pepper processing completed in {processing_timer:.2f}ms",
+                    self._message_logger,
+                )
+
+                # Reset processing flag
+                self._is_processing = False
+                self._processing_timer_start = None
+
+                info(
+                    f"Pepper vision completed - results logged: {result}",
+                    self._message_logger,
+                )
+            else:
+                # Reset processing flag even on failure
+                self._is_processing = False
+                self.performance_metrics["processing_errors"] += 1
+                warning(
+                    f"Pepper processing failed or returned no success",
+                    self._message_logger,
+                )
+
         if fragments_ready and not self._is_processing:
             # Take fragments for processing
             with self._fragments_lock:
@@ -424,44 +462,24 @@ class Pepper(EventListener):
                 fragment_data = fragment_item.get("fragment", {})
 
                 # Deserialize this single fragment
-                deserialized = self._deserialize_fragments({
+                deserialized = await self._deserialize_fragments({
                     fragment_name: fragment_data
                 })
                 if deserialized:
                     all_fragments.update(deserialized)
 
             # Process fragments with pepper vision
-            with Catchtime() as processing_timer:
-                result = self.pepper_connector.process_fragments(all_fragments)
-
-            # Record processing metrics
-            self.performance_metrics["processing_times"].append(processing_timer.ms)
-            self.performance_metrics["total_processing_times"].append(
-                processing_timer.ms
-            )
-            self.performance_metrics["processing_sessions"] += 1
-
-            if result and result.get("success", False):
-                debug(
-                    f"Pepper processing completed in {processing_timer.ms:.2f}ms",
+            # with Catchtime() as processing_timer:
+            self._processing_timer_start = time.perf_counter()
+            confirmation = self.pepper_connector.process_fragments(all_fragments)
+            if not confirmation:
+                error(
+                    "Pepper processing failed to start",
                     self._message_logger,
                 )
-
-                # Reset processing flag
-                self._is_processing = False
-
-                info(
-                    f"Pepper vision completed - results logged: {result}",
-                    self._message_logger,
-                )
-            else:
-                # Reset processing flag even on failure
                 self._is_processing = False
                 self.performance_metrics["processing_errors"] += 1
-                error(
-                    f"Pepper processing failed or returned no success",
-                    self._message_logger,
-                )
+                return
 
     def get_processing_status(self):
         """Pobierz status przetwarzania pepper vision.

@@ -82,10 +82,8 @@ class PepperWorker(Worker):
         # Cache for nozzle masks (załadowane z konfiguracji)
         self._nozzle_masks_cache = {}  # fragment_id (0-3) → np.ndarray
 
-        # Thread pool for parallel fragment processing
-        self._thread_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=4,  # Liczba wątków równoległa do liczby fragmentów
-            thread_name_prefix="PepperFragment",
+        self._process_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4,
         )
 
         # Results storage
@@ -106,8 +104,9 @@ class PepperWorker(Worker):
     # MARK: SEARCH AND FILL STAGES
     # ============================================================================
 
-    def search(self, rgb, depth, nozzle_mask, params):
-        """Search stage - find pepper and hole."""
+    @staticmethod
+    def search_static(rgb, depth, nozzle_mask, params):
+        """Static version of search method for multiprocessing."""
         debug_dict = {}
 
         (
@@ -197,8 +196,8 @@ class PepperWorker(Worker):
             debug_dict,
         )
 
-    def fill(
-        self,
+    @staticmethod
+    def fill_static(
         rgb,
         depth,
         inner_zone_mask,
@@ -212,7 +211,7 @@ class PepperWorker(Worker):
         params,
         overflow_only=False,
     ):
-        """Fill stage - check if pepper is filled and detect overflow."""
+        """Static version of fill method for multiprocessing."""
         debug_dict = {}
 
         pepper_filled = False
@@ -322,59 +321,58 @@ class PepperWorker(Worker):
 
         return nozzle_mask
 
-    async def process_single_fragment(
-        self, fragment_key: str, fragment_data: Dict[str, Any]
+    @staticmethod
+    def _process_search_sync(
+        fragment_key: str,
+        fragment_data: Dict[str, Any],
+        pepper_config: Optional[Dict],
+        nozzle_masks_cache: Dict[int, np.ndarray],
+        fragment_to_section: Dict[int, str],
     ) -> Tuple[str, Dict[str, Any]]:
-        """Przetwórz pojedynczy fragment obrazu asynchronicznie.
+        """Synchroniczne przetwarzanie fazy SEARCH dla pojedynczego fragmentu.
 
         Args:
             fragment_key: Klucz identyfikujący fragment
             fragment_data: Dane fragmentu z 'color', 'depth', 'fragment_id'
+            pepper_config: Konfiguracja pepper vision
+            nozzle_masks_cache: Cache masek nozzle
+            fragment_to_section: Mapowanie fragment_id na sekcję
 
         Returns:
-            Tuple[str, Dict]: Para (fragment_id, wynik_przetwarzania)
-
-        Raises:
-            Exception: Gdy wystąpi błąd podczas przetwarzania fragmentu
+            Tuple[str, Dict]: Para (fragment_id, wyniki_search)
         """
         fragment_id = fragment_data.get("fragment_id", fragment_key)
-        section = self.fragment_to_section.get(fragment_id, "top_left")
-
-        debug(
-            f"Starting processing fragment {fragment_id} ({section})",
-            self._message_logger,
-        )
+        section = fragment_to_section.get(fragment_id, "top_left")
 
         try:
-            color_fragment = fragment_data["color"]
-            depth_fragment = fragment_data["depth"]
-
-            # Get nozzle mask: 1) cache, 2) fragment_data, 3) placeholder
-            nozzle_mask = self._nozzle_masks_cache.get(fragment_id)
-
-            if nozzle_mask is None:
-                nozzle_mask = fragment_data.get("nozzle_mask")
-
-            if nozzle_mask is None:
-                debug(
-                    f"Brak cached/provided nozzle_mask dla {fragment_id}, używam placeholder",
-                    self._message_logger,
-                )
-                nozzle_mask = self.create_simple_nozzle_mask(
-                    color_fragment.shape, section
-                )
-
-            # Get pepper_type and reflective_nozzle from config
-            pepper_detection_config = (
-                self.pepper_config.get("pepper_detection", {})
-                if self.pepper_config
-                else {}
-            )
-            pepper_type = pepper_detection_config.get("pepper_type", "big_pepper")
-            reflective_nozzle = pepper_detection_config.get("reflective_nozzle", False)
-
-            # Create parameters for pepper vision using full pipeline
             with Catchtime() as config_timer:
+                color = fragment_data["color"]
+                depth = fragment_data["depth"]
+
+                # Get nozzle mask: 1) cache, 2) fragment_data, 3) placeholder
+                nozzle_mask = nozzle_masks_cache.get(fragment_id)
+
+                if nozzle_mask is None:
+                    nozzle_mask = fragment_data.get("nozzle_mask")
+
+                if nozzle_mask is None:
+                    # Create simple mask as fallback
+                    h, w = color.shape[:2]
+                    nozzle_mask = np.zeros((h, w), dtype=np.uint8)
+                    center_x, center_y = w // 2, h // 2
+                    radius = min(w, h) // 6
+                    cv2.circle(nozzle_mask, (center_x, center_y), radius, 255, -1)
+
+                # Get pepper_type and reflective_nozzle from config
+                pepper_detection_config = (
+                    pepper_config.get("pepper_detection", {}) if pepper_config else {}
+                )
+                pepper_type = pepper_detection_config.get("pepper_type", "big_pepper")
+                reflective_nozzle = pepper_detection_config.get(
+                    "reflective_nozzle", False
+                )
+
+                # Config
                 params = config(
                     nozzle_mask,
                     section,
@@ -382,7 +380,7 @@ class PepperWorker(Worker):
                     reflective_nozzle=reflective_nozzle,
                 )
 
-            # Execute search stage (FIXED: removed undefined search_state check)
+            # Search
             with Catchtime() as search_timer:
                 (
                     search_state,
@@ -396,224 +394,106 @@ class PepperWorker(Worker):
                     overflow_bias,
                     overflow_outer_bias,
                     debug_search,
-                ) = self.search(color_fragment, depth_fragment, nozzle_mask, params)
+                ) = PepperWorker.search_static(color, depth, nozzle_mask, params)
 
-            # Execute fill stage if search succeeded
-            pepper_filled = False
-            pepper_overflow = False
-
-            if search_state:
-                with Catchtime() as fill_timer:
-                    pepper_filled, pepper_overflow, debug_fill = self.fill(
-                        color_fragment,
-                        depth_fragment,
-                        inner_zone,
-                        outer_zone,
-                        inner_zone_color,
-                        outer_zone_median_start,
-                        overflow_mask,
-                        overflow_bias,
-                        outer_overflow,
-                        overflow_outer_bias,
-                        params,
-                    )
-                fill_time = fill_timer.ms
-            else:
-                fill_time = 0.0
-                debug_fill = {}
-
-            total_fragment_time = config_timer.ms + search_timer.ms + fill_time
-
-            result = {
+            search_result = {
                 "search_state": search_state,
-                "overflow_state": overflow_state or pepper_overflow,
-                "is_filled": pepper_filled,
-                "success": True,
-                "processing_time_ms": total_fragment_time,
-                "config_time_ms": config_timer.ms,
-                "search_time_ms": search_timer.ms,
-                "fill_time_ms": fill_time,
-            }
-
-            debug(
-                f"Completed fragment {fragment_id} ({section}): "
-                f"search={search_state}, filled={pepper_filled}, overflow={pepper_overflow} "
-                f"in {total_fragment_time:.2f}ms (config={config_timer.ms:.2f}ms, "
-                f"search={search_timer.ms:.2f}ms, fill={fill_time:.2f}ms)",
-                self._message_logger,
-            )
-
-            return fragment_id, result
-
-        except Exception as fragment_error:
-            error(
-                f"Error processing fragment {fragment_id}: {fragment_error}",
-                self._message_logger,
-            )
-            error(
-                f"Traceback: {traceback.format_exc()}",
-                self._message_logger,
-            )
-
-            error_result = {
-                "search_state": False,
-                "overflow_state": False,
-                "is_filled": False,
-                "success": False,
-                "error": str(fragment_error),
-            }
-
-            return fragment_id, error_result
-
-    async def process_fragment_in_thread(
-        self, fragment_key: str, fragment_data: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Uruchom przetwarzanie fragmentu w dedykowanym wątku.
-
-        Args:
-            fragment_key: Klucz identyfikujący fragment
-            fragment_data: Dane fragmentu
-
-        Returns:
-            Tuple[str, Dict]: Para (fragment_id, wynik_przetwarzania)
-        """
-        loop = asyncio.get_event_loop()
-
-        # Uruchom synchroniczne przetwarzanie w thread pool
-        result = await loop.run_in_executor(
-            self._thread_pool, self._process_fragment_sync, fragment_key, fragment_data
-        )
-
-        return result
-
-    def _process_fragment_sync(
-        self, fragment_key: str, fragment_data: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Synchroniczne przetwarzanie fragmentu (do uruchomienia w wątku).
-
-        Args:
-            fragment_key: Klucz identyfikujący fragment
-            fragment_data: Dane fragmentu
-
-        Returns:
-            Tuple[str, Dict]: Para (fragment_id, wynik_przetwarzania)
-        """
-        # Uruchom asynchroniczne przetwarzanie w nowej pętli zdarzeń dla wątku
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        try:
-            result = loop.run_until_complete(
-                self.process_single_fragment(fragment_key, fragment_data)
-            )
-            return result
-        finally:
-            loop.close()
-
-    async def process_fragments_parallel(self, fragments: Dict[str, Dict]) -> Dict:
-        """Przetwórz fragmenty obrazu równolegle używając asyncio tasks.
-
-        Args:
-            fragments: Dict fragmentów z 'color', 'depth', 'fragment_id'
-
-        Returns:
-            Dict: Wyniki przetwarzania dla wszystkich fragmentów
-
-        Raises:
-            Exception: Gdy wystąpi krytyczny błąd podczas przetwarzania
-        """
-        try:
-            self.state = PepperState.PROCESSING
-
-            with Catchtime() as processing_timer:
-                debug(
-                    f"Starting parallel processing of {len(fragments)} fragments",
-                    self._message_logger,
-                )
-
-                # Tworzenie tasków dla wszystkich fragmentów
-                tasks = []
-                for fragment_key, fragment_data in fragments.items():
-                    task = asyncio.create_task(
-                        self.process_fragment_in_thread(fragment_key, fragment_data),
-                        name=f"fragment_{fragment_key}",
-                    )
-                    tasks.append(task)
-
-                # Czekaj na zakończenie wszystkich tasków równolegle
-                completed_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Przetwórz wyniki
-                results = {}
-                successful_count = 0
-                error_count = 0
-
-                for result in completed_results:
-                    if isinstance(result, Exception):
-                        error_count += 1
-                        error(
-                            f"Task failed with exception: {result}",
-                            self._message_logger,
-                        )
-                        # Dodaj błędny wynik z placeholder ID
-                        error_id = f"error_{error_count}"
-                        results[error_id] = {
-                            "search_state": False,
-                            "overflow_state": False,
-                            "is_filled": False,
-                            "success": False,
-                            "error": str(result),
-                        }
-                    else:
-                        fragment_id, fragment_result = result
-                        results[fragment_id] = fragment_result
-                        if fragment_result.get("success", False):
-                            successful_count += 1
-                        else:
-                            error_count += 1
-
-            total_time = processing_timer.ms
-
-            debug(
-                f"Parallel processing completed: {successful_count} successful, "
-                f"{error_count} failed, total time: {total_time:.2f}ms",
-                self._message_logger,
-            )
-
-            # Store result
-            self.last_result = {
-                "results": results,
-                "total_processing_time_ms": total_time,
-                "fragments_count": len(fragments),
-                "successful_count": successful_count,
-                "error_count": error_count,
+                "overflow_state": overflow_state,
+                "section": section,
+                "masks": {
+                    "inner_zone": inner_zone,
+                    "outer_zone": outer_zone,
+                    "overflow_mask": overflow_mask,
+                    "inner_zone_color": inner_zone_color,
+                    "outer_overflow": outer_overflow,
+                },
+                "measurements": {
+                    "outer_zone_median_start": outer_zone_median_start,
+                    "overflow_bias": overflow_bias,
+                    "overflow_outer_bias": overflow_outer_bias,
+                },
+                "params": params,
+                "color": color,
+                "depth": depth,
+                "config_time_ms": round(config_timer.ms, 2),
+                "search_time_ms": round(search_timer.ms, 2),
                 "success": True,
             }
 
-            self.state = PepperState.STARTED
-            return self.last_result
+            return fragment_id, search_result
 
         except Exception as e:
-            error(f"Error in process_fragments_parallel: {e}", self._message_logger)
-            error(f"Traceback: {traceback.format_exc()}", self._message_logger)
-            self.state = PepperState.ERROR
-            return {
-                "results": {},
-                "total_processing_time_ms": 0.0,
-                "fragments_count": 0,
-                "successful_count": 0,
-                "error_count": len(fragments),
+            return fragment_id, {
+                "search_state": False,
+                "overflow_state": False,
                 "success": False,
                 "error": str(e),
             }
 
-    async def process_fragments_two_phase(
+    @staticmethod
+    def _process_fill_sync(
+        fragment_id: str,
+        search_result: Dict[str, Any],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Synchroniczne przetwarzanie fazy FILL dla pojedynczego fragmentu.
+
+        Args:
+            fragment_id: Identyfikator fragmentu
+            search_result: Wyniki fazy SEARCH dla tego fragmentu
+
+        Returns:
+            Tuple[str, Dict]: Para (fragment_id, wyniki_fill)
+        """
+        try:
+            # Determine if we do full fill or overflow-only
+            overflow_only = not search_result["search_state"]
+
+            with Catchtime() as fill_timer:
+                pepper_filled, pepper_overflow, debug_fill = PepperWorker.fill_static(
+                    search_result["color"],
+                    search_result["depth"],
+                    search_result["masks"]["inner_zone"],
+                    search_result["masks"]["outer_zone"],
+                    search_result["masks"]["inner_zone_color"],
+                    search_result["measurements"]["outer_zone_median_start"],
+                    search_result["masks"]["overflow_mask"],
+                    search_result["measurements"]["overflow_bias"],
+                    search_result["masks"]["outer_overflow"],
+                    search_result["measurements"]["overflow_outer_bias"],
+                    search_result["params"],
+                    overflow_only=overflow_only,
+                )
+
+            fill_result = {
+                "search_state": search_result["search_state"],
+                "overflow_state": search_result["overflow_state"] or pepper_overflow,
+                "is_filled": pepper_filled,
+                "success": True,
+                "phase": "search_and_fill",
+                "config_time_ms": search_result["config_time_ms"],
+                "search_time_ms": search_result["search_time_ms"],
+                "fill_time_ms": round(fill_timer.ms, 2),
+            }
+
+            return fragment_id, fill_result
+
+        except Exception as e:
+            return fragment_id, {
+                "search_state": search_result.get("search_state", False),
+                "overflow_state": search_result.get("overflow_state", False),
+                "is_filled": False,
+                "success": False,
+                "error": str(e),
+                "phase": "fill_error",
+            }
+
+    def _process_fragments_two_phase_sync(
         self, fragments: Dict[str, Dict], min_found: int = 2
     ) -> Dict:
-        """Dwufazowe przetwarzanie z cross-fragment decision logic.
+        """Dwufazowe przetwarzanie z równoległym przetwarzaniem fragmentów (synchroniczne).
 
-        FAZA 1: SEARCH - wykonaj search() na wszystkich fragmentach
-        FAZA 2: FILL (warunkowo) - jeśli znaleziono >= min_found, wykonaj fill()
+        FAZA 1: SEARCH - równolegle na wszystkich fragmentach w osobnych procesach
+        FAZA 2: FILL (warunkowo) - jeśli znaleziono >= min_found, równolegle na wszystkich
 
         Args:
             fragments: Dict fragmentów z 'color', 'depth', 'nozzle_mask'
@@ -626,105 +506,73 @@ class PepperWorker(Worker):
 
         try:
             with Catchtime() as total_timer:
-                # ===== FAZA 1: SEARCH =====
-                search_results = {}
-
+                # ===== FAZA 1: PARALLEL SEARCH =====
                 debug(
-                    f"PHASE 1: Searching in {len(fragments)} fragments",
+                    f"PHASE 1: Parallel SEARCH in {len(fragments)} fragments",
                     self._message_logger,
                 )
 
-                for frag_key, frag_data in fragments.items():
-                    fragment_id = frag_data.get("fragment_id", frag_key)
-                    section = self.fragment_to_section.get(fragment_id, "top_left")
+                # Submit all search tasks to process pool
+                search_futures = {}
+                for fragment_key, fragment_data in fragments.items():
+                    future = self._process_pool.submit(
+                        self._process_search_sync,
+                        fragment_key,
+                        fragment_data,
+                        self.pepper_config,
+                        self._nozzle_masks_cache,
+                        self.fragment_to_section,
+                    )
+                    search_futures[fragment_key] = future
 
-                    color = frag_data["color"]
-                    depth = frag_data["depth"]
+                # Log czas po submit
+                debug(
+                    f"PHASE 1: Search tasks submitted waiting for results...",
+                    self._message_logger,
+                )
 
-                    # Get nozzle mask: 1) cache, 2) fragment_data, 3) placeholder
-                    nozzle_mask = self._nozzle_masks_cache.get(fragment_id)
-
-                    if nozzle_mask is None:
-                        nozzle_mask = frag_data.get("nozzle_mask")
-
-                    if nozzle_mask is None:
-                        debug(
-                            f"Fragment {fragment_id}: brak cached/provided nozzle_mask, używam placeholder",
+                # Collect results
+                search_results = {}
+                error_count = 0
+                for fragment_key, future in search_futures.items():
+                    try:
+                        fragment_id, search_result = future.result(
+                            timeout=0.02  # 20ms
+                        )
+                        search_results[fragment_id] = search_result
+                        if (
+                            not search_result.get("success", False)
+                            and "error" in search_result
+                        ):
+                            error(
+                                f"Search failed for {fragment_key}: {search_result['error']}",
+                                self._message_logger,
+                            )
+                    except Exception as e:
+                        error_count += 1
+                        error(
+                            f"Search task failed for {fragment_key} with exception: {e}",
                             self._message_logger,
                         )
-                        nozzle_mask = self.create_simple_nozzle_mask(
-                            color.shape, section
-                        )
-                    else:
-                        debug(
-                            f"Fragment {fragment_id}: używam cached nozzle_mask",
-                            self._message_logger,
-                        )
+                        error_id = f"error_{error_count}"
+                        search_results[error_id] = {
+                            "search_state": False,
+                            "overflow_state": False,
+                            "success": False,
+                            "error": str(e),
+                        }
 
-                    # Get pepper_type and reflective_nozzle from config
-                    pepper_detection_config = (
-                        self.pepper_config.get("pepper_detection", {})
-                        if self.pepper_config
-                        else {}
-                    )
-                    pepper_type = pepper_detection_config.get(
-                        "pepper_type", "big_pepper"
-                    )
-                    reflective_nozzle = pepper_detection_config.get(
-                        "reflective_nozzle", False
-                    )
+                # Log czas po collect search
+                debug(
+                    f"PHASE 1 COMPLETE: Collected search results",
+                    self._message_logger,
+                )
 
-                    # Config
-                    with Catchtime() as config_timer:
-                        params = config(
-                            nozzle_mask,
-                            section,
-                            pepper_type,
-                            reflective_nozzle=reflective_nozzle,
-                        )
-
-                    # Search
-                    with Catchtime() as search_timer:
-                        (
-                            search_state,
-                            overflow_state,
-                            inner_zone,
-                            outer_zone,
-                            overflow_mask,
-                            inner_zone_color,
-                            outer_overflow,
-                            outer_zone_median_start,
-                            overflow_bias,
-                            overflow_outer_bias,
-                            debug_search,
-                        ) = self.search(color, depth, nozzle_mask, params)
-
-                    search_results[fragment_id] = {
-                        "search_state": search_state,
-                        "overflow_state": overflow_state,
-                        "section": section,
-                        "masks": {
-                            "inner_zone": inner_zone,
-                            "outer_zone": outer_zone,
-                            "overflow_mask": overflow_mask,
-                            "inner_zone_color": inner_zone_color,
-                            "outer_overflow": outer_overflow,
-                        },
-                        "measurements": {
-                            "outer_zone_median_start": outer_zone_median_start,
-                            "overflow_bias": overflow_bias,
-                            "overflow_outer_bias": overflow_outer_bias,
-                        },
-                        "params": params,
-                        "color": color,
-                        "depth": depth,
-                        "config_time_ms": config_timer.ms,
-                        "search_time_ms": search_timer.ms,
-                    }
-
-                # COUNT: Ile fragmentów znalazło papryczki?
+                # COUNT: How many fragments found peppers?
                 found_count = sum(
-                    1 for r in search_results.values() if r["search_state"]
+                    1
+                    for r in search_results.values()
+                    if r.get("search_state", False) and r.get("success", False)
                 )
 
                 info(
@@ -739,24 +587,28 @@ class PepperWorker(Worker):
                         self._message_logger,
                     )
 
-                    # Zwróć wyniki tylko z search
+                    # Return results from search only
                     final_results = {}
                     for fid, sres in search_results.items():
                         final_results[fid] = {
-                            "search_state": sres["search_state"],
-                            "overflow_state": sres["overflow_state"],
+                            "search_state": sres.get("search_state", False),
+                            "overflow_state": sres.get("overflow_state", False),
                             "is_filled": False,
-                            "success": True,
+                            "success": sres.get("success", False),
                             "phase": "search_only",
-                            "config_time_ms": sres["config_time_ms"],
-                            "search_time_ms": sres["search_time_ms"],
+                            "config_time_ms": sres.get("config_time_ms", 0.0),
+                            "search_time_ms": sres.get("search_time_ms", 0.0),
                             "fill_time_ms": 0.0,
                         }
+                        if "error" in sres:
+                            final_results[fid]["error"] = sres["error"]
 
                     self.state = PepperState.STARTED
-                    return {
+
+                    # Store result in self.last_result
+                    self.last_result = {
                         "results": final_results,
-                        "total_processing_time_ms": total_timer.ms,
+                        "total_processing_time_ms": round(total_timer.ms, 2),
                         "fragments_count": len(fragments),
                         "found_count": found_count,
                         "min_required": min_found,
@@ -764,64 +616,101 @@ class PepperWorker(Worker):
                         "success": True,
                     }
 
-                # ===== FAZA 2: FILL =====
+                    return self.last_result
+
+                # ===== FAZA 2: PARALLEL FILL =====
                 debug(
-                    f"PHASE 2: Executing FILL on all fragments (found >= {min_found})",
+                    f"PHASE 2: Parallel FILL on all fragments (found >= {min_found})",
+                    self._message_logger,
+                )
+                # Submit all fill tasks to process pool
+                fill_futures = {}
+                for fragment_id, search_result in search_results.items():
+                    if not search_result.get("success", False):
+                        continue
+                    future = self._process_pool.submit(
+                        self._process_fill_sync, fragment_id, search_result
+                    )
+                    fill_futures[fragment_id] = future
+
+                # Log czas po submit fill
+                debug(
+                    f"PHASE 2: Fill tasks submitted, waiting for results...",
                     self._message_logger,
                 )
 
+                # Collect fill results
                 final_results = {}
-
-                for fid, sres in search_results.items():
-                    if sres["search_state"]:
-                        # Pełny fill check
-                        overflow_only = False
-                        debug(
-                            f"Fragment {fid}: Full FILL check (pepper found)",
+                for fragment_id, future in fill_futures.items():
+                    try:
+                        fid, fill_result = future.result(
+                            timeout=0.02  # Zmniejszono z 0.2 do 0.1 s
+                        )
+                        final_results[fid] = fill_result
+                        if (
+                            not fill_result.get("success", False)
+                            and "error" in fill_result
+                        ):
+                            error(
+                                f"Fill failed for {fragment_id}: {fill_result['error']}",
+                                self._message_logger,
+                            )
+                    except Exception as e:
+                        error(
+                            f"Fill task failed for {fragment_id} with exception: {e}",
                             self._message_logger,
                         )
-                    else:
-                        # Tylko overflow check
-                        overflow_only = True
-                        debug(
-                            f"Fragment {fid}: Overflow-only check (no pepper)",
-                            self._message_logger,
-                        )
+                        # Fallback: use search result with fill error
+                        search_result = search_results.get(fragment_id, {})
+                        final_results[fragment_id] = {
+                            "search_state": search_result.get("search_state", False),
+                            "overflow_state": search_result.get(
+                                "overflow_state", False
+                            ),
+                            "is_filled": False,
+                            "success": False,
+                            "phase": "fill_error",
+                            "error": str(e),
+                            "config_time_ms": search_result.get("config_time_ms", 0.0),
+                            "search_time_ms": search_result.get("search_time_ms", 0.0),
+                            "fill_time_ms": 0.0,
+                        }
 
-                    with Catchtime() as fill_timer:
-                        pepper_filled, pepper_overflow, debug_fill = self.fill(
-                            sres["color"],
-                            sres["depth"],
-                            sres["masks"]["inner_zone"],
-                            sres["masks"]["outer_zone"],
-                            sres["masks"]["inner_zone_color"],
-                            sres["measurements"]["outer_zone_median_start"],
-                            sres["masks"]["overflow_mask"],
-                            sres["measurements"]["overflow_bias"],
-                            sres["masks"]["outer_overflow"],
-                            sres["measurements"]["overflow_outer_bias"],
-                            sres["params"],
-                            overflow_only=overflow_only,
-                        )
+                # Log czas po collect fill
+                debug(
+                    f"PHASE 2 COMPLETE: Collected fill results",
+                    self._message_logger,
+                )
 
-                    final_results[fid] = {
-                        "search_state": sres["search_state"],
-                        "overflow_state": sres["overflow_state"] or pepper_overflow,
-                        "is_filled": pepper_filled,
-                        "success": True,
-                        "phase": "search_and_fill",
-                        "config_time_ms": sres["config_time_ms"],
-                        "search_time_ms": sres["search_time_ms"],
-                        "fill_time_ms": fill_timer.ms,
-                    }
+                # Add fragments that failed in search (no fill executed)
+                for fragment_id, search_result in search_results.items():
+                    if fragment_id not in final_results:
+                        final_results[fragment_id] = {
+                            "search_state": search_result.get("search_state", False),
+                            "overflow_state": search_result.get(
+                                "overflow_state", False
+                            ),
+                            "is_filled": False,
+                            "success": search_result.get("success", False),
+                            "phase": "search_failed",
+                            "config_time_ms": search_result.get("config_time_ms", 0.0),
+                            "search_time_ms": search_result.get("search_time_ms", 0.0),
+                            "fill_time_ms": 0.0,
+                        }
+                        if "error" in search_result:
+                            final_results[fragment_id]["error"] = search_result["error"]
 
-                info(f"PHASE 2 COMPLETE: All fragments processed", self._message_logger)
+                info(
+                    f"PHASE 2 COMPLETE: All fragments processed",
+                    self._message_logger,
+                )
 
             self.state = PepperState.STARTED
 
-            return {
+            # Store result in self.last_result
+            self.last_result = {
                 "results": final_results,
-                "total_processing_time_ms": total_timer.ms,
+                "total_processing_time_ms": round(total_timer.ms, 2),
                 "fragments_count": len(fragments),
                 "found_count": found_count,
                 "min_required": min_found,
@@ -829,11 +718,15 @@ class PepperWorker(Worker):
                 "success": True,
             }
 
+            return self.last_result
+
         except Exception as e:
             error(f"Error in process_fragments_two_phase: {e}", self._message_logger)
             error(f"Traceback: {traceback.format_exc()}", self._message_logger)
             self.state = PepperState.ERROR
-            return {
+
+            # Store error result in self.last_result
+            self.last_result = {
                 "results": {},
                 "total_processing_time_ms": 0.0,
                 "fragments_count": 0,
@@ -844,12 +737,13 @@ class PepperWorker(Worker):
                 "error": str(e),
             }
 
-    async def process_fragments(self, fragments: Dict[str, Dict]) -> Dict:
-        """Process list of image fragments with pepper vision.
+            return self.last_result
 
-        Wybiera strategię przetwarzania w zależności od liczby fragmentów:
-        - 1 fragment: sekwencyjne przetwarzanie
-        - >= 2 fragmenty: dwufazowe z cross-fragment logic (2/4)
+    def _process_fragments_sync(self, fragments: Dict[str, Dict]) -> Dict:
+        """Process list of image fragments with pepper vision using two-phase strategy (synchroniczne).
+
+        Używa dwufazowego przetwarzania z cross-fragment logic (min 2/4 found).
+        Dla pojedynczego fragmentu min_found=1.
 
         Args:
             fragments: Dict of fragment dicts with 'color', 'depth', 'fragment_id', 'nozzle_mask'
@@ -857,191 +751,21 @@ class PepperWorker(Worker):
         Returns:
             Dict with processing results for each fragment
         """
+        # Determine min_found based on fragment count
         if len(fragments) <= 1:
-            # Dla pojedynczego fragmentu użyj sekwencyjnego przetwarzania
+            min_found = 1
             debug(
-                f"Using SEQUENTIAL processing for {len(fragments)} fragment(s)",
+                f"Using TWO-PHASE processing for {len(fragments)} fragment (min 1/1 required)",
                 self._message_logger,
             )
-            return await self._process_fragments_sequential(fragments)
         else:
-            # Dla wielu fragmentów użyj dwufazowego przetwarzania z logiką 2/4
+            min_found = 2
             debug(
-                f"Using TWO-PHASE processing for {len(fragments)} fragments (min 2/4 required)",
-                self._message_logger,
-            )
-            return await self.process_fragments_two_phase(fragments, min_found=2)
-
-    async def _process_fragments_sequential(self, fragments: Dict[str, Dict]) -> Dict:
-        """Oryginalna implementacja sekwencyjna (zachowana dla kompatybilności).
-
-        Args:
-            fragments: Dict of fragment dicts with 'color', 'depth', 'fragment_id'
-
-        Returns:
-            Dict with processing results for each fragment
-        """
-        try:
-            self.state = PepperState.PROCESSING
-
-            with Catchtime() as processing_timer:
-                results = {}
-
-                for fragment_key, fragment_data in fragments.items():
-                    fragment_id = fragment_data.get("fragment_id", fragment_key)
-                    section = self.fragment_to_section.get(fragment_id, "top_left")
-
-                    try:
-                        color_fragment = fragment_data["color"]
-                        depth_fragment = fragment_data["depth"]
-
-                        # Get nozzle mask: 1) cache, 2) fragment_data, 3) placeholder
-                        nozzle_mask = self._nozzle_masks_cache.get(fragment_id)
-
-                        if nozzle_mask is None:
-                            nozzle_mask = fragment_data.get("nozzle_mask")
-
-                        if nozzle_mask is None:
-                            debug(
-                                f"Brak cached/provided nozzle_mask dla {fragment_id}, używam placeholder",
-                                self._message_logger,
-                            )
-                            nozzle_mask = self.create_simple_nozzle_mask(
-                                color_fragment.shape, section
-                            )
-
-                        # Get pepper_type and reflective_nozzle from config
-                        pepper_detection_config = (
-                            self.pepper_config.get("pepper_detection", {})
-                            if self.pepper_config
-                            else {}
-                        )
-                        pepper_type = pepper_detection_config.get(
-                            "pepper_type", "big_pepper"
-                        )
-                        reflective_nozzle = pepper_detection_config.get(
-                            "reflective_nozzle", False
-                        )
-
-                        # Create parameters for pepper vision using full pipeline
-                        with Catchtime() as config_timer:
-                            params = config(
-                                nozzle_mask,
-                                section,
-                                pepper_type,
-                                reflective_nozzle=reflective_nozzle,
-                            )
-
-                        # Execute search stage
-                        with Catchtime() as search_timer:
-                            (
-                                search_state,
-                                overflow_state,
-                                inner_zone,
-                                outer_zone,
-                                overflow_mask,
-                                inner_zone_color,
-                                outer_overflow,
-                                outer_zone_median_start,
-                                overflow_bias,
-                                overflow_outer_bias,
-                                debug_search,
-                            ) = self.search(
-                                color_fragment, depth_fragment, nozzle_mask, params
-                            )
-
-                        # Execute fill stage if search succeeded
-                        pepper_filled = False
-                        pepper_overflow = False
-
-                        if search_state:
-                            with Catchtime() as fill_timer:
-                                pepper_filled, pepper_overflow, debug_fill = self.fill(
-                                    color_fragment,
-                                    depth_fragment,
-                                    inner_zone,
-                                    outer_zone,
-                                    inner_zone_color,
-                                    outer_zone_median_start,
-                                    overflow_mask,
-                                    overflow_bias,
-                                    outer_overflow,
-                                    overflow_outer_bias,
-                                    params,
-                                )
-                            fill_time = fill_timer.ms
-                        else:
-                            fill_time = 0.0
-                            debug_fill = {}
-
-                        total_fragment_time = (
-                            config_timer.ms + search_timer.ms + fill_time
-                        )
-
-                        results[fragment_id] = {
-                            "search_state": search_state,
-                            "overflow_state": overflow_state or pepper_overflow,
-                            "is_filled": pepper_filled,
-                            "success": True,
-                            "processing_time_ms": total_fragment_time,
-                            "config_time_ms": config_timer.ms,
-                            "search_time_ms": search_timer.ms,
-                            "fill_time_ms": fill_time,
-                        }
-
-                        debug(
-                            f"Processed fragment {fragment_id} ({section}): "
-                            f"search={search_state}, filled={pepper_filled}, overflow={pepper_overflow} "
-                            f"in {total_fragment_time:.2f}ms (config={config_timer.ms:.2f}ms, "
-                            f"search={search_timer.ms:.2f}ms, fill={fill_time:.2f}ms)",
-                            self._message_logger,
-                        )
-
-                    except Exception as fragment_error:
-                        error(
-                            f"Error processing fragment {fragment_id}: {fragment_error}",
-                            self._message_logger,
-                        )
-                        error(
-                            f"Traceback: {traceback.format_exc()}",
-                            self._message_logger,
-                        )
-                        results[fragment_id] = {
-                            "search_state": False,
-                            "overflow_state": False,
-                            "is_filled": False,
-                            "success": False,
-                            "error": str(fragment_error),
-                        }
-
-            total_time = processing_timer.ms
-            debug(
-                f"Processed {len(fragments)} fragments in {total_time:.2f}ms total",
+                f"Using TWO-PHASE processing for {len(fragments)} fragments (min 2/{len(fragments)} required)",
                 self._message_logger,
             )
 
-            # Store result
-            self.last_result = {
-                "results": results,
-                "total_processing_time_ms": total_time,
-                "fragments_count": len(fragments),
-                "success": True,
-            }
-
-            self.state = PepperState.STARTED
-            return self.last_result
-
-        except Exception as e:
-            error(f"Error in process_fragments: {e}", self._message_logger)
-            error(f"Traceback: {traceback.format_exc()}", self._message_logger)
-            self.state = PepperState.ERROR
-            return {
-                "results": {},
-                "total_processing_time_ms": 0.0,
-                "fragments_count": 0,
-                "success": False,
-                "error": str(e),
-            }
+        return self._process_fragments_two_phase_sync(fragments, min_found=min_found)
 
     async def init_pepper(self, pepper_settings: dict):
         """Initialize pepper vision worker with settings.
@@ -1189,6 +913,7 @@ class PepperWorker(Worker):
             files_count=10,
             colors=False,
         )
+        _pipe_loop_freq = 1000  # Hz
 
         debug(
             f"{self.device_name} - Worker started with local logger on PID: {os.getpid()}",
@@ -1197,9 +922,8 @@ class PepperWorker(Worker):
 
         try:
             while True:
-                if pipe_in.poll(0.0001):
+                if pipe_in.poll(1 / _pipe_loop_freq):  # Czekaj na dane z pipe
                     data = pipe_in.recv()
-                    response = None
 
                     match data[0]:
                         case "PEPPER_INIT":
@@ -1265,24 +989,34 @@ class PepperWorker(Worker):
                                     self._message_logger,
                                 )
                                 fragments = data[1]
-                                result = await self.process_fragments(fragments)
-                                pipe_in.send(result)
+
+                                pipe_in.send(True)
+
+                                # Uruchom w dedykowanym wątku
+                                processing_thread = threading.Thread(
+                                    target=self._process_fragments_sync,
+                                    args=(fragments,),
+                                    name=f"PepperProcessing_{self.name}",
+                                    daemon=True,
+                                )
+                                processing_thread.start()
+
                             except Exception as e:
                                 error(
-                                    f"{self.device_name} - Error processing fragments: {e}",
+                                    f"{self.device_name} - Error scheduling fragments processing: {e}",
                                     self._message_logger,
                                 )
-                                pipe_in.send({
+                                # Zapisz błąd do last_result
+                                self.last_result = {
                                     "results": {},
                                     "success": False,
                                     "error": str(e),
-                                })
+                                }
 
                         case "GET_LAST_RESULT":
                             try:
                                 pipe_in.send(self.last_result)
-                                if self.last_result is not None:
-                                    self.last_result = None  # wyczyść po wysłaniu
+                                self.last_result = None  # Clear after sending
                             except Exception as e:
                                 error(
                                     f"{self.device_name} - Error getting last result: {e}",
@@ -1296,15 +1030,14 @@ class PepperWorker(Worker):
                                 self._message_logger,
                             )
 
-                # Sleep krótki czas aby nie hamować CPU
-                await asyncio.sleep(0.0001)
-
         except asyncio.CancelledError:
             info(f"{self.device_name} - Task was cancelled", self._message_logger)
         except Exception as e:
             error(f"{self.device_name} - Error in Worker: {e}", self._message_logger)
             error(f"Traceback:\n{traceback.format_exc()}", self._message_logger)
         finally:
+            # Cleanup process pool with wait=True for stability
+            self._process_pool.shutdown(wait=True)
             info(f"{self.device_name} - Worker has shut down", self._message_logger)
 
 
