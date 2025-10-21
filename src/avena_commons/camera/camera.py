@@ -490,7 +490,7 @@ class Camera(EventListener):
                         await self._reply(event)
                     else:
                         debug(
-                            f"Brak detekcji w wyniku.",
+                            f"Brak detekcji w wyniku. type: {type(result)}, len: {len(result) if result else 0}, result: {result}",
                             self._message_logger,
                         )
                         event.result = Result(result="failure")
