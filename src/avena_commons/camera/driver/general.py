@@ -1074,7 +1074,7 @@ class GeneralCameraWorker(Worker):
                     #         message_logger=self._message_logger,
                     #     )
 
-                asyncio.sleep(0)  # yield control to event loop
+                await asyncio.sleep(0)  # yield control to event loop
 
         except asyncio.CancelledError:
             info(
