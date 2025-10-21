@@ -16,9 +16,11 @@ from avena_commons.util.loop_sync import LoopSynchronizer
 class ControlLoop:
     """Realizuje pojedynczą pętlę sterującą.
 
-    Pętla może działać w trybie autonomicznym (bez synchronizatora) lub
+    Pętla może działać w trybie autonomicznym (auto sync z epoką globalną) lub
     korzystać z `LoopSynchronizer`, aby wszystkie cykle były zgodne z jednym
     taktem niezależnie od okresu.
+
+    CONTROL_LOOP_EPOCH_FILE - zmienna środowiskowa określająca ścieżkę pliku epoki.
     """
 
     OVERRUN_SKIP = "skip"

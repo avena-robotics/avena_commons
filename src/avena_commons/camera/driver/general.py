@@ -200,7 +200,7 @@ class GeneralCameraWorker(Worker):
     async def grab_frames_from_camera(self):
         """Pobierz aktualne ramki obrazu z kamery.
 
-        Do nadpisania – powinna zwracać strukturę z danymi (np. dict).
+        Do nadpisania - powinna zwracać strukturę z danymi (np. dict).
 
         Args:
             None
@@ -327,7 +327,15 @@ class GeneralCameraWorker(Worker):
             - Wraca wcześnie jeśli brak executora lub detector_name
         """
         """Uruchom zadania przetwarzania obrazu w procesach z obsługą QR i BOX."""
+        debug(
+            f"Starting _run_image_processing_workers with frame keys: {list(frame.keys()) if frame else 'None'}",
+            self._message_logger,
+        )
+
         if not self.executor or not self.detector_name:
+            debug(
+                "Exiting early: executor or detector_name missing", self._message_logger
+            )
             self.last_result = None
 
         # Sprawdź czy executor jest uszkodzony przed użyciem
@@ -1064,6 +1072,8 @@ class GeneralCameraWorker(Worker):
                     #         f"{self.device_name} - Postprocess available for detector: {self.detector_name}, with {len(self.postprocess_configuration)} configurations",
                     #         message_logger=self._message_logger,
                     #     )
+
+                asyncio.sleep(0)  # yield control to event loop
 
         except asyncio.CancelledError:
             info(
