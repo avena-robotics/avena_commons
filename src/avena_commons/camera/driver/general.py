@@ -599,7 +599,7 @@ class GeneralCameraWorker(Worker):
         """
 
         completed_count = 0
-        box_result = None
+        box_result = ()
 
         try:
             for future in as_completed(futures, timeout=30.0):
@@ -649,7 +649,7 @@ class GeneralCameraWorker(Worker):
                                 f"BOX: Brak wykrycia w config_{config_id}",
                                 self._message_logger,
                             )
-                            box_result = None
+                            box_result = ()
                     else:
                         debug(
                             f"BOX: Pusty wynik z config_{config_id}",

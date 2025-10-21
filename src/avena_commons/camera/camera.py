@@ -414,12 +414,12 @@ class Camera(EventListener):
 
             case CameraState.RUNNING:
                 result = self.camera.get_last_result()
+                debug(
+                    f"Otrzymano wynik z run_postprocess_workers: result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",
+                    self._message_logger,
+                )
 
                 if result is not None:
-                    debug(
-                        f"Otrzymano wynik z run_postprocess_workers: result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",
-                        self._message_logger,
-                    )
                     self.camera.stop()
 
                     # Turn off light after photo processing
