@@ -428,7 +428,7 @@ class Camera(EventListener):
                     event: Event = self._find_and_remove_processing_event(
                         event=self._current_event
                     )
-                    
+
                     camera_data = CameraAction(**event.data)
 
                     # Reset processing flag before sending response
@@ -453,11 +453,15 @@ class Camera(EventListener):
                                 position = transform_camera_to_base(
                                     item_pose=list(qr_result),  # Convert tuple to list
                                     current_tcp=self.supervisor_position,
-                                    camera_tool_offset=self.__camera_config["camera_tool_offset"],
+                                    camera_tool_offset=self.__camera_config[
+                                        "camera_tool_offset"
+                                    ],
                                     is_rotation=qr_rotation,
                                 )
                                 event.result = Result(result="success")
-                                event.data = CameraAction(waypoint=position).model_dump()
+                                event.data = CameraAction(
+                                    waypoint=position
+                                ).model_dump()
                                 debug(
                                     f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
                                     self._message_logger,
@@ -474,7 +478,7 @@ class Camera(EventListener):
                                 self._message_logger,
                             )
                             event.result = Result(result="failure")
-                        
+
                     elif isinstance(last_result, tuple) and len(last_result) > 0:
                         event.result = Result(result="success")
                         position = transform_camera_to_base(
@@ -492,7 +496,11 @@ class Camera(EventListener):
                             f"Brak detekcji w wyniku. type: {type(last_result)}, len: {len(last_result) if last_result else 0}, last_result: {last_result}",
                             self._message_logger,
                         )
-                        event.result = Result(result="failure")
-                        
+                        event.result = Result(
+                            result="failure",
+                            error_code=1,
+                            error_message="No QR or Box detected",
+                        )
+
                     # SEND CURRENT EVENT REPLY
                     await self._reply(event)
