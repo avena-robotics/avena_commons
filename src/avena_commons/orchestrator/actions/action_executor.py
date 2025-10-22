@@ -7,8 +7,6 @@ from typing import Any, Dict
 from ..models.scenario_models import ScenarioContext
 from .base_action import ActionExecutionError, BaseAction
 from .log_action import LogAction
-from .lynx_refund_action import LynxRefundAction
-from .lynx_refund_approve_action import LynxRefundApproveAction
 from .send_command_action import SendCommandAction
 from .send_custom_command_action import SendCustomCommandAction
 from .send_email_action import SendEmailAction
@@ -47,10 +45,6 @@ class ActionExecutor:
         self._actions["send_email"] = SendEmailAction()
         self._actions["send_sms"] = SendSmsAction()
         self._actions["send_sms_to_customer"] = SendSmsToCustomerAction()
-
-        # NOWE: Akcje Lynx API
-        self._actions["lynx_refund"] = LynxRefundAction()
-        self._actions["lynx_refund_approve"] = LynxRefundApproveAction()
 
     def register_action(self, action_type: str, action_instance: BaseAction) -> None:
         """

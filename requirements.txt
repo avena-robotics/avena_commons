@@ -15,6 +15,7 @@ httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
 pytest
+asyncpg
 # Orbec SDK - poprawne markery dla wersji Pythona i platformy
 ./install/pyorbbecsdk-2.0.13-cp310-cp310-win_amd64.whl; platform_system=="Windows" and python_version>="3.10" and python_version<"3.11"
 ./install/pyorbbecsdk-2.0.13-cp310-cp310-linux_x86_64.whl; platform_system=="Linux" and python_version>="3.10" and python_version<"3.11"

@@ -22,6 +22,7 @@ from avena_commons.event_listener import (
     EventListenerState,
     Result,
 )
+from avena_commons.event_listener.types import CameraAction
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.vision.validation.transfor_to_base import transform_camera_to_base
 
@@ -178,7 +179,6 @@ class Camera(EventListener):
         Returns:
             bool: True jeśli zdarzenie zostało poprawnie przetworzone
         """
-
         match event.event_type:
             case "take_photo_box" | "take_photo_qr":
                 # Sprawdź czy kamera już przetwarza zdjęcie
@@ -413,13 +413,13 @@ class Camera(EventListener):
                     )
 
             case CameraState.RUNNING:
-                result = self.camera.get_last_result()
+                last_result = self.camera.get_last_result()
                 debug(
-                    f"Otrzymano wynik z run_postprocess_workers: result type: {type(result)}, result len: {len(result) if result else 0}, result: {result}",
+                    f"Otrzymano wynik z run_postprocess_workers: last_result type: {type(last_result)}, last_result len: {len(last_result) if last_result else 0}, last_result: {last_result}",
                     self._message_logger,
                 )
 
-                if result is not None:
+                if last_result is not None:
                     self.camera.stop()
 
                     # Turn off light after photo processing
@@ -428,6 +428,8 @@ class Camera(EventListener):
                     event: Event = self._find_and_remove_processing_event(
                         event=self._current_event
                     )
+                    
+                    camera_data = CameraAction(**event.data)
 
                     # Reset processing flag before sending response
                     self._is_processing_photo = False
@@ -436,26 +438,26 @@ class Camera(EventListener):
                         self._message_logger,
                     )
 
-                    if isinstance(result, dict) and any(
-                        v is not None for v in result.values()
+                    if isinstance(last_result, dict) and any(
+                        v is not None for v in last_result.values()
                     ):
                         # For QR photos, extract specific QR based on event data
-                        requested_qr = event.data.get("qr", 0)
-                        if requested_qr in result:
-                            qr_result = result.get(requested_qr)
+                        requested_qr = camera_data.qr
+                        if requested_qr in last_result:
+                            qr_result = last_result.get(requested_qr)
 
                             # Check if qr_result is not None
                             if qr_result is not None:
                                 # Check qr_rotation and modify result if needed
-                                qr_rotation = event.data.get("qr_rotation", False)
+                                qr_rotation = camera_data.qr_rotation
                                 position = transform_camera_to_base(
-                                    list(qr_result),  # Convert tuple to list
-                                    self.supervisor_position,
-                                    self.__camera_config["camera_tool_offset"],
+                                    item_pose=list(qr_result),  # Convert tuple to list
+                                    current_tcp=self.supervisor_position,
+                                    camera_tool_offset=self.__camera_config["camera_tool_offset"],
                                     is_rotation=qr_rotation,
                                 )
                                 event.result = Result(result="success")
-                                event.data = position
+                                event.data = CameraAction(waypoint=position).model_dump()
                                 debug(
                                     f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
                                     self._message_logger,
@@ -466,33 +468,31 @@ class Camera(EventListener):
                                     self._message_logger,
                                 )
                                 event.result = Result(result="failure")
-                                event.data = {}
                         else:
                             debug(
                                 f"Brak detekcji dla QR {requested_qr} w wyniku",
                                 self._message_logger,
                             )
                             event.result = Result(result="failure")
-                            event.data = {}
-                        await self._reply(event)
-                    elif isinstance(result, tuple) and len(result) > 0:
+                        
+                    elif isinstance(last_result, tuple) and len(last_result) > 0:
                         event.result = Result(result="success")
                         position = transform_camera_to_base(
-                            list(result),
+                            list(last_result),
                             self.supervisor_position,
                             self.__camera_config["camera_tool_offset"],
                         )
-                        event.data = position
+                        event.data = CameraAction(waypoint=position).model_dump()
                         debug(
-                            f"Zwrócono wynik dla BOX: position{position}, result: {result}",
+                            f"Zwrócono wynik dla BOX: position{position}, result: {last_result}",
                             self._message_logger,
                         )
-                        await self._reply(event)
                     else:
                         debug(
-                            f"Brak detekcji w wyniku. type: {type(result)}, len: {len(result) if result else 0}, result: {result}",
+                            f"Brak detekcji w wyniku. type: {type(last_result)}, len: {len(last_result) if last_result else 0}, last_result: {last_result}",
                             self._message_logger,
                         )
                         event.result = Result(result="failure")
-                        event.data = {}
-                        await self._reply(event)
+                        
+                    # SEND CURRENT EVENT REPLY
+                    await self._reply(event)
