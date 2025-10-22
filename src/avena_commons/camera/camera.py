@@ -22,7 +22,7 @@ from avena_commons.event_listener import (
     EventListenerState,
     Result,
 )
-from avena_commons.event_listener.types import CameraAction
+from avena_commons.event_listener.types import CameraAction, Waypoint
 from avena_commons.util.logger import MessageLogger, debug, error, info
 from avena_commons.vision.validation.transfor_to_base import transform_camera_to_base
 
@@ -460,7 +460,10 @@ class Camera(EventListener):
                                 )
                                 event.result = Result(result="success")
                                 event.data = CameraAction(
-                                    waypoint=position
+                                    waypoint=Waypoint(
+                                        waypoint_name="Photo_waypoint",
+                                        waypoint=position,
+                                    )
                                 ).model_dump()
                                 debug(
                                     f"Zwrócono wynik dla QR {requested_qr}: position{position}, qr_result: {qr_result}",
@@ -486,7 +489,11 @@ class Camera(EventListener):
                             self.supervisor_position,
                             self.__camera_config["camera_tool_offset"],
                         )
-                        event.data = CameraAction(waypoint=position).model_dump()
+                        event.data = CameraAction(
+                            waypoint=Waypoint(
+                                waypoint_name="Photo_waypoint", waypoint=position
+                            )
+                        ).model_dump()
                         debug(
                             f"Zwrócono wynik dla BOX: position{position}, result: {last_result}",
                             self._message_logger,
