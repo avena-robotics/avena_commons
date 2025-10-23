@@ -259,22 +259,29 @@ class Camera(EventListener):
             event (Event): Zdarzenie zawierające dane try_number i supervisor_number
 
         Returns:
-            int: Intensywność światła (0-100)
+            int: Intensywność światła (0-50) z krokiem co 5%
         """
         if hasattr(event, "data") and event.data:
             self.current_try_number = event.data.get("try_number", 0)
             self.current_supervisor_number = event.data.get("supervisor_number", 1)
             self.current_product_id = event.id
 
-            # Calculate light intensity based on try_number: [0,10,20,30,...,100] with %11
-            light_intensity = (self.current_try_number % 11) * 10
-            if light_intensity > 100:
-                light_intensity = 100
+            # Calculate light intensity from 0 to max 50 with step of 5%
+            # try_number 1-10 maps to 0%, 5%, 10%, 15%, 20%, 25%, 30%, 35%, 40%, 45%, then cycles
+            light_step = ((self.current_try_number - 1) % 11) * 5
+            light_intensity = min(light_step, 50)
 
             debug(
                 f"Camera: try_number={self.current_try_number}, light_intensity={light_intensity}%, supervisor={self.current_supervisor_number}",
                 self._message_logger,
             )
+        else:
+            light_intensity = 0
+            debug(
+                f"Camera: no event data provided, using default light_intensity={light_intensity}%",
+                self._message_logger,
+            )
+
         return light_intensity
 
     async def _send_light_event_to_supervisor(self, light_intensity: float):
