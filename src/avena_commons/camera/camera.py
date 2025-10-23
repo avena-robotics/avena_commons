@@ -450,6 +450,58 @@ class Camera(EventListener):
                     ):
                         # For QR photos, extract specific QR based on event data
                         requested_qr = camera_data.qr
+                        # MARK: CENTER QR
+                        # inna logika dla numeru QR = 0, to szukamy wtedy wykrytego QR , który jest najbliżej środka obrazu
+                        if requested_qr == 0:
+                            # Find the QR code closest to the center (1-4)
+                            min_dist = float("inf")
+                            qr_in_the_middle = None
+                            # Iterate over the items in the dictionary to find the QR code closest to center
+                            for key, values in last_result.items():
+                                if values is not None and len(values) > 1:
+                                    # Calculate distance from center using both X and Y coordinates
+                                    dist_from_center = (
+                                        values[0] ** 2 + values[1] ** 2
+                                    ) ** 0.5
+                                    # Compare the distance to the current minimum
+                                    if dist_from_center < min_dist:
+                                        min_dist = dist_from_center
+                                        if (
+                                            min_dist > 50
+                                        ):  # if the QR code is more than 50mm from center
+                                            qr_in_the_middle = None
+                                        else:
+                                            qr_in_the_middle = key
+                            # REMOVE ROTATION FROM QR DATA - we do not want to rotate TCP
+                            if qr_in_the_middle is not None:
+                                requested_qr = qr_in_the_middle
+                                requested_qr_data = last_result.get(requested_qr)
+                                if (
+                                    requested_qr_data is not None
+                                    and len(requested_qr_data) >= 6
+                                ):
+                                    # Zero out rotations while preserving the full 6-element tuple
+                                    last_result[requested_qr] = (
+                                        requested_qr_data[0],  # x
+                                        requested_qr_data[1],  # y
+                                        requested_qr_data[2],  # z
+                                        0.0,  # rx (zeroed)
+                                        0.0,  # ry (zeroed)
+                                        0.0,  # rz (zeroed)
+                                    )
+                                debug(
+                                    f"Detected QR closest to center is {requested_qr} at distance {min_dist}mm (rotation removed)",
+                                    self._message_logger,
+                                )
+                            else:
+                                debug(
+                                    f"No QR code close enough to center (within 50mm)",
+                                    self._message_logger,
+                                )
+                                event.result = Result(result="failure")
+                                await self._reply(event)
+                                return
+                        # MARK: ALL QR
                         if requested_qr in last_result:
                             qr_result = last_result.get(requested_qr)
 
