@@ -266,10 +266,10 @@ class Camera(EventListener):
             self.current_supervisor_number = event.data.get("supervisor_number", 1)
             self.current_product_id = event.id
 
-            # Calculate light intensity from 0 to max 50 with step of 5%
-            # try_number 1-10 maps to 0%, 5%, 10%, 15%, 20%, 25%, 30%, 35%, 40%, 45%, then cycles
-            light_step = ((self.current_try_number - 1) % 11) * 5
-            light_intensity = min(light_step, 50)
+            # Calculate light intensity from 0 to max 35 with step of 2%
+            # try_number 1-16 maps to 0%, 2%, 4%, 6%, 8%, 10%, 12%, 14%, 16%, 18%, 20%, 22%, 24%, 26%, 28%, 30%, 32%, 34%, then cycles
+            light_step = ((self.current_try_number - 1) % 17) * 2
+            light_intensity = min(light_step, 35)
 
             debug(
                 f"Camera: try_number={self.current_try_number}, light_intensity={light_intensity}%, supervisor={self.current_supervisor_number}",
@@ -467,7 +467,10 @@ class Camera(EventListener):
                                     if dist_from_center < min_dist:
                                         min_dist = dist_from_center
                                         if (
-                                            min_dist > 50
+                                            min_dist
+                                            > self.__camera_config.get(
+                                                "center_qr_distance", 50
+                                            )
                                         ):  # if the QR code is more than 50mm from center
                                             qr_in_the_middle = None
                                         else:
@@ -495,7 +498,7 @@ class Camera(EventListener):
                                 )
                             else:
                                 debug(
-                                    f"No QR code close enough to center (within 50mm)",
+                                    f"No QR code close enough to center (within {self.__camera_config.get('center_qr_distance', 50)}mm)",
                                     self._message_logger,
                                 )
                                 event.result = Result(result="failure")
