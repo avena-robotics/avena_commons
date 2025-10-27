@@ -867,7 +867,7 @@ class GeneralCameraWorker(Worker):
         )
         try:
             while True:
-                if pipe_in.poll(0.0001):
+                if pipe_in.poll(0.001):
                     data = pipe_in.recv()
                     response = None
                     match data[0]:
@@ -1060,19 +1060,6 @@ class GeneralCameraWorker(Worker):
                         if frames is None:
                             continue
                         self.last_frame = frames
-
-                    # color_image = frames["color"]
-                    # depth_image = frames["depth"]
-                    # debug(
-                    #     f"{self.device_name} - Pobrano ramki Koloru i Głębi w {ct.t * 1_000:.2f}ms",
-                    #     self._message_logger,
-                    # )
-                    # # przetwarzanie wizyjne
-                    # if self.postprocess_configuration and self.detector_name:
-                    #     debug(
-                    #         f"{self.device_name} - Postprocess available for detector: {self.detector_name}, with {len(self.postprocess_configuration)} configurations",
-                    #         message_logger=self._message_logger,
-                    #     )
 
                 await asyncio.sleep(0)  # yield control to event loop
 
