@@ -166,7 +166,7 @@ def box_detector(*, frame, camera_config, config):
 
     with Catchtime() as t10:
         filtered_contours = remove_edge_contours(
-            box_contours,  # FIXME: check if works?
+            contours,  # FIXME: check if works? should be box_contours?
             mask_undistorted.shape,
             config.get("edge_removal", {"edge_margin": 50}),
         )

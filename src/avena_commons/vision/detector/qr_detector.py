@@ -1,10 +1,11 @@
+import copy
+import os
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 import pkg_resources
-import os
-from datetime import datetime
 
 import avena_commons.vision.camera as camera
 import avena_commons.vision.image_preprocess as preprocess
@@ -103,6 +104,8 @@ def qr_detector(
         Exception: Wszystkie wyjątki są przechwytywane i logowane.
     """
     debug_data = {}
+
+    color_image = frame.get("color", None)
 
     with Catchtime() as total_time:
         try:
@@ -272,33 +275,33 @@ def qr_detector(
                     # Ustaw z = 0.0 dla wszystkich wykryć w przypadku błędu
                     for detection in detections:
                         detection.z = 0.0
+
             # Stwórz wizualizację wykrytych tagów
+            wizu_detection = copy.deepcopy(detections)
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                debug_dir = "temp/debug_frames_qr"
+                os.makedirs(debug_dir, exist_ok=True)
 
-            # try:
-            #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-            #     debug_dir = "temp/debug_frames_qr"
-            #     os.makedirs(debug_dir, exist_ok=True)
+                if detections and len(detections) > 0:
+                    detection_visualization = create_qr_detection_visualization(
+                        frame["color"], wizu_detection, timestamp, debug_dir
+                    )
 
-            #     # if detections and len(detections) > 0:
-            #     detection_visualization = create_qr_detection_visualization(
-            #         frame["color"], detections, timestamp, debug_dir
-            #     )
-            #     debug_data["qr_detection_visualization"] = detection_visualization
-            #     # print(f"DEBUG: Stworzono wizualizację dla {len(detections)} tagów")
-            #     # else:
-            #     # print("DEBUG: Brak tagów do wizualizacji")
+                else:
+                    if color_image:
+                        # Zapisz wizualizację
+                        vis_filename = (
+                            f"{debug_dir}/qr_detection_visualization_{timestamp}.jpg"
+                        )
+                        cv2.imwrite(vis_filename, color_image.copy())
 
-            # except Exception as viz_error:
-            #     error(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
+            except Exception as viz_error:
+                error(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
 
-            debug(
-                f"QR DETECTOR: Successfully processed mode '{mode}', found {len(detections) if detections else 0} detections"
-            )
             return detections, debug_data
 
         except Exception as e:
-            # error(f"QR DETECTOR: Unexpected error: {e}")
-            # error(f"QR DETECTOR: Traceback: {traceback.format_exc()}")
             return None, debug_data
 
 

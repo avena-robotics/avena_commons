@@ -25,7 +25,6 @@ from avena_commons.camera.driver.general import (
     GeneralCameraConnector,
     GeneralCameraWorker,
 )
-
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
 
@@ -66,9 +65,9 @@ class OrbecGemini335LeWorker(GeneralCameraWorker):
         self.__camera_ip = camera_ip
         # NIE przechowuj MessageLogger - zostanie przekazany przez args w _run, jako lokalny dla workera
         self._message_logger = None
-        self.device_name = f"OrbecGemini335Le_{camera_ip}"
         super().__init__(message_logger=None)
 
+        self.device_name = f"OrbecGemini335Le_{camera_ip}"
         self.align_filter = None
         self.spatial_filter = None
         self.temporal_filter = None

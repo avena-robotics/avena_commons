@@ -101,6 +101,7 @@ class GeneralCameraWorker(Worker):
         self._message_logger = None
         self.device_name = f"GeneralCamera"
         super().__init__(message_logger=None)
+
         self.state = CameraState.IDLE
 
         self.last_frame = None
@@ -854,7 +855,7 @@ class GeneralCameraWorker(Worker):
 
         # Utwórz lokalny logger dla tego procesu
         self._message_logger = MessageLogger(
-            filename=f"temp/camera_worker.log",
+            filename=f"temp/camera_worker_{self.device_name}.log",
             debug=True,
             period=LoggerPolicyPeriod.LAST_15_MINUTES,
             files_count=10,
