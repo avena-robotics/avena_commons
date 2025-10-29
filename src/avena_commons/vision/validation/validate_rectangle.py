@@ -31,12 +31,14 @@ def validate_rectangle(rect, box, image, config):  # MARK: VALIDATE RECT
         ... }
         >>> is_valid = validate_rectangle(rect, box, image, config)
     """
-    if rect[1][0] > rect[1][1]:
-        long = rect[1][0]
-        short = rect[1][1]
-    else:
-        long = rect[1][1]
-        short = rect[1][0]
+    # if rect[1][0] > rect[1][1]:
+    #     long = rect[1][0]
+    #     short = rect[1][1]
+    # else:
+    #     long = rect[1][1]
+    #     short = rect[1][0]
+    long = [1][0]
+    short = [1][1]  # simplified
 
     # 0. check if box is not too small or too big
     if long < 400 or long > 850 or short < 300 or short > 500:

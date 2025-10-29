@@ -72,7 +72,7 @@ class Camera(EventListener):
                 "Brak wymaganej zmiennej środowiskowej CAMERA_LISTENER_PORT"
             )
 
-        self._check_local_data_frequency = 1
+        self.check_local_data_frequency: int = 1  # Hz
         self.name = name
 
         super().__init__(

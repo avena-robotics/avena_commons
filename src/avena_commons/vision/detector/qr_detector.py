@@ -277,27 +277,27 @@ def qr_detector(
                         detection.z = 0.0
 
             # Stwórz wizualizację wykrytych tagów
-            wizu_detection = copy.deepcopy(detections)
-            try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-                debug_dir = "temp/debug_frames_qr"
-                os.makedirs(debug_dir, exist_ok=True)
+            # wizu_detection = copy.deepcopy(detections)
+            # try:
+            #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            #     debug_dir = "temp/debug_frames_qr"
+            #     os.makedirs(debug_dir, exist_ok=True)
 
-                if detections and len(detections) > 0:
-                    detection_visualization = create_qr_detection_visualization(
-                        frame["color"], wizu_detection, timestamp, debug_dir
-                    )
+            #     if detections and len(detections) > 0:
+            #         detection_visualization = create_qr_detection_visualization(
+            #             frame["color"], wizu_detection, timestamp, debug_dir
+            #         )
 
-                else:
-                    if color_image:
-                        # Zapisz wizualizację
-                        vis_filename = (
-                            f"{debug_dir}/qr_detection_visualization_{timestamp}.jpg"
-                        )
-                        cv2.imwrite(vis_filename, color_image.copy())
+            #     else:
+            #         if color_image:
+            #             # Zapisz wizualizację
+            #             vis_filename = (
+            #                 f"{debug_dir}/qr_detection_visualization_{timestamp}.jpg"
+            #             )
+            #             cv2.imwrite(vis_filename, color_image.copy())
 
-            except Exception as viz_error:
-                error(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
+            # except Exception as viz_error:
+            #     error(f"DEBUG: Błąd podczas tworzenia wizualizacji: {viz_error}")
 
             return detections, debug_data
 

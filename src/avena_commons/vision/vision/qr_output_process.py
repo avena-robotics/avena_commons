@@ -1,6 +1,3 @@
-
-
-
 def qr_output_process(detection_list: list, middle_point_y: int = 540) -> dict:
     """Przetwarza listę detekcji QR i organizuje je w siatce 2x2.
 
