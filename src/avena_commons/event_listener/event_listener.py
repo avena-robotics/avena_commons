@@ -1539,6 +1539,10 @@ class EventListener:
         - STOPPED: "Service stopped" - odrzuca eventy biznesowe
         - ON_ERROR: Brak przetwarzania, automatyczne przekierowanie
         """
+
+        if event.source == "orchestrator":
+            return await self._analyze_orchestrator_event(event)
+
         match self.__fsm_state:
             case EventListenerState.RUN:
                 # RUN: Pełne przetwarzanie wszystkich eventów - wywołanie logiki potomnych
@@ -1669,6 +1673,22 @@ class EventListener:
         Returns:
             bool: True jeśli event powinien być usunięty, False jeśli zachowany
         """
+        return True  # Domyślnie usuwamy event po przetworzeniu
+
+    async def _analyze_orchestrator_event(self, event: Event) -> bool:
+        """Metoda do przedefiniowania w klasach potomnych dla logiki biznesowej.
+
+        Wywoływana dla eventów z orchestratora.
+
+        Args:
+            event (Event): Event do analizy
+
+        Returns:
+            bool: True jeśli event powinien być usunięty, False jeśli zachowany
+        """
+        warning(
+            f"Przyszedł custom event z orchestratora, debug Event Listener. event type: {event.type}"
+        )
         return True  # Domyślnie usuwamy event po przetworzeniu
 
     async def _check_local_data(self):
