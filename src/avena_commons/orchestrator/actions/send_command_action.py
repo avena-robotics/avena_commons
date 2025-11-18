@@ -98,12 +98,18 @@ class SendCommandAction(BaseAction):
         if "target" in action_config and action_config["target"] == "@all":
             target_clients.extend(context.clients)
 
-        # Sprawdź pojedynczy komponent
+        # Sprawdź pojedynczy komponent lub wiele komponentów
         elif "client" in action_config and action_config["client"]:
-            client_name = self._resolve_template_variables(
-                action_config["client"], context
-            )
-            target_clients.append(client_name)
+            clients = action_config["client"]
+            if isinstance(clients, list):
+                for client_name in clients:
+                    resolved_name = self._resolve_template_variables(
+                        client_name, context
+                    )
+                    target_clients.append(resolved_name)
+            else:
+                client_name = self._resolve_template_variables(clients, context)
+                target_clients.append(client_name)
 
         # Sprawdź pojedynczą grupę
         elif "group" in action_config and action_config["group"]:

@@ -37,11 +37,17 @@ def validate_rectangle(rect, box, image, config):  # MARK: VALIDATE RECT
     # else:
     #     long = rect[1][1]
     #     short = rect[1][0]
+    
     long = rect[1][0]
-    short = rect[1][1]  # simplified
+    short = rect[1][1]  # simplified #TO jest żle zależne of obrotu pudełka gdy jest większe od 45 stopni to long i short się zamieniają
+
+    angle = rect[2]
+    if angle > 45:
+        long, short = short, long  # swap
+        print("Swapped sides due to angle:", angle)
 
     # 0. check if box is not too small or too big
-    if long < 400 or long > 850 or short < 300 or short > 500:
+    if long < config["side_length"]["long"][0] or long > config["side_length"]["long"][1] or short < config["side_length"]["short"][0] or short > config["side_length"]["short"][1]:
         return False
 
     ratio = long / short
@@ -58,7 +64,6 @@ def validate_rectangle(rect, box, image, config):  # MARK: VALIDATE RECT
         return (False,)
 
     # 3. check box angle
-    angle = rect[2]
     if angle == 45:
         return False
     if angle < 45 and angle > config["max_angle"]:

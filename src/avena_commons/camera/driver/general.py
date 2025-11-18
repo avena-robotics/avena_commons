@@ -112,6 +112,7 @@ class GeneralCameraWorker(Worker):
         )
         self.executor = None
         self.last_result = None
+        self.current_expected_qr = 0
         self.image_processing_workers = []
 
     @property
@@ -496,7 +497,7 @@ class GeneralCameraWorker(Worker):
                         actual_detections = sum(
                             1 for v in results.values() if v is not None
                         )
-                        if actual_detections == 4:
+                        if actual_detections == self.current_expected_qr:
                             debug(
                                 f"QR: Otrzymano pełny zestaw detekcji z config_{config_id}",
                                 self._message_logger,
@@ -1203,7 +1204,7 @@ class GeneralCameraConnector(Connector):
             return value
 
     def set_postprocess_configuration(
-        self, *, detector: str = None, configuration: list = None
+        self, *, detector: str = None, configuration: list = None, qr_number: int = 0
     ):
         """Ustaw konfigurację postprocess oraz nazwę detektora.
 
@@ -1221,6 +1222,20 @@ class GeneralCameraConnector(Connector):
             True
         """
         with self.__lock:
+            match qr_number:
+                case 0:
+                    self.current_expected_qr = 1
+                case 1:
+                    self.current_expected_qr = 4
+                case 2:
+                    self.current_expected_qr = 3
+                case 3:  
+                    self.current_expected_qr = 2
+                case 4:  
+                    self.current_expected_qr = 1
+                case _: 
+                    self.current_expected_qr = 0
+
             value = super()._send_thru_pipe(
                 self._pipe_out,
                 ["SET_POSTPROCESS_CONFIGURATION", detector, configuration],

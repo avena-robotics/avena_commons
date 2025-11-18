@@ -44,6 +44,8 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     opened_kernel_type = config["opened_kernel_type"]
     closed_kernel_type = config["closed_kernel_type"]
 
+    debug_preprocess = {}
+
     # Walidacja parametrów
     if not isinstance(blur_size, (int, float)):
         raise ValueError(f"blur_size musi być liczbą, otrzymano: {type(blur_size)}")
@@ -96,6 +98,8 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     _, mask_smoothed = cv2.threshold(
         blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
+    debug_preprocess["mask_blurred"] = blurred
+    debug_preprocess["mask_smoothed"] = mask_smoothed
 
     kernel_opened = cv2.getStructuringElement(
         opened_kernel_type, (opened_size[0], opened_size[1])
@@ -103,11 +107,15 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     mask_opened = cv2.morphologyEx(
         mask_smoothed, cv2.MORPH_OPEN, kernel_opened, iterations=opened_iterations
     )
+    
+    debug_preprocess["mask_opened"] = mask_opened
+    
     kernel_closed = cv2.getStructuringElement(
         closed_kernel_type, (closed_size[0], closed_size[1])
     )
     mask_closed = cv2.morphologyEx(
         mask_opened, cv2.MORPH_CLOSE, kernel_closed, iterations=closed_iterations
     )
+    debug_preprocess["mask_closed"] = mask_closed
 
-    return mask_closed
+    return mask_closed, debug_preprocess

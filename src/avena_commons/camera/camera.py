@@ -219,6 +219,7 @@ class Camera(EventListener):
                     self.camera.set_postprocess_configuration(
                         detector="qr_detector",
                         configuration=self.__pipelines_config["qr_detector"],
+                        qr_number = event.data.get("qr", 1)
                     )
 
             case "current_position":

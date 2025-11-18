@@ -106,6 +106,7 @@ def qr_detector(
     debug_data = {}
 
     color_image = frame.get("color", None)
+    depth_image = frame.get("depth", None)
 
     with Catchtime() as total_time:
         try:
@@ -130,6 +131,19 @@ def qr_detector(
                     return None, debug_data
 
             # debug(f"QR DETECTOR: Detector ready in {t.ms:.4f} ms")
+            
+            # Zapisz ramki do debugowania
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            debug_dir = "temp/debug_frames"
+            os.makedirs(debug_dir, exist_ok=True)
+
+            # # Zapisz obraz kolorowy
+            color_filename = f"{debug_dir}/{timestamp}_qr_color_frame.jpg"
+            cv2.imwrite(color_filename, color_image)
+            
+            depth_raw_filename = f"{debug_dir}/{timestamp}_qr_depth_frame_.npy"
+            np.save(depth_raw_filename, depth_image)
+
 
             # Przygotowanie parametrów kamery
             try:

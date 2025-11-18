@@ -65,8 +65,8 @@ def box_detector(*, frame, camera_config, config):
     os.makedirs(debug_dir, exist_ok=True)
 
     # # Zapisz obraz kolorowy
-    # color_filename = f"{debug_dir}/color_frame_{timestamp}.jpg"
-    # cv2.imwrite(color_filename, color_image)
+    color_filename = f"{debug_dir}/{timestamp}_box_color_frame.jpg"
+    cv2.imwrite(color_filename, color_image)
 
     # Zapisz obraz głębi (skonwertowany do 8-bit dla lepszej wizualizacji)
     # depth_normalized = cv2.normalize(
@@ -76,8 +76,8 @@ def box_detector(*, frame, camera_config, config):
     # cv2.imwrite(depth_filename, depth_normalized)
 
     # Zapisz także raw depth jako numpy array
-    # depth_raw_filename = f"{debug_dir}/depth_raw_{timestamp}.npy"
-    # np.save(depth_raw_filename, depth_image)
+    depth_raw_filename = f"{debug_dir}/{timestamp}_box_depth_frame_.npy"
+    np.save(depth_raw_filename, depth_image)
 
     # print(f"DEBUG: Zapisano ramki do {debug_dir}/")
     # print(
@@ -145,8 +145,9 @@ def box_detector(*, frame, camera_config, config):
         return None, None, None, None, detect_image, debug_data
 
     with Catchtime() as t6:
-        mask_preprocessed = preprocess_mask(mask_combined, config["preprocess"])
+        mask_preprocessed, debug_preprocess = preprocess_mask(mask_combined, config["preprocess"])
         debug_data["box_mask_preprocessed"] = mask_preprocessed
+        debug_data["debug_preprocess"] = debug_preprocess
 
     with Catchtime() as t7:
         mask_undistorted = preprocess.undistort(
