@@ -351,6 +351,13 @@ class IO_server(EventListener):
             self._add_to_processing(event)
         return True
 
+    async def _analyze_orchestrator_event(self, event: Event) -> bool:
+        debug(
+            f"Analyzing Orchestrator event {event.event_type} default -> move to analyze_event",
+            message_logger=self._message_logger,
+        )
+        return self._analyze_event(event)
+
     async def device_selector(self, event: Event) -> bool:
         """
         Wybiera właściwe urządzenie wirtualne na podstawie danych zdarzenia i typu akcji.
@@ -871,7 +878,7 @@ class IO_server(EventListener):
                             if hasattr(dev, "_stop_event"):
                                 getattr(dev, "_stop_event").set()
                                 stop_events_set += 1
-                            
+
                             if stop_events_set > 0 and self._debug:
                                 debug(
                                     f"physical_device {dname}: set {stop_events_set} stop events",
@@ -896,13 +903,13 @@ class IO_server(EventListener):
                                             threads_joined += 1
                                 except Exception:
                                     pass
-                            
+
                             if threads_joined > 0 and self._debug:
                                 debug(
                                     f"physical_device {dname}: joined {threads_joined} threads",
                                     message_logger=self._message_logger,
                                 )
-                            
+
                             # Krótka pauza po zatrzymaniu wątków, by dać im czas na zakończenie
                             if threads_joined > 0:
                                 time.sleep(0.1)

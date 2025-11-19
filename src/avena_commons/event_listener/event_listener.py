@@ -1687,7 +1687,7 @@ class EventListener:
             bool: True jeśli event powinien być usunięty, False jeśli zachowany
         """
         warning(
-            f"Przyszedł custom event z orchestratora, debug Event Listener. event type: {event.type}"
+            f"Przyszedł custom event z orchestratora, debug Event Listener. event type: {event.event_type}"
         )
         return True  # Domyślnie usuwamy event po przetworzeniu
 
