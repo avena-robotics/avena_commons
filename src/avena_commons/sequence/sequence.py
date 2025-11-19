@@ -413,6 +413,10 @@ class Sequence(BaseModel):
             bool: True jeśli restart został wykonany, False w przeciwnym razie.
         """
         if not self.should_restart(message_logger=message_logger):
+            debug(
+                f"Warunki restartu nie spełnione, pomijam restart sekwencji, should_restart: {self.should_restart}",
+                message_logger=message_logger,
+            )
             return False
 
         info(
@@ -458,9 +462,18 @@ class Sequence(BaseModel):
             step_id (int): Numer kroku, do którego ma zostać zresetowana sekwencja.
             message_logger (MessageLogger | None): Logger do zapisywania komunikatów.
         """
+        debug(
+            f"Wymuszanie restartu sekwencji {self.sequence_enum} do kroku {step_id} dla produktu {self.produkt_id}",
+            message_logger=message_logger,
+        )
         self.restart_target_step = step_id
         self.set_restart(True, message_logger)
         self.set_can_restart(True, message_logger)
+
+        debug(
+            f"Ustawionpo restart_target_step={step_id}, restart=True, can_restart=True",
+            message_logger=message_logger,
+        )
         self.restart_sequence(message_logger)
 
     def set_restart_target_step(
