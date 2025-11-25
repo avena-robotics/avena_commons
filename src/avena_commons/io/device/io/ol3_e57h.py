@@ -19,10 +19,13 @@ class OL3_E57H_FSM(Enum):
     IDLE = 0
     STARTING = 1
     OPERATIONAL = 2
-    IN_PROFILE_VELOCITY = 3
-    STOPPING = 4
-    ERROR = 5
-    UNKNOWN = 6
+    START_PROFILE_VELOCITY = 3
+    IN_PROFILE_VELOCITY = 4
+    START_PROFILE_POSITION = 5
+    IN_PROFILE_POSITION = 6
+    STOPPING = 7
+    ERROR = 8
+    UNKNOWN = 9
     
 class OL3_E57H_Slave(EtherCatSlave):
     
@@ -81,12 +84,16 @@ class OL3_E57H_Slave(EtherCatSlave):
     
     def _config_function(self, slave_pos):
         #setting io
-        self.master.slaves[slave_pos].sdo_write(0x2510, 0, struct.pack('<H', 0))#9))
-        self.master.slaves[slave_pos].sdo_write(0x2511, 0, struct.pack('<H', 0))#10))
+        self.master.slaves[slave_pos].sdo_write(0x2510, 0, struct.pack('<H', 9))
+        self.master.slaves[slave_pos].sdo_write(0x2511, 0, struct.pack('<H', 10))
         self.master.slaves[slave_pos].sdo_write(0x2512, 0, struct.pack('<H', 11))
-        self.master.slaves[slave_pos].sdo_write(0x2513, 0, struct.pack('<H', 0))#12))
+        self.master.slaves[slave_pos].sdo_write(0x2513, 0, struct.pack('<H', 12))
         self.master.slaves[slave_pos].sdo_write(0x2514, 0, struct.pack('<H', 13))
         self.master.slaves[slave_pos].sdo_write(0x2515, 0, struct.pack('<H', 14))
+        
+        self.master.slaves[slave_pos].sdo_write(0x2520, 0, struct.pack('<H', 9))
+        self.master.slaves[slave_pos].sdo_write(0x2521, 0, struct.pack('<H', 10))
+        self.master.slaves[slave_pos].sdo_write(0x2522, 0, struct.pack('<H', 11))
         
         self.master.slaves[slave_pos].sdo_write(0x2500, 0, struct.pack('<H', 0))
         #PDO Mapping for OL3-E57H
@@ -95,6 +102,8 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.master.slaves[slave_pos].sdo_write(0x1600, 0, struct.pack('B', 0))
         self.master.slaves[slave_pos].sdo_write(0x1A00, 0, struct.pack('B', 0))
         
+        self.master.slaves[slave_pos].sdo_write(0x2201, 0, struct.pack('<H', 1))  # Modes of Operation: Profile Position Mode (1), Profile Velocity Mode (3), Homing Mode (6), Cyclic Synchronous Position Mode (8)
+
         rx_entries = [
             {"index": 0x6040, "subindex": 0x00, "bitlength": 0x10},  # Control Word
             {"index": 0x6060, "subindex": 0x00, "bitlength": 0x08},  # Modes of Operation
@@ -103,6 +112,8 @@ class OL3_E57H_Slave(EtherCatSlave):
             {"index": 0x6081, "subindex": 0x00, "bitlength": 0x20},  # Profile Velocity
             {"index": 0x6083, "subindex": 0x00, "bitlength": 0x20},  # Profile Acceleration
             {"index": 0x6084, "subindex": 0x00, "bitlength": 0x20},  # Profile Deceleration
+            {"index": 0x60FE, "subindex": 0x01, "bitlength": 0x10},  # Physical Output
+            {"index": 0x60FE, "subindex": 0x02, "bitlength": 0x10},  # Bit Mask
         ]
         
         for subindex, content in enumerate(rx_entries, start=1):
@@ -116,6 +127,7 @@ class OL3_E57H_Slave(EtherCatSlave):
             {"index": 0x6064, "subindex": 0x00, "bitlength": 0x20},  # Position Actual Value
             {"index": 0x606C, "subindex": 0x00, "bitlength": 0x20},  # Velocity Actual Value WAŻNE - sterownik w trybie open_loop nie zwraca prędkości
             {"index": 0x60FD, "subindex": 0x00, "bitlength": 0x20},  # Input Values
+            {"index": 0x603F, "subindex": 0x00, "bitlength": 0x10},  # Error Code
         ]
         
         for subindex, content in enumerate(tx_entries, start=1):
@@ -144,7 +156,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         # i = Position (signed int, 4 bytes)
         # i = Velocity (signed int, 4 bytes)
         # H = Input Values (unsigned short, 2 bytes)
-        pdo_format = '<Hbiii'
+        pdo_format = '<HbiiiH'
 
         # Check if data has the expected length before unpacking
         expected_length = struct.calcsize(pdo_format)
@@ -167,7 +179,19 @@ class OL3_E57H_Slave(EtherCatSlave):
             # print(f"Actual Position: {self.actual_position}")
             # print(f"Actual Velocity: {self.actual_velocity}")
             print(f"Input Values: {self.input_values}")
-
+            
+            # STATUS WORD BITS
+            # Bit 0: Ready to start
+            # Bit 1: Start
+            # Bit 2: Enable
+            # Bit 3: Error
+            # Bit 4: Power on
+            # Bit 5: Quick Stop
+            # Bit 6: Not Started
+            # Bit 9: Remote
+            # Bit 10:  0 target not reached, 1 target reached
+            # Bit 12: Mode specific
+            
         else:
             print(f"Error: Input data length ({len(input_data)}) does not match expected ({expected_length})")
         
@@ -184,7 +208,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         # self.prof_accel = 0
         # self.prof_decel = 0
         
-        pdo_format = '<HbiiIII'
+        pdo_format = '<HbiiIIIHH'
 
 
         # print(f"Target Velocity: {self.target_vel}, Profile Velocity: {self.prof_vel}, Profile Accel: {self.prof_accel}, Profile Decel: {self.prof_decel}, control word: {self.control_word}, mode: {self.mode}")
@@ -198,7 +222,9 @@ class OL3_E57H_Slave(EtherCatSlave):
             self.target_vel,
             self.prof_vel,
             self.prof_accel,
-            self.prof_decel
+            self.prof_decel,
+            0,
+            0
         )
         
         self.master.slaves[self.address].output = output_data
@@ -223,34 +249,26 @@ class OL3_E57H_Slave(EtherCatSlave):
                 # self.run_jog(speed=-1000, accel=100, decel=100)
                 # self.save_position = self.actual_position
                 
-                    
-                # print(self.read_input(port=1))
-                # print(self.read_input(port=2))
-                # print(self.read_input(port=3))
-                # print(self.read_input(port=4))
-                # print(self.read_input(port=5))
-                # print(self.read_input(port=6))
                 pass
-                
+            case OL3_E57H_FSM.START_PROFILE_VELOCITY:
+                if self.mode_display == 3:  # Profile Velocity Mode
+                    self.fsm = OL3_E57H_FSM.IN_PROFILE_VELOCITY
+                    print(f"{self.device_name}: Entered Profile Velocity Mode.")
                 
             case OL3_E57H_FSM.IN_PROFILE_VELOCITY:
                 # pass
                 # self.check_io_config()
                 # print(f"{self.device_name}: Running in Profile Velocity Mode at target velocity {self.target_vel}.")
-                # ODCZYT DEBUGGERSKI PRZEZ SDO
-                # try:
-                #     sdo_velocity_bytes = self.master.slaves[self.address].sdo_read(0x2100, 0x00)
-                #     sdo_velocity = struct.unpack('<H', sdo_velocity_bytes)[0]
-                #     print(f"{self.device_name}: SDO Read - 0x2100: {sdo_velocity}")
-                # except Exception as e:
-                #     print(f"{self.device_name}: SDO Read Error: {e}")
-                
-                
-                # if abs(self.save_position - self.actual_position) > 5000:
-                #     print(f"{self.device_name}: Significant position change detected. Stopping drive.")
-                #     self.stop()
+
                 pass
-                
+            case OL3_E57H_FSM.START_PROFILE_POSITION:
+                if self.mode_display == 1:  # Profile Position Mode
+                    self.fsm = OL3_E57H_FSM.IN_PROFILE_POSITION
+                    print(f"{self.device_name}: Entered Profile Position Mode.")
+            
+            case OL3_E57H_FSM.IN_PROFILE_POSITION:
+                pass
+            
             case OL3_E57H_FSM.STOPPING:
                 if self.is_stopped():
                     self.fsm = OL3_E57H_FSM.OPERATIONAL
@@ -346,16 +364,31 @@ class OL3_E57H_Slave(EtherCatSlave):
         # 2. Ustaw parametry ruchu
         self.prof_vel = abs(speed)
         self.target_vel = speed
-        self.prof_accel = 4*abs(speed) #accel
+        self.prof_accel = 4*abs(speed) #accel # change to accel and decel
         self.prof_decel = 4*abs(speed) #decel
         
         # 3. Control Word: Enable Operation (Bit 3=1) + HALT=0 (Bit 8=0)
         # 0x000F = 0000 0000 0000 1111
         self.control_word = 0x000F
         self.fsm = OL3_E57H_FSM.IN_PROFILE_VELOCITY
+        
+    def run_absolute_position(self, position: int, vel: int, accel: int, decel: int):
+        self.mode = 1  # Profile Position Mode
+        self.target_pos = position
+        self.prof_vel = vel
+        self.prof_accel = accel
+        self.prof_decel = decel
+        self.absolute_flag = True
     
+    def run_relative_position(self, offset: int, vel: int, accel: int, decel: int):
+        self.mode = 1  # Profile Position Mode
+        self.target_pos = self.actual_position
+        self.prof_vel = vel
+        self.prof_accel = accel
+        self.prof_decel = decel
+        
     def stop_motor(self):
-        if self.fsm != OL3_E57H_FSM.IN_PROFILE_VELOCITY:
+        if self.fsm != OL3_E57H_FSM.IN_PROFILE_VELOexCITY:
             print(f"{self.device_name}: Drive not operational. Cannot run jog.")
             return
         
@@ -388,9 +421,22 @@ class OL3_E57H_Slave(EtherCatSlave):
         
         return is_active
     
+    def set_output(self, port, state: bool):
+        pass
+    
     def is_motor_running(self) -> bool:
         """Sprawdza Bit 0 w Status Word (Switch On Status)"""
         return self.fsm == OL3_E57H_FSM.IN_PROFILE_VELOCITY
+    
+    def reset_fault(self):
+        if self.cia402_state != cia402_states.FAULT:
+            print(f"{self.device_name}: Drive not in FAULT state. No need to reset.")
+            return
+        
+        self.control_word = 0x0080  # Clear Fault
+        print(f"{self.device_name}: Resetting fault.")
+        info(f"{self.device_name}: Resetting fault.", self.message_logger)
+        self.fsm = OL3_E57H_FSM.IDLE
         
 
 class OL3_E57H(EtherCatDevice):
