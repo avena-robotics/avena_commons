@@ -5,7 +5,7 @@ import traceback
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from .. import modbus_check_device_connection
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class N4AIA04(PhysicalDeviceBase):
@@ -295,7 +295,7 @@ class N4AIA04(PhysicalDeviceBase):
         # First check FSM health
         if not self.check_health():
             return False
-        
+
         # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,

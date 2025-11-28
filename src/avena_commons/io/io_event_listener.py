@@ -487,10 +487,12 @@ class IO_server(EventListener):
                                         # Collect error info but don't escalate immediately
                                         if not hasattr(self, "_virtual_device_errors"):
                                             self._virtual_device_errors = {}
-                                        
+
                                         # Get failed physical devices metadata from virtual device
-                                        failed_physical = getattr(device, "_failed_physical_devices", {})
-                                        
+                                        failed_physical = getattr(
+                                            device, "_failed_physical_devices", {}
+                                        )
+
                                         self._virtual_device_errors[device_name] = {
                                             "error_message": device._error_message,
                                             "failed_physical_devices": failed_physical.copy(),
@@ -556,7 +558,7 @@ class IO_server(EventListener):
                 )
                 self._change_fsm_state(EventListenerState.ON_ERROR)
                 return
-            
+
             # === AGGREGATE AND ESCALATE VIRTUAL DEVICE ERRORS ===
             # After processing all devices, check if any reported errors and escalate once
             if hasattr(self, "_virtual_device_errors") and self._virtual_device_errors:
@@ -564,44 +566,56 @@ class IO_server(EventListener):
                 # to avoid duplicate error messages for same physical device
                 all_failed_physical = {}
                 virtual_errors_summary = []
-                
+
                 for vdev_name, error_info in self._virtual_device_errors.items():
                     virtual_errors_summary.append(
                         f"{vdev_name}: {error_info.get('error_message', 'Unknown error')}"
                     )
-                    
+
                     # Collect unique physical device failures
-                    for phys_name, phys_info in error_info.get("failed_physical_devices", {}).items():
+                    for phys_name, phys_info in error_info.get(
+                        "failed_physical_devices", {}
+                    ).items():
                         if phys_name not in all_failed_physical:
                             all_failed_physical[phys_name] = {
                                 "state": phys_info.get("state", "ERROR"),
-                                "error_message": phys_info.get("error_message", "Unknown"),
+                                "error_message": phys_info.get(
+                                    "error_message", "Unknown"
+                                ),
                                 "device_type": phys_info.get("device_type", "Unknown"),
                                 "affected_virtual_devices": [vdev_name],
                             }
                         else:
                             # Same physical device failed in multiple virtual devices
-                            all_failed_physical[phys_name]["affected_virtual_devices"].append(vdev_name)
-                
+                            all_failed_physical[phys_name][
+                                "affected_virtual_devices"
+                            ].append(vdev_name)
+
                 # Build comprehensive error message
                 error_parts = []
-                error_parts.append(f"Virtual device errors detected ({len(self._virtual_device_errors)} devices):")
+                error_parts.append(
+                    f"Virtual device errors detected ({len(self._virtual_device_errors)} devices):"
+                )
                 for summary in virtual_errors_summary:
                     error_parts.append(f"  - {summary}")
-                
+
                 if all_failed_physical:
-                    error_parts.append(f"\nRoot cause - Failed physical devices ({len(all_failed_physical)}):")
+                    error_parts.append(
+                        f"\nRoot cause - Failed physical devices ({len(all_failed_physical)}):"
+                    )
                     for phys_name, phys_info in all_failed_physical.items():
                         affected = phys_info["affected_virtual_devices"]
                         error_parts.append(
                             f"  - {phys_name} ({phys_info['device_type']}): {phys_info['state']} - {phys_info['error_message']}"
                         )
                         if len(affected) > 1:
-                            error_parts.append(f"    Affects {len(affected)} virtual devices: {', '.join(affected)}")
-                
+                            error_parts.append(
+                                f"    Affects {len(affected)} virtual devices: {', '.join(affected)}"
+                            )
+
                 self._error = True
                 self._error_message = "\n".join(error_parts)
-                
+
                 if self.fsm_state not in {
                     EventListenerState.ON_ERROR,
                     EventListenerState.FAULT,
@@ -611,7 +625,7 @@ class IO_server(EventListener):
                         message_logger=self._message_logger,
                     )
                     self._change_fsm_state(EventListenerState.ON_ERROR)
-                    
+
                 # Clear for next iteration
                 self._virtual_device_errors = {}
                 return
@@ -1876,10 +1890,16 @@ class IO_server(EventListener):
                         vdev_name: {
                             "state": "ERROR",
                             "error_message": error_info.get("error_message", "Unknown"),
-                            "failed_physical_devices": error_info.get("failed_physical_devices", {}),
+                            "failed_physical_devices": error_info.get(
+                                "failed_physical_devices", {}
+                            ),
                         }
-                        for vdev_name, error_info in getattr(self, "_virtual_device_errors", {}).items()
-                    } if hasattr(self, "_virtual_device_errors") else {},
+                        for vdev_name, error_info in getattr(
+                            self, "_virtual_device_errors", {}
+                        ).items()
+                    }
+                    if hasattr(self, "_virtual_device_errors")
+                    else {},
                 },
                 "virtual_devices": {},
                 "buses": {},

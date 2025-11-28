@@ -4,7 +4,7 @@ import traceback
 
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class URM14(PhysicalDeviceBase):

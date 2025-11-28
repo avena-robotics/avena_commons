@@ -13,7 +13,6 @@ from .utils_functions import (
 # MARK: PEPPER PRESENCE
 
 
-
 def pepper_presence(rgb, nozzle_mask, section="top_left"):
     # TODO: podzielić na dwie funkcje: pepper_presence i pepper_mask
     debug = {}

@@ -119,15 +119,27 @@ class R3(EtherCatDevice):
     """
 
     def __init__(
-        self, bus, address, message_logger: MessageLogger | None = None, debug=True,
-        max_consecutive_errors: int = 3
+        self,
+        bus,
+        address,
+        message_logger: MessageLogger | None = None,
+        debug=True,
+        max_consecutive_errors: int = 3,
     ):
         product_code = 4353  # TODO: CHANGE THIS
         vendor_code = 2965  # TODO: CHANGE THIS
         # Minimalna konfiguracja z device_name
         configuration = {"device_name": f"R3_{address}"}
-        super().__init__(bus, vendor_code, product_code, address, configuration, 
-                         message_logger, debug, max_consecutive_errors)
+        super().__init__(
+            bus,
+            vendor_code,
+            product_code,
+            address,
+            configuration,
+            message_logger,
+            debug,
+            max_consecutive_errors,
+        )
         self.inputs_ports = [0 for _ in range(16)]
         self.outputs_ports = [0 for _ in range(16)]
 

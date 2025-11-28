@@ -5,7 +5,7 @@ from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from .. import modbus_check_device_connection
 from ..io_utils import init_device_di, init_device_do
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class DSR(PhysicalDeviceBase):
@@ -561,7 +561,7 @@ class DSR(PhysicalDeviceBase):
         # First check FSM health
         if not self.check_health():
             return False
-        
+
         # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,

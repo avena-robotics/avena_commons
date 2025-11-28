@@ -1,5 +1,4 @@
 from datetime import datetime, time
-from typing import Any, Dict
 
 from ..base.base_condition import BaseCondition
 from ..models.scenario_models import ScenarioContext

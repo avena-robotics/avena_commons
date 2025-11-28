@@ -146,15 +146,13 @@ class EtherCATWorker(Worker):
         """Dodaje obiekt slave do wewnętrznej listy na podstawie konfiguracji."""
         device_class = device_args[4].lower()
 
-        # module_path = f"avena_commons.io.device.io.{device_class}"  
+        # module_path = f"avena_commons.io.device.io.{device_class}"
         # ścieżka testowa/dynamiczna musi być z "lib.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
         # ścieżka wewnętrzna avena_commons "avena_commons.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
         # FIXME -  scieżkę powinien brać z jednego miejsca - konfiguracji lub zmiennej środowiskowej
-        test_module_path = (
-            f"lib.io.device.io.{device_class}"
-        )
+        test_module_path = f"lib.io.device.io.{device_class}"
         module_path = f"avena_commons.io.device.io.{device_class}"
-        
+
         try:
             module = importlib.import_module(test_module_path)
             device_class = f"{device_class.upper()}_Slave"
@@ -170,7 +168,7 @@ class EtherCATWorker(Worker):
                     message_logger=self._message_logger,
                 )
                 return None
-            
+
         # module = importlib.import_module(module_path)
         # device_class = f"{device_class.upper()}_Slave"
         device = getattr(module, device_class)

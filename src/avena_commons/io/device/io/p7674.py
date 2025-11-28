@@ -39,9 +39,9 @@ class P7674(PhysicalDeviceBase):
                 max_consecutive_errors=max_consecutive_errors,
                 message_logger=message_logger,
             )
-            
+
             self.set_state(PhysicalDeviceState.INITIALIZING)
-            
+
             info(
                 f"{self.device_name} - Initializing at address {address}",
                 message_logger=message_logger,
@@ -279,7 +279,7 @@ class P7674(PhysicalDeviceBase):
         # First check FSM health
         if not self.check_health():
             return False
-        
+
         # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
@@ -357,7 +357,7 @@ class P7674(PhysicalDeviceBase):
         """
         # Get base class state
         result = super().to_dict()
-        
+
         # Add P7674-specific fields
         result["address"] = self.address
         result["offset"] = self.offset

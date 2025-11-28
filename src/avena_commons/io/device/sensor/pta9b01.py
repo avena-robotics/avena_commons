@@ -33,9 +33,9 @@ class PTA9B01(PhysicalDeviceBase):
             max_consecutive_errors=max_consecutive_errors,
             message_logger=message_logger,
         )
-        
+
         self.set_state(PhysicalDeviceState.INITIALIZING)
-        
+
         self.bus = bus
         self.address = address
         self.temperature: float = 0.0
@@ -164,7 +164,7 @@ class PTA9B01(PhysicalDeviceBase):
         """
         # Get base class state
         result = super().to_dict()
-        
+
         # Add PTA9B01-specific fields
         result["address"] = self.address
         result["temperature"] = self.temperature
@@ -213,7 +213,7 @@ class PTA9B01(PhysicalDeviceBase):
         # First check FSM health
         if not self.check_health():
             return False
-        
+
         # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,

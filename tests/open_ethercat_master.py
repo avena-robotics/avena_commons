@@ -23,7 +23,9 @@ def check_ethercat(iface_name: str, device_check_loop: bool = False):
         except Exception as e:
             print(f"Error opening interface {iface_name}: {e}")
             return
-        number_of_slaves = master.config_init()  # odpytanie ile urzadzen jest w sieci #TODO: check
+        number_of_slaves = (
+            master.config_init()
+        )  # odpytanie ile urzadzen jest w sieci #TODO: check
 
         if number_of_slaves <= 0:
             print("No slaves found.")  # tutaj zwraca błąd
@@ -48,7 +50,9 @@ def check_ethercat(iface_name: str, device_check_loop: bool = False):
 
         print("Config done")
 
-        if master.state_check(pysoem.SAFEOP_STATE, 50000) != pysoem.SAFEOP_STATE:  # sprawdzamy czy wszystkie slave sa w trybie SAFEOP - gotowe do pracy
+        if (
+            master.state_check(pysoem.SAFEOP_STATE, 50000) != pysoem.SAFEOP_STATE
+        ):  # sprawdzamy czy wszystkie slave sa w trybie SAFEOP - gotowe do pracy
             print("Not all slaves reached SAFEOP.")
             for i, slave in enumerate(master.slaves):
                 print(f"  Slave {i} '{slave.name}' state=0x{slave.state:X}")
@@ -57,7 +61,9 @@ def check_ethercat(iface_name: str, device_check_loop: bool = False):
         master.state = pysoem.OP_STATE  # przejscie do trybu operacyjnego mastera
         master.write_state()
 
-        if master.state_check(pysoem.OP_STATE, 50000) != pysoem.OP_STATE:  # sprawdzamy czy wszystkie slave sa w trybie operacyjnym
+        if (
+            master.state_check(pysoem.OP_STATE, 50000) != pysoem.OP_STATE
+        ):  # sprawdzamy czy wszystkie slave sa w trybie operacyjnym
             print("Not all slaves reached OP. Changinkg state to OP for them all:")
             for i, slave in enumerate(master.slaves):
                 print(f"  Slave {i} '{slave.name}' state=0x{slave.state:X}")

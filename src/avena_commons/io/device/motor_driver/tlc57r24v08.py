@@ -5,7 +5,7 @@ from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class TLC57R24V08(PhysicalDeviceBase):
@@ -667,7 +667,7 @@ class TLC57R24V08(PhysicalDeviceBase):
         # First check FSM health
         if not self.check_health():
             return False
-        
+
         # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,

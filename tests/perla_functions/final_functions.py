@@ -22,7 +22,6 @@ import numpy as np
 import json
 
 
-
 # MARK: CONFIG
 def config(
     nozzle_mask, section, pepper_type="big_pepper", reflective_nozzle=False

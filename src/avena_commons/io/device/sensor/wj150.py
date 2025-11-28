@@ -4,7 +4,7 @@ from enum import Enum
 
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class WorkingMode(Enum):
@@ -125,7 +125,9 @@ class WJ150(PhysicalDeviceBase):
                                     f"{self.device_name} {self.bus.serial_port} addr[{self.address}]: Error reading encoder or invalid response format",
                                     message_logger=self.message_logger,
                                 )
-                                self.set_error("Error reading encoder or invalid response format")
+                                self.set_error(
+                                    "Error reading encoder or invalid response format"
+                                )
                     case WorkingMode.INDEPENDENT_COUNTERS:
                         with self.__lock:
                             response = self.bus.read_holding_registers(
@@ -148,7 +150,9 @@ class WJ150(PhysicalDeviceBase):
                                     f"{self.device_name} Error reading independent counters or invalid response format",
                                     message_logger=self.message_logger,
                                 )
-                                self.set_error("Error reading independent counters or invalid response format")
+                                self.set_error(
+                                    "Error reading independent counters or invalid response format"
+                                )
                     case _:
                         error(
                             f"{self.device_name} Invalid working mode",
@@ -161,7 +165,7 @@ class WJ150(PhysicalDeviceBase):
                     message_logger=self.message_logger,
                 )
                 self.set_error(f"Exception in encoder thread: {e}")
-            
+
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def read_encoder(self):

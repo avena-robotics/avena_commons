@@ -16,8 +16,6 @@ from typing import Any
 import aiohttp
 import psutil
 import uvicorn
-import uvicorn.config
-import uvicorn.server
 from fastapi import FastAPI
 from pydantic import BaseModel
 

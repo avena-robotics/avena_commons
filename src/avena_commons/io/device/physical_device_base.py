@@ -168,20 +168,20 @@ class PhysicalDeviceBase:
 
     def _on_error(self) -> None:
         """Wywoływana przy przejściu do stanu ERROR.
-        
+
         Potomne klasy mogą nadpisać aby wykonać akcje przy błędzie
         (np. zatrzymanie napędów, wyłączenie wyjść).
-        
+
         Uwaga: Wywoływana wewnątrz lock'a, unikaj długich operacji.
         """
         pass
 
     def _on_fault(self) -> None:
         """Wywoływana przy przejściu do stanu FAULT.
-        
+
         Potomne klasy mogą nadpisać aby wykonać akcje przy krytycznym błędzie
         (np. awaryjne zatrzymanie, zablokowanie wyjść).
-        
+
         Uwaga: Wywoływana wewnątrz lock'a, unikaj długich operacji.
         """
         pass

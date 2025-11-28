@@ -107,9 +107,9 @@ def preprocess_mask(mask, config):  # MARK: PREPROCESS MASK
     mask_opened = cv2.morphologyEx(
         mask_smoothed, cv2.MORPH_OPEN, kernel_opened, iterations=opened_iterations
     )
-    
+
     debug_preprocess["mask_opened"] = mask_opened
-    
+
     kernel_closed = cv2.getStructuringElement(
         closed_kernel_type, (closed_size[0], closed_size[1])
     )

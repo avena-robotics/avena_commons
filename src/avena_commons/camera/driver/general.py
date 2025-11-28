@@ -1229,11 +1229,11 @@ class GeneralCameraConnector(Connector):
                     self.current_expected_qr = 4
                 case 2:
                     self.current_expected_qr = 3
-                case 3:  
+                case 3:
                     self.current_expected_qr = 2
-                case 4:  
+                case 4:
                     self.current_expected_qr = 1
-                case _: 
+                case _:
                     self.current_expected_qr = 0
 
             value = super()._send_thru_pipe(

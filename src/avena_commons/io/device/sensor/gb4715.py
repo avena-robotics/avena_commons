@@ -4,7 +4,7 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class GB4715(PhysicalDeviceBase):

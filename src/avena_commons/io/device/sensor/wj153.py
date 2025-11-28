@@ -3,7 +3,7 @@ import time
 
 from avena_commons.util.logger import MessageLogger, error, info
 
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class WJ153(PhysicalDeviceBase):

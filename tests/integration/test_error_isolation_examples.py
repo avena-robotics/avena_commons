@@ -19,20 +19,20 @@ from avena_commons.util.logger import debug, info, warning
 
 class SimpleFeeder(VirtualDevice):
     """Przykład 1: Bezpieczna strategia - natychmiastowa eskalacja błędu.
-    
+
     Używa domyślnej implementacji _on_physical_device_error(), która
     od razu przełącza VirtualDevice do stanu ERROR przy jakimkolwiek
     błędzie urządzenia fizycznego.
-    
+
     Zalety:
     - Najprostsza implementacja
     - Maksymalne bezpieczeństwo
     - Natychmiastowe powiadomienie operatora
-    
+
     Wady:
     - Brak tolerancji na przejściowe błędy
     - Potencjalnie częste alarmy
-    
+
     Zastosowanie:
     - Systemy krytyczne bezpieczeństwa
     - Prototypowanie nowych urządzeń
@@ -53,7 +53,7 @@ class SimpleFeeder(VirtualDevice):
     def _instant_execute_event(self, event: Event) -> Event:
         """Przykładowa implementacja - start/stop feedera."""
         action = event.event_type.split("_", 1)[1] if "_" in event.event_type else ""
-        
+
         if action == "start":
             # Wywołaj metodę urządzenia fizycznego
             motor = self.devices.get("motor_driver_1")
@@ -74,7 +74,7 @@ class SimpleFeeder(VirtualDevice):
         else:
             event.result = Result(result="error")
             event.result.error_message = f"Unknown action: {action}"
-        
+
         return event
 
     def tick(self):
@@ -84,19 +84,19 @@ class SimpleFeeder(VirtualDevice):
 
 class RobustFeeder(VirtualDevice):
     """Przykład 2: Strategia retry - tolerancja na przejściowe błędy.
-    
+
     Nadpisuje _on_physical_device_error() aby implementować retry logic.
     Po N nieudanych próbach eskaluje do ERROR, wcześniej próbuje odzyskać.
-    
+
     Zalety:
     - Tolerancja na chwilowe problemy komunikacji
     - Automatyczne recovery bez interwencji operatora
     - Mniej false-positive alarmów
-    
+
     Wady:
     - Opóźnienie w wykryciu prawdziwego problemu
     - Wymaga dodatkowej logiki i stanu
-    
+
     Zastosowanie:
     - Systemy produkcyjne z komunikacją przez sieć
     - Urządzenia z przejściowymi problemami (WiFi, RS485)
@@ -120,9 +120,9 @@ class RobustFeeder(VirtualDevice):
             # Nowy błąd na innym urządzeniu - reset licznika
             self._error_device_name = device_name
             self._retry_count = 0
-        
+
         self._retry_count += 1
-        
+
         if self._retry_count >= self._max_retries:
             # Po przekroczeniu limitu - eskaluj do ERROR
             warning(
@@ -145,7 +145,7 @@ class RobustFeeder(VirtualDevice):
     def _instant_execute_event(self, event: Event) -> Event:
         """Przykładowa implementacja."""
         action = event.event_type.split("_", 1)[1] if "_" in event.event_type else ""
-        
+
         if action == "start":
             motor = self.devices.get("motor_driver_1")
             if motor and hasattr(motor, "run_jog"):
@@ -160,7 +160,7 @@ class RobustFeeder(VirtualDevice):
         else:
             event.result = Result(result="error")
             event.result.error_message = f"Unknown action: {action}"
-        
+
         return event
 
     def tick(self):
@@ -170,20 +170,20 @@ class RobustFeeder(VirtualDevice):
 
 class RedundantFeeder(VirtualDevice):
     """Przykład 3: Strategia fallback - redundancja urządzeń.
-    
+
     Posiada zapasowe urządzenie fizyczne. Gdy główne ma błąd,
     przełącza się automatycznie na backup.
-    
+
     Zalety:
     - Ciągłość działania mimo awarii
     - Automatyczny failover
     - Wysoka dostępność
-    
+
     Wady:
     - Wymaga dodatkowego hardware'u
     - Złożoność konfiguracji
     - Trudniejsze testowanie
-    
+
     Zastosowanie:
     - Krytyczne procesy produkcyjne
     - Systemy 24/7
@@ -211,7 +211,10 @@ class RedundantFeeder(VirtualDevice):
                     f"{self.device_name} - Failover: switching from {self._active_motor} to {self._backup_motor}",
                     message_logger=self._message_logger,
                 )
-                self._active_motor, self._backup_motor = self._backup_motor, self._active_motor
+                self._active_motor, self._backup_motor = (
+                    self._backup_motor,
+                    self._active_motor,
+                )
                 self._failover_active = True
                 # Nie eskalujemy - mamy backup
             else:
@@ -229,7 +232,9 @@ class RedundantFeeder(VirtualDevice):
                 message_logger=self._message_logger,
             )
             self.set_state(VirtualDeviceState.ERROR)
-            self._error_message = f"Both primary and backup devices failed: {error_message}"
+            self._error_message = (
+                f"Both primary and backup devices failed: {error_message}"
+            )
         else:
             # Inne urządzenie - loguj ale nie eskaluj
             debug(
@@ -243,7 +248,7 @@ class RedundantFeeder(VirtualDevice):
     def _instant_execute_event(self, event: Event) -> Event:
         """Używa aktywnego motora (po ewentualnym failover)."""
         action = event.event_type.split("_", 1)[1] if "_" in event.event_type else ""
-        
+
         if action == "start":
             motor = self.devices.get(self._active_motor)
             if motor and hasattr(motor, "run_jog"):
@@ -251,11 +256,13 @@ class RedundantFeeder(VirtualDevice):
                 event.result = Result(result="success")
             else:
                 event.result = Result(result="error")
-                event.result.error_message = f"Active motor {self._active_motor} not available"
+                event.result.error_message = (
+                    f"Active motor {self._active_motor} not available"
+                )
         else:
             event.result = Result(result="error")
             event.result.error_message = f"Unknown action: {action}"
-        
+
         return event
 
     def tick(self):
@@ -265,32 +272,36 @@ class RedundantFeeder(VirtualDevice):
             primary = self.devices.get(self._backup_motor)  # Po swap to jest primary
             if primary and hasattr(primary, "get_state"):
                 from avena_commons.io.device import PhysicalDeviceState
+
                 if primary.get_state() == PhysicalDeviceState.WORKING:
                     info(
                         f"{self.device_name} - Primary device recovered, switching back",
                         message_logger=self._message_logger,
                     )
                     # Przywróć oryginalną konfigurację
-                    self._active_motor, self._backup_motor = self._backup_motor, self._active_motor
+                    self._active_motor, self._backup_motor = (
+                        self._backup_motor,
+                        self._active_motor,
+                    )
                     self._failover_active = False
 
 
 class TolerantFeeder(VirtualDevice):
     """Przykład 4: Strategia tolerancji - graceful degradation.
-    
+
     Ignoruje błędy urządzeń pomocniczych (np. czujniki),
     eskaluje tylko błędy urządzeń krytycznych (np. napędy).
-    
+
     Zalety:
     - Ciągłość działania mimo częściowej awarii
     - Świadoma degradacja funkcjonalności
     - Optymalne balance bezpieczeństwo/dostępność
-    
+
     Wady:
     - Wymaga klasyfikacji urządzeń (critical/non-critical)
     - Możliwa praca w trybie ograniczonym
     - Trudniejsze zarządzanie stanem
-    
+
     Zastosowanie:
     - Systemy z wieloma czujnikami
     - Gdy niektóre funkcje są opcjonalne
@@ -317,7 +328,9 @@ class TolerantFeeder(VirtualDevice):
                 message_logger=self._message_logger,
             )
             self.set_state(VirtualDeviceState.ERROR)
-            self._error_message = f"Critical device '{device_name}' error: {error_message}"
+            self._error_message = (
+                f"Critical device '{device_name}' error: {error_message}"
+            )
         elif device_name in self._non_critical_devices:
             # Urządzenie pomocnicze - loguj i kontynuuj
             info(
@@ -332,7 +345,9 @@ class TolerantFeeder(VirtualDevice):
                 message_logger=self._message_logger,
             )
             self.set_state(VirtualDeviceState.ERROR)
-            self._error_message = f"Unknown device '{device_name}' error: {error_message}"
+            self._error_message = (
+                f"Unknown device '{device_name}' error: {error_message}"
+            )
 
     def get_current_state(self):
         return self._state
@@ -340,7 +355,7 @@ class TolerantFeeder(VirtualDevice):
     def _instant_execute_event(self, event: Event) -> Event:
         """Przykładowa implementacja."""
         action = event.event_type.split("_", 1)[1] if "_" in event.event_type else ""
-        
+
         if action == "start":
             motor = self.devices.get("motor_driver_1")
             if motor and hasattr(motor, "run_jog"):
@@ -352,7 +367,7 @@ class TolerantFeeder(VirtualDevice):
         else:
             event.result = Result(result="error")
             event.result.error_message = f"Unknown action: {action}"
-        
+
         return event
 
     def tick(self):

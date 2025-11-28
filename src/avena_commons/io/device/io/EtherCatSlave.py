@@ -1,6 +1,6 @@
 from avena_commons.util.logger import MessageLogger
 
-from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
+from ..physical_device_base import PhysicalDeviceBase
 
 
 class EtherCatSlave:
@@ -105,40 +105,40 @@ class EtherCatDevice(PhysicalDeviceBase):
     ):
         # Pobierz device_name z konfiguracji lub użyj domyślnej nazwy
         device_name = configuration.get("device_name", f"EtherCAT_Addr{address}")
-        
+
         super().__init__(
             device_name=device_name,
             max_consecutive_errors=max_consecutive_errors,
             message_logger=message_logger,
         )
-        
+
         self.bus = bus
         self.vendor_code = vendor_code
         self.product_code = product_code
         self.address = address
         self.debug = debug
         self.configuration = configuration
-        
+
     def check_device_connection(self) -> bool:
         """Sprawdza połączenie z urządzeniem EtherCAT.
-        
+
         Weryfikuje:
         1. Stan zdrowia urządzenia (PhysicalDeviceBase.check_health)
         2. Stan magistrali EtherCAT (jeśli dostępne)
-        
+
         Returns:
             bool: True jeśli urządzenie jest dostępne i zdrowe.
         """
         if not self.check_health():
             return False
-        
+
         # Sprawdź czy magistrala EtherCAT jest dostępna
-        if hasattr(self.bus, 'check_device_connection'):
+        if hasattr(self.bus, "check_device_connection"):
             try:
                 return self.bus.check_device_connection()
             except Exception as e:
                 self.set_error(f"Bus connection check failed: {e}")
                 return False
-        
+
         # Fallback: zakładamy że EtherCAT jest OK jeśli proces żyje
         return True

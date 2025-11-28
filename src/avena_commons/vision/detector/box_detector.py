@@ -145,7 +145,9 @@ def box_detector(*, frame, camera_config, config):
         return None, None, None, None, detect_image, debug_data
 
     with Catchtime() as t6:
-        mask_preprocessed, debug_preprocess = preprocess_mask(mask_combined, config["preprocess"])
+        mask_preprocessed, debug_preprocess = preprocess_mask(
+            mask_combined, config["preprocess"]
+        )
         debug_data["box_mask_preprocessed"] = mask_preprocessed
         debug_data["debug_preprocess"] = debug_preprocess
 

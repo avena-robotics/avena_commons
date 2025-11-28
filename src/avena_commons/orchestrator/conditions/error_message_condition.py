@@ -114,7 +114,7 @@ class ErrorMessageCondition(BaseCondition):
         pattern = self.config.get("pattern")
         case_sensitive = self.config.get("case_sensitive", False)
         extract_to_context = self.config.get("extract_to_context", {})
-        
+
         # Parametry dla sprawdzania urządzeń IO
         check_io_devices = self.config.get("check_io_devices", False)
         extract_physical_device_to = self.config.get("extract_physical_device_to")
@@ -191,38 +191,59 @@ class ErrorMessageCondition(BaseCondition):
             if check_io_devices:
                 io_server = client_data.get("io_server", {})
                 failed_devices = io_server.get("failed_virtual_devices", {})
-                
+
                 if failed_devices:
                     for vdev_name, vdev_info in failed_devices.items():
                         # Sprawdź czy nazwa urządzenia wirtualnego pasuje do wzorca
                         match_result = self._check_pattern_match(
-                            vdev_name, search_pattern, mode, case_sensitive, regex_pattern
+                            vdev_name,
+                            search_pattern,
+                            mode,
+                            case_sensitive,
+                            regex_pattern,
                         )
-                        
+
                         if match_result:
                             matching_clients.append(client_name)
-                            
+
                             # Ekstrahuj informacje o urządzeniach fizycznych
                             if scenario_context:
-                                failed_physical = vdev_info.get("failed_physical_devices", {})
-                                
+                                failed_physical = vdev_info.get(
+                                    "failed_physical_devices", {}
+                                )
+
                                 if failed_physical:
-                                    first_physical_name = next(iter(failed_physical.keys()), None)
-                                    
+                                    first_physical_name = next(
+                                        iter(failed_physical.keys()), None
+                                    )
+
                                     if first_physical_name:
-                                        physical_info = failed_physical[first_physical_name]
-                                        
+                                        physical_info = failed_physical[
+                                            first_physical_name
+                                        ]
+
                                         if extract_physical_device_to:
-                                            scenario_context.set(extract_physical_device_to, first_physical_name)
-                                        
+                                            scenario_context.set(
+                                                extract_physical_device_to,
+                                                first_physical_name,
+                                            )
+
                                         if extract_error_message_to:
-                                            error_msg = physical_info.get("error_message", "Unknown error")
-                                            scenario_context.set(extract_error_message_to, error_msg)
-                                        
+                                            error_msg = physical_info.get(
+                                                "error_message", "Unknown error"
+                                            )
+                                            scenario_context.set(
+                                                extract_error_message_to, error_msg
+                                            )
+
                                         if extract_device_type_to:
-                                            device_type = physical_info.get("device_type", "Unknown")
-                                            scenario_context.set(extract_device_type_to, device_type)
-                                        
+                                            device_type = physical_info.get(
+                                                "device_type", "Unknown"
+                                            )
+                                            scenario_context.set(
+                                                extract_device_type_to, device_type
+                                            )
+
                                         if self.message_logger:
                                             self.message_logger.debug(
                                                 f"ErrorMessageCondition: wyciągnięto dane urządzenia - "
@@ -230,7 +251,7 @@ class ErrorMessageCondition(BaseCondition):
                                                 f"typ: {physical_info.get('device_type')}, "
                                                 f"błąd: {physical_info.get('error_message')}"
                                             )
-                            
+
                             if self.message_logger:
                                 self.message_logger.debug(
                                     f"ErrorMessageCondition: dopasowanie w io_server.failed_virtual_devices "
