@@ -14,6 +14,7 @@ httpx
 posix-ipc; platform_system=="Linux"
 aiohttp
 asyncpg
+pyserial
 # DEV
 ruff
 black
