@@ -93,7 +93,7 @@ class PhysicalDeviceBase:
             if old_state != new_state:
                 info(
                     f"{self.device_name} - State transition: {old_state.name} → {new_state.name}",
-                    message_logger=self._message_logger,
+                    message_logger=self.message_logger,
                 )
 
     def get_state(self) -> PhysicalDeviceState:
@@ -130,7 +130,7 @@ class PhysicalDeviceBase:
                 self._state = PhysicalDeviceState.FAULT
                 error(
                     f"{self.device_name} - FAULT: {error_message} (consecutive_errors={self._consecutive_errors})",
-                    message_logger=self._message_logger,
+                    message_logger=self.message_logger,
                 )
                 # Wywołaj on_fault (nadpisywalne przez potomne klasy)
                 if old_state != PhysicalDeviceState.FAULT:
@@ -145,7 +145,7 @@ class PhysicalDeviceBase:
                     self._state = PhysicalDeviceState.ERROR
                     error(
                         f"{self.device_name} - ERROR: {error_message} (consecutive_errors={self._consecutive_errors}/{self._max_consecutive_errors})",
-                        message_logger=self._message_logger,
+                        message_logger=self.message_logger,
                     )
                     # Wywołaj on_error (nadpisywalne przez potomne klasy)
                     self._on_error()
@@ -211,13 +211,13 @@ class PhysicalDeviceBase:
                 self._consecutive_errors = 0
                 info(
                     f"{self.device_name} - FAULT reset → INITIALIZING",
-                    message_logger=self._message_logger,
+                    message_logger=self.message_logger,
                 )
                 return True
             else:
                 info(
                     f"{self.device_name} - Cannot reset: not in FAULT state (current: {self._state.name})",
-                    message_logger=self._message_logger,
+                    message_logger=self.message_logger,
                 )
                 return False
 
