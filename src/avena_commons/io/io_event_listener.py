@@ -1885,7 +1885,6 @@ class IO_server(EventListener):
                     "load_state": self._load_state,
                     "error": self._error,
                     "error_message": self._error_message,
-                    # Structured failed devices info for scenarios (no regex needed)
                     "failed_virtual_devices": {
                         vdev_name: {
                             "state": "ERROR",

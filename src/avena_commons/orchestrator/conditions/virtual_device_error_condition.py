@@ -77,7 +77,8 @@ class VirtualDeviceErrorCondition(BaseCondition):
             return False
 
         client_data = context.clients.get(client_name, {})
-        io_server = client_data.get("io_server", {})
+        client_state = client_data.get("state", {})
+        io_server = client_state.get("io_server", {})
         failed_devices = io_server.get("failed_virtual_devices", {})
 
         for device_name, device_info in failed_devices.items():
