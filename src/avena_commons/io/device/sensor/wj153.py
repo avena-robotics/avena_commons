@@ -3,8 +3,10 @@ import time
 
 from avena_commons.util.logger import MessageLogger, error, info
 
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
-class WJ153:
+
+class WJ153(PhysicalDeviceBase):
     """Czujnik/enkoder WJ153 z wątkiem monitorującym wartość enkodera.
 
     Args:
@@ -12,6 +14,7 @@ class WJ153:
         bus: Magistrala Modbus/komunikacyjna.
         address: Adres urządzenia.
         period (float): Okres odczytu (s).
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
         message_logger (MessageLogger | None): Logger wiadomości.
     """
 
@@ -21,13 +24,17 @@ class WJ153:
         bus,
         address,
         period: float = 0.025,
+        max_consecutive_errors: int = 3,
         message_logger: MessageLogger | None = None,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.period: float = period
-        self.message_logger: MessageLogger | None = message_logger
         self.encoder: int = 0
         self.counter_1: int = 0
         self.counter_2: int = 0
@@ -72,24 +79,33 @@ class WJ153:
         """Wątek cyklicznie odczytujący wartość enkodera i aktualizujący cache."""
         while not self._stop_event.is_set():
             now = time.time()
-            with self.__lock:
-                response = self.bus.read_holding_registers(
-                    address=self.address, first_register=16, count=2
-                )
-                if response and len(response) == 2:
-                    # Register 16 (response[0]) contains lower 16 bits
-                    # Register 17 (response[1]) contains upper 16 bits
-                    value = (response[1] << 16) | response[0]
-                    if response[1] & 0x8000:
-                        self.encoder = value - (1 << 32)
-                    else:
-                        self.encoder = value
-                    # debug(f"Response: {response} value: {self.encoder}", message_logger=self.message_logger)
-                else:
-                    error(
-                        f"{self.device_name} {self.bus.serial_port} addr[{self.address}]: Error reading encoder or invalid response format",
-                        message_logger=self.message_logger,
+            try:
+                with self.__lock:
+                    response = self.bus.read_holding_registers(
+                        address=self.address, first_register=16, count=2
                     )
+                    if response and len(response) == 2:
+                        # Register 16 (response[0]) contains lower 16 bits
+                        # Register 17 (response[1]) contains upper 16 bits
+                        value = (response[1] << 16) | response[0]
+                        if response[1] & 0x8000:
+                            self.encoder = value - (1 << 32)
+                        else:
+                            self.encoder = value
+                        # debug(f"Response: {response} value: {self.encoder}", message_logger=self.message_logger)
+                        self.clear_error()
+                    else:
+                        error(
+                            f"{self.device_name} {self.bus.serial_port} addr[{self.address}]: Error reading encoder or invalid response format",
+                            message_logger=self.message_logger,
+                        )
+                        self.set_error("Invalid response reading encoder")
+            except Exception as e:
+                error(
+                    f"{self.device_name} - Exception in encoder thread: {e}",
+                    message_logger=self.message_logger,
+                )
+                self.set_error(f"Exception in encoder thread: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 

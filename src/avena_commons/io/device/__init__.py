@@ -40,10 +40,16 @@ def modbus_check_device_connection(
         )
 
 
+# Import PhysicalDeviceBase FIRST to avoid circular import
+# Then import submodules that depend on it
 from . import io, motor_driver, sensor
+from .physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 __all__ = [
     "io",
     "motor_driver",
     "sensor",
+    "PhysicalDeviceBase",
+    "PhysicalDeviceState",
+    "modbus_check_device_connection",
 ]

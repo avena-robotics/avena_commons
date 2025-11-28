@@ -427,8 +427,18 @@ class EC3A_IO1632(EtherCatDevice):
 
     def _read_input(self, port: int):
         """Odczytuje stan wejścia cyfrowego z urządzenia przez magistralę."""
-        self.inputs_ports[port] = self.bus.read_input(self.address, port)
-        return self.inputs_ports[port]
+        try:
+            value = self.bus.read_input(self.address, port)
+            if value is not None:
+                self.inputs_ports[port] = value
+                self.clear_error()
+                return value
+            else:
+                self.set_error(f"Failed to read input port {port}")
+                return self.inputs_ports[port]
+        except Exception as e:
+            self.set_error(f"Exception reading input port {port}: {e}")
+            return self.inputs_ports[port]
 
     def _read_output(self, port: int):
         """Zwraca stan bufora wyjścia cyfrowego."""
@@ -436,9 +446,16 @@ class EC3A_IO1632(EtherCatDevice):
 
     def _write_output(self, port: int, value: bool):
         """Ustawia wyjście cyfrowe w urządzeniu przez magistralę i aktualizuje bufor."""
-        self.outputs_ports[port] = value
-        # debug(f"{self.device_name} - Writing output {port} to {value}", message_logger=self.message_logger)
-        self.bus.write_output(self.address, port, value)
+        try:
+            # debug(f"{self.device_name} - Writing output {port} to {value}", message_logger=self.message_logger)
+            result = self.bus.write_output(self.address, port, value)
+            if result is not None and result is not False:
+                self.outputs_ports[port] = value
+                self.clear_error()
+            else:
+                self.set_error(f"Failed to write output port {port}")
+        except Exception as e:
+            self.set_error(f"Exception writing output port {port}: {e}")
 
     def _start_axis_pos_profile(
         self, axis: int, position: int, velocity: int, direction: bool

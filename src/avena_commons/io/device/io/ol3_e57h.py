@@ -1,8 +1,10 @@
-from .EtherCatSlave import EtherCatDevice, EtherCatSlave
 import struct
 from enum import Enum
 
 from avena_commons.util.logger import MessageLogger, debug, error, info
+
+from .EtherCatSlave import EtherCatDevice, EtherCatSlave
+
 
 class cia402_states(Enum):
     NOT_READY_TO_SWITCH_ON = 0
@@ -464,14 +466,37 @@ class OL3_E57H(EtherCatDevice):
         )
         
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
-        self.bus.run_jog(self.address, speed, accel, decel)
+        try:
+            result = self.bus.run_jog(self.address, speed, accel, decel)
+            if result is not None and result is not False:
+                self.clear_error()
+            else:
+                self.set_error("Failed to start jog mode")
+        except Exception as e:
+            self.set_error(f"Exception in run_jog: {e}")
         
     def stop(self):
-        self.bus.stop_motor(self.address)
+        try:
+            result = self.bus.stop_motor(self.address)
+            if result is not None and result is not False:
+                self.clear_error()
+            else:
+                self.set_error("Failed to stop motor")
+        except Exception as e:
+            self.set_error(f"Exception in stop: {e}")
         
     def read_input(self, port):
-        value = self.bus.read_input(self.address, port)
-        return value
+        try:
+            value = self.bus.read_input(self.address, port)
+            if value is not None:
+                self.clear_error()
+                return value
+            else:
+                self.set_error(f"Failed to read input port {port}")
+                return None
+        except Exception as e:
+            self.set_error(f"Exception reading input port {port}: {e}")
+            return None
     
     @property
     def di1(self):

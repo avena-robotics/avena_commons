@@ -4,12 +4,17 @@ import traceback
 
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
-class URM14:
+
+class URM14(PhysicalDeviceBase):
     """Kontroler czujnika ultradźwiękowego DFRobot URM14 (RS485) z pomiarem odległości.
 
     Obsługuje odczyt rejestrów, konfigurację trybów pomiaru, zmianę adresu i prędkości
     transmisji oraz buforowanie krótkotrwałe pomiaru odległości.
+
+    Args:
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     # Register indices
@@ -54,6 +59,7 @@ class URM14:
         address=DEFAULT_SLAVE_ADDR,
         message_logger: MessageLogger | None = None,
         debug=True,
+        max_consecutive_errors: int = 3,
     ):
         """Inicjalizuje kontroler czujnika URM14.
 
@@ -62,16 +68,20 @@ class URM14:
             address (int): Adres slave urządzenia.
             message_logger (MessageLogger | None): Logger wiadomości.
             debug (bool): Włącza logi debug.
+            max_consecutive_errors (int): Próg błędów przed FAULT.
         """
         try:
-            self.message_logger = message_logger
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
 
             if self.message_logger:
                 info(
                     f"Initializing URM14 {device_name} at address {address}",
                     message_logger=self.message_logger,
                 )
-            self.device_name = device_name
             self.bus = bus
             self.slave_addr = address
             self.__debug = debug

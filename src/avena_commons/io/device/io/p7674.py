@@ -4,10 +4,11 @@ import traceback
 
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
-from ...device import modbus_check_device_connection
+from .. import modbus_check_device_connection
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 
-class P7674:
+class P7674(PhysicalDeviceBase):
     """Sterownik modułu P7674 z buforowanym odczytem DI i zapisem DO w wątkach.
 
     Args:
@@ -29,9 +30,18 @@ class P7674:
         period: float = 0.05,
         message_logger: MessageLogger | None = None,
         debug=True,
+        max_consecutive_errors: int = 3,
     ):
         try:
-            self.device_name = device_name
+            # Initialize PhysicalDeviceBase first
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
+            
+            self.set_state(PhysicalDeviceState.INITIALIZING)
+            
             info(
                 f"{self.device_name} - Initializing at address {address}",
                 message_logger=message_logger,
@@ -42,7 +52,6 @@ class P7674:
             self.period: float = (
                 period  # Period for DI reading thread and DO writing thread
             )
-            self.message_logger = message_logger
 
             self.__debug = debug
 
@@ -65,13 +74,17 @@ class P7674:
 
             self.__setup()
             # self.__reset_all_coils()
-            self.check_device_connection()
+            if self.check_device_connection():
+                self.set_state(PhysicalDeviceState.WORKING)
+            else:
+                self.set_error(f"Initial connection check failed at address {address}")
         except Exception as e:
             error(
                 f"{self.device_name} - Error initializing: {str(e)}",
                 message_logger=message_logger,
             )
             error(traceback.format_exc(), message_logger=message_logger)
+            self.set_error(f"Initialization exception: {str(e)}")
 
     def __setup(self):
         """Uruchamia wątki odczytu DI i zapisu DO (jeśli nie działają)."""
@@ -123,17 +136,17 @@ class P7674:
                                 f"{self.device_name} - DI value updated: {bin(response)}",
                                 message_logger=self.message_logger,
                             )
+                    # Clear error on successful read
+                    self.clear_error()
                 else:
                     warning(
                         f"{self.device_name} - Unable to read DI register",
                         message_logger=self.message_logger,
                     )
+                    self.set_error("Unable to read DI register")
 
             except Exception as e:
-                error(
-                    f"{self.device_name} - Error reading DI: {e}",
-                    message_logger=self.message_logger,
-                )
+                self.set_error(f"Error reading DI: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -167,17 +180,13 @@ class P7674:
                                 f"{self.device_name} - DO write successful: {current_state}",
                                 message_logger=self.message_logger,
                             )
+                        # Clear error on successful write
+                        self.clear_error()
                     except Exception as e:
-                        error(
-                            f"{self.device_name} - Error writing DO: {str(e)}",
-                            message_logger=self.message_logger,
-                        )
+                        self.set_error(f"Error writing DO: {str(e)}")
 
             except Exception as e:
-                error(
-                    f"{self.device_name} - Error in DO thread: {e}",
-                    message_logger=self.message_logger,
-                )
+                self.set_error(f"Error in DO thread: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -228,7 +237,6 @@ class P7674:
 
     def __del__(self):
         """Zamyka wątki DI/DO przy niszczeniu obiektu."""
-        self.message_logger = None
         try:
             # Stop DI thread
             if (
@@ -263,6 +271,16 @@ class P7674:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+        
+        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
@@ -335,13 +353,15 @@ class P7674:
                 - active_do_count: liczba aktywnych wyjść
                 - main_state: główny stan urządzenia
                 - error: informacja o błędzie (jeśli wystąpił)
+                - (z PhysicalDeviceBase): state, state_name, consecutive_errors, etc.
         """
-        result = {
-            "name": self.device_name,
-            "address": self.address,
-            "offset": self.offset,
-            "period": self.period,
-        }
+        # Get base class state
+        result = super().to_dict()
+        
+        # Add P7674-specific fields
+        result["address"] = self.address
+        result["offset"] = self.offset
+        result["period"] = self.period
 
         try:
             # Dodanie stanu DI/DO
@@ -352,7 +372,7 @@ class P7674:
             result["active_di_count"] = bin(self.di_value).count("1")
             result["active_do_count"] = sum(self.coil_state)
 
-            # Dodanie głównego stanu urządzenia
+            # Dodanie głównego stanu urządzenia (legacy compatibility)
             if result["active_di_count"] > 0 or result["active_do_count"] > 0:
                 result["main_state"] = "ACTIVE"
             else:
@@ -361,7 +381,8 @@ class P7674:
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie
             result["main_state"] = "ERROR"
-            result["error"] = str(e)
+            if "error_message" not in result or not result["error_message"]:
+                result["error_message"] = str(e)
 
             if self.message_logger:
                 error(

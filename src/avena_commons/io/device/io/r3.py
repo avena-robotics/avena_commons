@@ -115,21 +115,36 @@ class R3(EtherCatDevice):
         address: Adres slave'a.
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Flaga debugowania.
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
     """
 
     def __init__(
-        self, bus, address, message_logger: MessageLogger | None = None, debug=True
+        self, bus, address, message_logger: MessageLogger | None = None, debug=True,
+        max_consecutive_errors: int = 3
     ):
         product_code = 4353  # TODO: CHANGE THIS
         vendor_code = 2965  # TODO: CHANGE THIS
-        super().__init__(bus, vendor_code, product_code, address, message_logger, debug)
+        # Minimalna konfiguracja z device_name
+        configuration = {"device_name": f"R3_{address}"}
+        super().__init__(bus, vendor_code, product_code, address, configuration, 
+                         message_logger, debug, max_consecutive_errors)
         self.inputs_ports = [0 for _ in range(16)]
         self.outputs_ports = [0 for _ in range(16)]
 
     def read_input(self, port: int):
         """Odczytuje stan wejścia cyfrowego przez magistralę i aktualizuje bufor."""
-        self.inputs_ports[port] = self.bus.read_input(self.address, port)
-        return self.inputs_ports[port]
+        try:
+            value = self.bus.read_input(self.address, port)
+            if value is not None:
+                self.inputs_ports[port] = value
+                self.clear_error()
+                return value
+            else:
+                self.set_error(f"Failed to read input port {port}")
+                return self.inputs_ports[port]  # Zwróć ostatnią znaną wartość
+        except Exception as e:
+            self.set_error(f"Exception reading input port {port}: {e}")
+            return self.inputs_ports[port]
 
     def read_output(self, port: int):
         """Zwraca stan wyjścia cyfrowego z lokalnego bufora."""
@@ -138,8 +153,15 @@ class R3(EtherCatDevice):
 
     def write_output(self, port: int, value: bool):
         """Ustawia stan wyjścia cyfrowego i wysyła go do urządzenia przez magistralę."""
-        self.outputs_ports[port] = value
-        self.bus.write_output(self.address, port, value)
+        try:
+            result = self.bus.write_output(self.address, port, value)
+            if result is not None and result is not False:
+                self.outputs_ports[port] = value
+                self.clear_error()
+            else:
+                self.set_error(f"Failed to write output port {port}")
+        except Exception as e:
+            self.set_error(f"Exception writing output port {port}: {e}")
 
     def __str__(self) -> str:
         """Reprezentacja urządzenia R3"""

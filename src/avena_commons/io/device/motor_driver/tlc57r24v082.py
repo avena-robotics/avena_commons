@@ -6,6 +6,7 @@ from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 
 class DriverMode(Enum):
@@ -20,7 +21,7 @@ class DriverMode(Enum):
 #     IN_ERROR = -1
 
 
-class TLC57R24V082:
+class TLC57R24V082(PhysicalDeviceBase):
     """Sterownik TLC57R24V08 z trybem jog/pozycja, wątkami DI/DO i obsługą błędów.
 
     Args:
@@ -37,6 +38,7 @@ class TLC57R24V082:
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Włącza logi debug.
         command_send_retry_attempts (int): Próby ponownego wysłania komendy (niezależnie od retry ruchu).
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -54,8 +56,13 @@ class TLC57R24V082:
         message_logger: MessageLogger | None = None,
         debug: bool = True,
         command_send_retry_attempts: int = 15,
+        max_consecutive_errors: int = 3,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.configuration_type = configuration_type
@@ -63,7 +70,6 @@ class TLC57R24V082:
         self.period: float = period
         self.do_count = do_count
         self.di_count = di_count
-        self.message_logger = message_logger
         self.__debug = debug
         self.operation_status_in_place = False
         self.operation_status_homing_completed = False
@@ -506,6 +512,16 @@ class TLC57R24V082:
             return None
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+        
+        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
@@ -567,18 +583,22 @@ class TLC57R24V082:
                                 f"{self.device_name} - DI value updated: {bin(response)}",
                                 message_logger=self.message_logger,
                             )
+                    # Successful read - clear error counter
+                    self.clear_error()
                 else:
                     if self.__debug:
                         warning(
                             f"{self.device_name} - Unable to read DI register",
                             message_logger=self.message_logger,
                         )
+                    self.set_error("Unable to read DI register")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error reading DI: {e}",
                     message_logger=self.message_logger,
                 )
+                self.set_error(f"Error reading DI: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -609,17 +629,21 @@ class TLC57R24V082:
                                 f"{self.device_name} - DO value updated: {bin(do_current_state)}",
                                 message_logger=self.message_logger,
                             )
+                        # Successful write - clear error counter
+                        self.clear_error()
                     except Exception as e:
                         error(
                             f"{self.device_name} - Error writing DO: {str(e)}",
                             message_logger=self.message_logger,
                         )
+                        self.set_error(f"Error writing DO: {str(e)}")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error in DO thread: {e}",
                     message_logger=self.message_logger,
                 )
+                self.set_error(f"Error in DO thread: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 

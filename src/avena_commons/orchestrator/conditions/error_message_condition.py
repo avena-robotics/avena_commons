@@ -1,11 +1,12 @@
 """Warunek sprawdzający zawartość komunikatów błędów od klientów IO.
 
 Cel: Umożliwia uruchamianie scenariuszy w zależności od konkretnych urządzeń/błędów
-zawartych w error_message od klientów. Obsługuje różne tryby dopasowania i wyciąganie danych.
+zawartych w error_message od klientów lub bezpośrednio w io_server.failed_virtual_devices.
+Obsługuje różne tryby dopasowania i wyciąganie danych.
 
 Wejścia: Konfiguracja z kryteriami dopasowania, kontekst ze stanami klientów
-Wyjścia: bool - czy warunek jest spełniony, opcjonalnie zapisuje dane do kontekstu
-Ograniczenia: Wymaga dostępu do orchestrator._state z error_message klientów
+Wyjścia: bool - czy warunek jest spełniony, opcjonalnie zapisuje dane do kontekstu + ekstrahuje szczegóły urządzeń
+Ograniczenia: check_io_devices=True działa tylko dla klientów IO z failed_virtual_devices
 """
 
 import re
@@ -33,6 +34,12 @@ class ErrorMessageCondition(BaseCondition):
     - error_clients_only: tylko klienci z error=True (domyślnie False)
     - all_clients: wszyscy klienci niezależnie od stanu (domyślnie False)
 
+    Wsparcie dla klientów IO (check_io_devices=True):
+    - check_io_devices: sprawdza io_server.failed_virtual_devices zamiast error_message
+    - extract_physical_device_to: nazwa zmiennej dla urządzenia fizycznego
+    - extract_error_message_to: nazwa zmiennej dla komunikatu błędu
+    - extract_device_type_to: nazwa zmiennej dla typu urządzenia fizycznego
+
     Wyciąganie danych (tylko dla trybu regex):
     - extract_to_context: dict mapujący nazwy zmiennych kontekstu na:
       * numery grup regex (int): np. {"wydawka_id": 1} dla grupy (\\d+)
@@ -45,6 +52,18 @@ class ErrorMessageCondition(BaseCondition):
             "pattern": "feeder1",
             "case_sensitive": false,
             "fault_clients_only": true
+        }
+    }
+
+    Przykład konfiguracji dla klienta IO (sprawdzanie urządzeń):
+    {
+        "error_message": {
+            "mode": "contains",
+            "pattern": "feeder",
+            "check_io_devices": true,
+            "extract_physical_device_to": "urzadzenie_fizyczne",
+            "extract_error_message_to": "komunikat_bledu",
+            "extract_device_type_to": "typ_urzadzenia"
         }
     }
 
@@ -95,6 +114,12 @@ class ErrorMessageCondition(BaseCondition):
         pattern = self.config.get("pattern")
         case_sensitive = self.config.get("case_sensitive", False)
         extract_to_context = self.config.get("extract_to_context", {})
+        
+        # Parametry dla sprawdzania urządzeń IO
+        check_io_devices = self.config.get("check_io_devices", False)
+        extract_physical_device_to = self.config.get("extract_physical_device_to")
+        extract_error_message_to = self.config.get("extract_error_message_to")
+        extract_device_type_to = self.config.get("extract_device_type_to")
 
         # Opcje zakresu sprawdzania
         fault_clients_only = self.config.get("fault_clients_only", True)
@@ -162,6 +187,59 @@ class ErrorMessageCondition(BaseCondition):
             ):
                 continue
 
+            # Jeśli check_io_devices=True, sprawdź io_server.failed_virtual_devices
+            if check_io_devices:
+                io_server = client_data.get("io_server", {})
+                failed_devices = io_server.get("failed_virtual_devices", {})
+                
+                if failed_devices:
+                    for vdev_name, vdev_info in failed_devices.items():
+                        # Sprawdź czy nazwa urządzenia wirtualnego pasuje do wzorca
+                        match_result = self._check_pattern_match(
+                            vdev_name, search_pattern, mode, case_sensitive, regex_pattern
+                        )
+                        
+                        if match_result:
+                            matching_clients.append(client_name)
+                            
+                            # Ekstrahuj informacje o urządzeniach fizycznych
+                            if scenario_context:
+                                failed_physical = vdev_info.get("failed_physical_devices", {})
+                                
+                                if failed_physical:
+                                    first_physical_name = next(iter(failed_physical.keys()), None)
+                                    
+                                    if first_physical_name:
+                                        physical_info = failed_physical[first_physical_name]
+                                        
+                                        if extract_physical_device_to:
+                                            scenario_context.set(extract_physical_device_to, first_physical_name)
+                                        
+                                        if extract_error_message_to:
+                                            error_msg = physical_info.get("error_message", "Unknown error")
+                                            scenario_context.set(extract_error_message_to, error_msg)
+                                        
+                                        if extract_device_type_to:
+                                            device_type = physical_info.get("device_type", "Unknown")
+                                            scenario_context.set(extract_device_type_to, device_type)
+                                        
+                                        if self.message_logger:
+                                            self.message_logger.debug(
+                                                f"ErrorMessageCondition: wyciągnięto dane urządzenia - "
+                                                f"fizyczne: {first_physical_name}, "
+                                                f"typ: {physical_info.get('device_type')}, "
+                                                f"błąd: {physical_info.get('error_message')}"
+                                            )
+                            
+                            if self.message_logger:
+                                self.message_logger.debug(
+                                    f"ErrorMessageCondition: dopasowanie w io_server.failed_virtual_devices "
+                                    f"klienta '{client_name}': '{vdev_name}' pasuje do wzorca '{pattern}' (tryb: {mode})"
+                                )
+                            break  # Znaleziono dopasowanie w tym kliencie
+                continue  # Następny klient (jeśli check_io_devices)
+
+            # Standardowe sprawdzanie error_message
             # Pobierz error_message
             error_message = client_data.get("error_message")
             if not error_message:

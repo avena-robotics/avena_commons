@@ -1,0 +1,191 @@
+{
+  "name": "Błąd wydawki bez zamówień",
+  "description": "Scenariusz wyłączający wydawkę przy wykryciu błędu, któregokolwiek z urządzeń wydawki, ale bez zamówień do zresetowania.",
+  "version": "1.0",
+  "author": "System",
+  "priority": 20,
+  "cooldown": 0,
+  "trigger": {
+    "type": "automatic",
+    "description": "Uruchomienie gdy którekolwiek urządzenie Wydawki jest w błędzie i wydawka nie przetwarza zamówienia",
+    "conditions": {
+      "or": {
+        "conditions": [
+          {
+            "error_message": {
+              "mode": "regex",
+              "pattern": "feeder(\\d+)",
+              "case_sensitive": false,
+              "fault_clients_only": true,
+              "extract_to_context": {
+                "wydawka_id": 1
+              }
+            }
+          },
+          {
+            "error_message": {
+              "mode": "regex",
+              "pattern": "wydawka(\\d+)",
+              "case_sensitive": false,
+              "fault_clients_only": true,
+              "extract_to_context": {
+                "wydawka_id": 1
+              }
+            }
+          },
+          {
+            "error_message": {
+              "mode": "regex",
+              "pattern": "chamber(\\d+)",
+              "case_sensitive": false,
+              "fault_clients_only": true,
+              "extract_to_context": {
+                "wydawka_id": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "actions": [
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "🔄 FAZA 1: Zatrzymanie soft stop wszystkich elementów systemu.",
+      "description": "Rozpoczęcie fazy inicjalizacji"
+    },
+    {
+      "type": "send_command",
+      "client": [
+        "camera_1",
+        "camera_2",
+        "supervisor_1",
+        "supervisor_2",
+        "munchies_algo"
+      ],
+      "command": "CMD_INITIALIZED",
+      "description": "#TODO: CZY TRZEBA INICJALIZOWAĆ WSZYSTKIE? Wysłanie CMD_INITIALIZED do wszystkich klientów poza IO"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Potwierdzenie błędu na IO",
+      "description": "Informacja o potwierdzeniu błędu na IO"
+    },
+    {
+      "type": "send_command",
+      "client": "io",
+      "command": "CMD_ACK"
+    },
+    {
+      "type": "wait_for_state",
+      "client": "io",
+      "target_state": [
+        "STOPPED"
+      ],
+      "timeout": "10s"
+    },
+    {
+      "type": "send_command",
+      "client": "io",
+      "command": "CMD_INITIALIZED"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_states": [
+        "INITIALIZED",
+        "PAUSE",
+        "RUN"
+      ],
+      "timeout": "10s",
+      "description": "Oczekiwanie na przejście klientów STOPPED do INITIALIZED"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "✅ FAZA 1 ZAKOŃCZONA: IO przeszło ze stanu STOPPED do INITIALIZED; reszta systemu SOFT STOP → INITIALIZED",
+      "description": "Potwierdzenie zakończenia fazy inicjalizacji"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Wykryto błąd na urządzeniu wydawki, wyłączam wydawkę",
+      "description": "Informacja o błędzie wydawki"
+    },
+    {
+      "type": "send_custom_command",
+      "client": "munchies_algo",
+      "command": "change_wydawka_state",
+      "data": {
+        "wydawka_id": "{{wydawka_id}}",
+        "aktywna": false
+      },
+      "timeout": "10s",
+      "description": "Wyłączenie wydawki w munchies_algo"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Wydawka została wyłączona z powodu wykrycia błędu w urządzeniu",
+      "description": "Informacja o wyłączeniu wydawki"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "🚀 FAZA 2: Uruchomienie wszystkich klientów → RUN",
+      "description": "Rozpoczęcie fazy uruchomienia"
+    },
+    {
+      "type": "send_command",
+      "target": "@all",
+      "command": "CMD_RUN",
+      "description": "#TODO: CZY POWINNIŚMY WYSYŁAĆ CMD_RUN DO WSZYSTKICH? Wysłanie CMD_RUN do IO (INITIALIZED→RUN, PAUSE→RUN)"
+    },
+    {
+      "type": "wait_for_state",
+      "target": "@all",
+      "target_state": "RUN",
+      "timeout": "20s",
+      "description": "Oczekiwanie na przejście wszystkich klientów do stanu RUN"
+    },
+    {
+      "type": "log_event",
+      "level": "debug",
+      "message": "✨ Manualny start systemu zakończony - wszystkie klienty przygotowane do operacji",
+      "description": "Ostateczne potwierdzenie zakończenia procedury"
+    },
+    {
+      "type": "log_event",
+      "level": "info",
+      "message": "Wszystkie serwisy zostały wznowione",
+      "description": "Informacja o wznowieniu wszystkich serwisów"
+    },
+    {
+      "type": "send_email",
+      "to": [
+        "damian.gawin@pomagier.info",
+        "lukasz.lecki@pomagier.info",
+        "mikolaj.galant@pomagier.info",
+        "kamil.ochal@pomagier.info"
+      ],
+      "subject": "Błąd wydawki {{wydawka_id}}",
+      "body": "Wykryto błąd na wydawce {{wydawka_id}}. Proszę o sprawdzenie.\nBrak zamówień do zresetowania na tej wydawce.",
+      "description": "Powiadomienie email o błędzie wydawki"
+    },
+    {
+      "type": "send_custom_command",
+      "client": "aps_kds",
+      "command": "order_update",
+      "data": {
+        "order_number": null,
+        "pickup_number": "{{wydawka_id}}",
+        "next_order_number": null,
+        "message": null
+      },
+      "timeout": "5s",
+      "description": "Czyszczenie zamówień na wyłączonej wydawce w APS KDS"
+    }
+  ]
+}

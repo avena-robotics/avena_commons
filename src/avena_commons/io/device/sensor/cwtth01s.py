@@ -4,8 +4,10 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
-class CWTTH01S:
+
+class CWTTH01S(PhysicalDeviceBase):
     """Czujnik temperatury i wilgotności z buforowaniem odczytów i wątkiem monitorującym.
 
     Args:
@@ -14,6 +16,7 @@ class CWTTH01S:
         address: Adres urządzenia.
         period (float): Okres odczytu danych (s).
         cache_time (float): Czas ważności cache (s).
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
         message_logger (MessageLogger | None): Logger wiadomości.
     """
 
@@ -24,13 +27,17 @@ class CWTTH01S:
         address,
         period: float = 0.025,
         cache_time: float = 1,
+        max_consecutive_errors: int = 3,
         message_logger: MessageLogger | None = None,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.period = period
-        self.message_logger = message_logger
         self.humidity = None
         self.temperature = None
         self.__lock = threading.Lock()
@@ -462,6 +469,8 @@ class CWTTH01S:
         Zwraca:
             bool: True jeśli urządzenie odpowiada, w przeciwnym razie False.
         """
+        if not self.check_health():
+            return False
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
