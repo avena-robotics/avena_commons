@@ -1,21 +1,18 @@
 from abc import ABC
+from threading import Event, Thread
 from typing import Any, Callable, Dict, Optional
 
 from avena_commons.io.virtual_device.sensor_watchdog import (
     SensorTimerTask,
     SensorWatchdog,
 )
-
-# from avena_commons.util.control_loop import ControlLoop
+from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import error
 
 
 class TaskTimeout(ABC):
     def __init__(self, message_logger=None, **kwargs):
         """Inicjalizuje TaskTimeout i uruchamia wątek pętli sterującej do tickowania watchdogów."""
-        from threading import Event, Thread
-
-        from avena_commons.util.control_loop import ControlLoop
 
         self.message_logger = message_logger
         self.__watchdog = SensorWatchdog(on_timeout_default=self.__on_sensor_timeout_wrapper, log_error=lambda msg: error(msg, message_logger=self.message_logger))
