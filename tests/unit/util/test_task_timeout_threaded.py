@@ -2,11 +2,14 @@
 
 Sprawdza czy wątek tickowania działa, czy zadania timeout są obsługiwane.
 """
-import time
 import threading
+import time
+
 import pytest
-from avena_commons.util.task_timeout import TaskTimeout
+
 from avena_commons.io.virtual_device.sensor_watchdog import SensorTimerTask
+from avena_commons.util.task_timeout import TaskTimeout
+
 
 class DummyTimeout(TaskTimeout):
     def __init__(self, *args, **kwargs):
