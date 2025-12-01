@@ -38,9 +38,21 @@ DESTINATION_NAME = "io"
 
 if __name__ == "__main__":
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Event-driven client for Munchies algorithm")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port number for the destination (default: 8002)")
-    parser.add_argument("--name", type=str, default=DESTINATION_NAME, help="Name of the destination (default: io2)")
+    parser = argparse.ArgumentParser(
+        description="Event-driven client for Munchies algorithm"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help="Port number for the destination (default: 8002)",
+    )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=DESTINATION_NAME,
+        help="Name of the destination (default: io2)",
+    )
     parser.add_argument(
         "--event",
         type=int,
@@ -131,10 +143,20 @@ if __name__ == "__main__":
             event_name = event6
         elif event_number == 7:
             event_name = event7
-            data = IoSignal(device_type="", device_id=data["device_id"], signal_name="is_product_present", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="",
+                device_id=data["device_id"],
+                signal_name="is_product_present",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 8:
-            data = IoSignal(device_type="", device_id=data["sauce_id"], signal_name="is_sauce_present", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="",
+                device_id=data["sauce_id"],
+                signal_name="is_sauce_present",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
             event_name = event8
         elif event_number == 9:
@@ -148,27 +170,57 @@ if __name__ == "__main__":
 
         elif event_number == 11:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OOC1", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OOC1",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 12:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OOC2", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OOC2",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 13:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OOC3", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OOC3",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 14:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OIC1", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OIC1",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 15:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OIC2", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OIC2",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 16:
             event_name = event11
-            data = IoSignal(device_type="oven", device_id=data["device_id"], signal_name="OIC3", signal_value=0).to_dict()
+            data = IoSignal(
+                device_type="oven",
+                device_id=data["device_id"],
+                signal_name="OIC3",
+                signal_value=0,
+            ).to_dict()
             is_processed = False
         elif event_number == 17:
             event_name = event17
@@ -176,7 +228,9 @@ if __name__ == "__main__":
             is_processed = True
         elif event_number == 18:
             event_name = event18
-            data = IoAction(device_type="wydawka", device_id=data["device_id"]).to_dict()
+            data = IoAction(
+                device_type="wydawka", device_id=data["device_id"]
+            ).to_dict()
             is_processed = True
         elif event_number == 19:
             event_name = event19
@@ -184,7 +238,9 @@ if __name__ == "__main__":
             is_processed = True
         elif event_number == 22:
             event_name = event22
-            data = IoAction(device_type="wydawka", device_id=data["device_id"]).to_dict()
+            data = IoAction(
+                device_type="wydawka", device_id=data["device_id"]
+            ).to_dict()
             is_processed = True
         elif event_number == 23:
             event_name = event23
@@ -212,7 +268,9 @@ if __name__ == "__main__":
             is_processed = True
         elif event_number == 66:
             event_name = event66
-            data = KdsAction(order_number=None, pickup_number=1, message="ODBIERAJ").to_dict()
+            data = KdsAction(
+                order_number=None, pickup_number=1, message="ODBIERAJ"
+            ).to_dict()
 
         elif event_number == 150:
             event_name = event150
@@ -241,7 +299,9 @@ if __name__ == "__main__":
 
         elif event_number == 69:
             event_name = event69
-            data = IoAction(device_type="wydawka", device_id=data["device_id"]).to_dict()
+            data = IoAction(
+                device_type="wydawka", device_id=data["device_id"]
+            ).to_dict()
             is_processed = True
 
         elif event_number == 27:
@@ -368,7 +428,9 @@ if __name__ == "__main__":
                             to_be_processed=True,
                             data=data,
                         )
-                        response = requests.post(f"{base_url}/event", json=event.to_dict())
+                        response = requests.post(
+                            f"{base_url}/event", json=event.to_dict()
+                        )
 
                     # print(f"Response status code: {response.status_code}")
                     # print(f"Response Event: {event.to_dict()}")
@@ -386,7 +448,9 @@ if __name__ == "__main__":
                             to_be_processed=True,
                             data=data,
                         )
-                        response = requests.post(f"{base_url}/event", json=event.to_dict())
+                        response = requests.post(
+                            f"{base_url}/event", json=event.to_dict()
+                        )
                         print(f"Response status code: {response.status_code}")
                         print(f"Response Event: {event.to_dict()}")
                         if response:
@@ -438,6 +502,8 @@ if __name__ == "__main__":
             time.sleep(1)
 
         else:
-            print(f"Invalid event number: {event_number}. Please choose proper event number.")
+            print(
+                f"Invalid event number: {event_number}. Please choose proper event number."
+            )
     else:
         print("No event specified. Use --event parameter to send an event (1-5)")

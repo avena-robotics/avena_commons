@@ -615,8 +615,8 @@ class IO_server(EventListener):
 
                 self._error = True
                 self._error_message = "\n".join(error_parts)
-                
-                self.update_state() # Aktualizuj stan z nowym błędem
+
+                self.update_state()  # Aktualizuj stan z nowym błędem
 
                 if self.fsm_state not in {
                     EventListenerState.ON_ERROR,

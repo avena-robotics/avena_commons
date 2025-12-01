@@ -57,7 +57,7 @@ class TLC57R24V08(PhysicalDeviceBase):
         # movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
-        command_send_retry_attempts: int = 10, # ilosc prob wyslania komendy ruchu
+        command_send_retry_attempts: int = 10,  # ilosc prob wyslania komendy ruchu
         max_consecutive_errors: int = 3,
     ):
         try:
@@ -347,9 +347,15 @@ class TLC57R24V08(PhysicalDeviceBase):
                             self.current_alarm_undervoltage = (
                                 True if current_alarm == 3 else False
                             )
-                            
-                            if self.operation_status_in_place and self._command_send_attempts_made > 0: # uruchomione przynajmniej raz
-                                debug(f"{self.device_name} Zatrzymanie po in_place [{self._command_send_attempts_made}]", message_logger=self.message_logger)
+
+                            if (
+                                self.operation_status_in_place
+                                and self._command_send_attempts_made > 0
+                            ):  # uruchomione przynajmniej raz
+                                debug(
+                                    f"{self.device_name} Zatrzymanie po in_place [{self._command_send_attempts_made}]",
+                                    message_logger=self.message_logger,
+                                )
                                 self._running_mode = DriverMode.STOP
 
                             message = f"{self.device_name} Operation status: in_place={self.operation_status_in_place} homing_completed={self.operation_status_homing_completed} motor_running={self.operation_status_motor_running} failure={self.operation_status_failure} motor_enabling={self.operation_status_motor_enabling} positive_limit={self.operation_status_positive_software_limit} negative_limit={self.operation_status_negative_software_limit} overcurrent={self.current_alarm_overcurrent} overvoltage={self.current_alarm_overvoltage} undervoltage={self.current_alarm_undervoltage}"
