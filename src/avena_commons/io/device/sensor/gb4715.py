@@ -4,8 +4,10 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..physical_device_base import PhysicalDeviceBase
 
-class GB4715:
+
+class GB4715(PhysicalDeviceBase):
     """Czujnik alarmowy GB4715 monitorowany wątkiem z cache odczytu alarmu.
 
     Args:
@@ -14,6 +16,7 @@ class GB4715:
         address: Adres urządzenia.
         period (float): Okres odczytu alarmu (s).
         cache_time (float): Czas ważności cache odczytu (s).
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
         message_logger (MessageLogger | None): Logger wiadomości.
     """
 
@@ -24,16 +27,20 @@ class GB4715:
         address,
         period: float = 0.025,
         cache_time: float = 1,
+        max_consecutive_errors: int = 3,
         message_logger: MessageLogger | None = None,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.period: float = period
         self.cache_time: float = (
             cache_time  # Store cache_time parameter for cache timeout
         )
-        self.message_logger: MessageLogger | None = message_logger
         self.alarm_status: int = 0
         self.__lock: threading.Lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -164,6 +171,8 @@ class GB4715:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        if not self.check_health():
+            return False
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

@@ -1,5 +1,6 @@
 """Event listener type definitions."""
 
+from .camera import CameraAction
 from .io import IoAction, IoSignal
 from .kds import KdsAction
 from .supervisor import (
@@ -19,4 +20,5 @@ __all__ = [
     "SupervisorMoveAction",
     "SupervisorGripperAction",
     "SupervisorPumpAction",
+    "CameraAction",
 ]

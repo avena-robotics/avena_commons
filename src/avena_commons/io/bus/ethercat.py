@@ -145,9 +145,32 @@ class EtherCATWorker(Worker):
     def _add_device(self, device_args: list):
         """Dodaje obiekt slave do wewnętrznej listy na podstawie konfiguracji."""
         device_class = device_args[4].lower()
-        module_path = f"lib.io.device.io.{device_class}"
-        module = importlib.import_module(module_path)
-        device_class = f"{device_class.upper()}_Slave"
+
+        # module_path = f"avena_commons.io.device.io.{device_class}"
+        # ścieżka testowa/dynamiczna musi być z "lib.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
+        # ścieżka wewnętrzna avena_commons "avena_commons.io.{folder_name}.{subfolder_path}.{actual_class_name.lower()}"
+        # FIXME -  scieżkę powinien brać z jednego miejsca - konfiguracji lub zmiennej środowiskowej
+        test_module_path = f"lib.io.device.io.{device_class}"
+        module_path = f"avena_commons.io.device.io.{device_class}"
+
+        try:
+            module = importlib.import_module(test_module_path)
+            device_class = f"{device_class.upper()}_Slave"
+        except (ImportError, AttributeError) as e:
+            try:
+                # Try importing from the main module path
+                module = importlib.import_module(module_path)
+                device_class = f"{device_class.upper()}_Slave"
+
+            except (ImportError, AttributeError) as e:
+                error(
+                    f"Failed to import {device_class} from {module_path}: {str(e)}",
+                    message_logger=self._message_logger,
+                )
+                return None
+
+        # module = importlib.import_module(module_path)
+        # device_class = f"{device_class.upper()}_Slave"
         device = getattr(module, device_class)
         device = device(
             device_name=device_args[0],
@@ -532,6 +555,27 @@ class EtherCATWorker(Worker):
                                 )
                                 value = self._slaves[data[1]].in_move(data[2])
                                 pipe_in.send(value)
+                            case "RUN_JOG":
+                                info(
+                                    f"{self.device_name} - RUN_JOG, {data[1]}, {data[2]}, {data[3]}, {data[4]}",
+                                    message_logger=self._message_logger,
+                                )
+                                self._slaves[data[1]].run_jog(data[2], data[3], data[4])
+                                pipe_in.send(True)
+                            case "STOP_MOTOR":
+                                info(
+                                    f"{self.device_name} - STOP MOTOR, {data[1]}",
+                                    message_logger=self._message_logger,
+                                )
+                                self._slaves[data[1]].stop_motor()
+                                pipe_in.send(True)
+                            case "IS_MOTOR_RUNNING":
+                                info(
+                                    f"{self.device_name} - IS_MOTOR_RUNNING, {data[1]}",
+                                    message_logger=self._message_logger,
+                                )
+                                value = self._slaves[data[1]].is_motor_running()
+                                pipe_in.send(value)
                             case _:
                                 error(
                                     f"{self.device_name} - Unknown command: {data[0]}",
@@ -884,6 +928,30 @@ class EtherCAT(Connector):
         with self.__lock:
             result = self.__execute_command(["AXIS_IN_MOVE", address, axis])
             return result
+
+    def run_jog(self, address: int, speed: int, accel: int, decel: bool):
+        """Uruchamia ruch jog dla wskazanej osi."""
+        with self.__lock:
+            result = self.__execute_command([
+                "RUN_JOG",
+                address,
+                speed,
+                accel,
+                decel,
+            ])
+            return result
+
+    def stop_motor(self, address: int):
+        """Zatrzymuje wszystkie osie na wskazanym slave'ie."""
+        with self.__lock:
+            result = self.__execute_command(["STOP_MOTOR", address])
+            return result
+
+    def is_motor_running(self, address: int) -> bool:
+        """Sprawdza, czy silnik na wskazanej osi jest uruchomiony."""
+        with self.__lock:
+            in_move = self.__execute_command(["IS_MOTOR_RUNNING", address])
+            return bool(in_move) if in_move is not None else False
 
     # === Interfejs dla IO_server (health-check i monitoring) ===
     def check_device_connection(self):

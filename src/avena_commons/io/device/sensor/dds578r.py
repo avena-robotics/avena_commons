@@ -5,8 +5,10 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, error, info
 
+from ..physical_device_base import PhysicalDeviceBase
 
-class DDS578R:
+
+class DDS578R(PhysicalDeviceBase):
     """Licznik parametrów elektrycznych z mechanizmem cache i wątkiem monitorującym.
 
     Urządzenie cyklicznie odczytuje podstawowe parametry elektryczne (napięcia fazowe,
@@ -20,6 +22,7 @@ class DDS578R:
         address (int): Adres slave (1-247).
         period (float): Okres odczytu w sekundach.
         cache_time (float): Czas ważności cache w sekundach.
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
         message_logger (MessageLogger | None): Logger wiadomości.
     """
 
@@ -30,6 +33,7 @@ class DDS578R:
         address,
         period: float = 0.1,
         cache_time: float = 1,
+        max_consecutive_errors: int = 3,
         message_logger: MessageLogger | None = None,
     ):
         """Initialize the electrical meter client.
@@ -39,13 +43,17 @@ class DDS578R:
             bus: Modbus bus interface
             address (int): Slave ID (1-247)
             period (float): Polling period in seconds
+            max_consecutive_errors (int): Maximum consecutive errors before FAULT
             message_logger: Logger instance
         """
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.period = period
-        self.message_logger = message_logger
 
         # Electrical parameters
         self.phase_voltages = {"A": 0.0, "B": 0.0, "C": 0.0}
@@ -426,6 +434,8 @@ class DDS578R:
         Zwraca:
             bool: True jeśli urządzenie odpowiada, w przeciwnym razie False.
         """
+        if not self.check_health():
+            return False
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

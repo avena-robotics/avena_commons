@@ -144,7 +144,7 @@ class DatabaseCondition(BaseCondition):
 
             # Pozwól klasom pochodnym rozszerzyć WHERE (domyślnie bez zmian)
             enhanced_where_conditions = self._augment_where(
-                self.where_conditions, db_component
+                self.where_conditions, self.table, db_component
             )
 
             actual_value = await db_component.check_table_value(
@@ -177,7 +177,9 @@ class DatabaseCondition(BaseCondition):
             )
             return False
 
-    def _augment_where(self, where: Dict[str, Any], db_component) -> Dict[str, Any]:
+    def _augment_where(
+        self, where: Dict[str, Any], table: str, db_component
+    ) -> Dict[str, Any]:
         """
         Hook do modyfikacji WHERE przez klasy pochodne. Domyślnie zwraca kopię bez zmian.
 

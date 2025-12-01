@@ -107,7 +107,7 @@ class Logger_Receiver:
                 logger_file = Path(current_filename)
                 logger_file.parent.mkdir(exist_ok=True, parents=True)
 
-                with open(current_filename, "a") as file:
+                with open(current_filename, "a", encoding="utf-8") as file:
                     try:
                         data = pipe_in.recv()
                     except (EOFError, BrokenPipeError, _pickle.UnpicklingError) as e:

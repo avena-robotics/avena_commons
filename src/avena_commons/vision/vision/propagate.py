@@ -1,0 +1,129 @@
+import numpy as np
+
+
+def propagate(depth, mask, direction):
+    """Propaguje wartości głębi w określonym kierunku w obszarach dziur.
+
+    Funkcja wypełnia obszary dziur (oznaczone maską) wartościami głębi propagowanymi
+    z sąsiednich pikseli w określonym kierunku.
+
+    Args:
+        depth: Obraz głębi z dziurami do wypełnienia
+        mask: Maska binarna określająca obszary dziur (255 = dziura)
+        direction: Kierunek propagacji ("horizontal", "vertical", "square")
+
+    Returns:
+        np.ndarray: Obraz głębi z wypełnionymi dziurami
+
+    Raises:
+        ValueError: Jeśli kierunek nie jest "horizontal", "vertical" lub "square"
+
+    Example:
+        >>> depth = np.array([[100, 0, 200], [0, 0, 0], [300, 0, 400]])
+        >>> mask = np.array([[0, 255, 0], [255, 255, 255], [0, 255, 0]])
+        >>> filled = propagate(depth, mask, "horizontal")
+    """
+    # Wczesne sprawdzenie czy są dziury - główna optymalizacja wydajnościowa
+    if not np.any(mask == 255):
+        return depth.copy()
+
+    def propagate_logic(
+        depth: np.ndarray, mask: np.ndarray, direction: str = "left"
+    ) -> np.ndarray:
+        """Wewnętrzna funkcja propagacji w jednym kierunku z podstawowymi optymalizacjami."""
+        if direction not in {"left", "right", "up", "down"}:
+            raise ValueError("direction must be 'left', 'right', 'up', or 'down'")
+
+        h, w = depth.shape
+        painted = np.zeros_like(depth, dtype=np.float32)
+        holes_equal = mask == 255  # pre-compute for speed
+
+        if direction in {"left", "right"}:
+            # Optymalizacja: znajdź rzędy z dziurami raz na początku
+            rows_with_holes = np.any(holes_equal, axis=1)
+            if not np.any(rows_with_holes):
+                return painted  # nie ma dziur w rzędach
+
+            for y in range(h):
+                if not rows_with_holes[y]:
+                    continue  # skip rows without holes
+
+                row = depth[y]
+                if direction == "left":
+                    # first hole from the left → walk left
+                    start_x = np.argmax(holes_equal[y])
+                    search_range = range(start_x - 1, -1, -1)  # ←
+                else:  # "right"
+                    # first hole from the right → walk right
+                    start_x = w - 1 - np.argmax(holes_equal[y][::-1])
+                    search_range = range(start_x + 1, w)  # →
+
+                # find first valid depth along search_range
+                val = next(
+                    (
+                        row[x]
+                        for x in search_range
+                        if (row[x] != 0) and (not np.isnan(row[x]))
+                    ),
+                    np.nan,
+                )
+                if not np.isnan(val):
+                    painted[y, holes_equal[y]] = val
+
+        else:  # "up" or "down"
+            # Optymalizacja: znajdź kolumny z dziurami raz na początku
+            cols_with_holes = np.any(holes_equal, axis=0)
+            if not np.any(cols_with_holes):
+                return painted  # nie ma dziur w kolumnach
+
+            for x in range(w):
+                if not cols_with_holes[x]:
+                    continue  # skip columns without holes
+
+                col_mask = holes_equal[:, x]
+                if not col_mask.any():
+                    continue  # no hole in this column
+
+                col = depth[:, x]
+                if direction == "up":
+                    # first hole from the top → walk up
+                    start_y = np.argmax(col_mask)
+                    search_range = range(start_y - 1, -1, -1)  # ↑
+                else:  # "down"
+                    # first hole from the bottom → walk down
+                    start_y = h - 1 - np.argmax(col_mask[::-1])
+                    search_range = range(start_y + 1, h)  # ↓
+
+                val = next(
+                    (
+                        col[y]
+                        for y in search_range
+                        if (col[y] != 0) and (not np.isnan(col[y]))
+                    ),
+                    np.nan,
+                )
+                if not np.isnan(val):
+                    painted[col_mask, x] = val
+
+        return painted
+
+    if direction == "horizontal":
+        left_propagation = propagate_logic(depth, mask, "left")
+        right_propagation = propagate_logic(depth, mask, "right")
+
+        return (left_propagation + right_propagation) / 2
+    elif direction == "vertical":
+        top_propagation = propagate_logic(depth, mask, "up")
+        bottom_propagation = propagate_logic(depth, mask, "down")
+        return (top_propagation + bottom_propagation) / 2
+    elif direction == "square":
+        left_propagation = propagate_logic(depth, mask, "left")
+        right_propagation = propagate_logic(depth, mask, "right")
+        top_propagation = propagate_logic(depth, mask, "up")
+        bottom_propagation = propagate_logic(depth, mask, "down")
+        return (
+            (left_propagation + right_propagation) / 2
+            + (top_propagation + bottom_propagation) / 2
+        ) / 2
+    else:
+        raise ValueError("direction must be horizontal / vertical / square")

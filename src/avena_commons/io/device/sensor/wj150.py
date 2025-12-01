@@ -4,13 +4,15 @@ from enum import Enum
 
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..physical_device_base import PhysicalDeviceBase
+
 
 class WorkingMode(Enum):
     AB_ENCODER = 0
     INDEPENDENT_COUNTERS = 1
 
 
-class WJ150:
+class WJ150(PhysicalDeviceBase):
     """Czujnik/enkoder WJ150 z trybem AB lub niezależnymi licznikami, z wątkiem monitorującym.
 
     Args:
@@ -20,6 +22,7 @@ class WJ150:
         working_mode (WorkingMode): Tryb pracy (AB_ENCODER lub INDEPENDENT_COUNTERS).
         period (float): Okres odczytu (s).
         message_logger (MessageLogger | None): Logger wiadomości.
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -30,13 +33,17 @@ class WJ150:
         working_mode: WorkingMode = WorkingMode.AB_ENCODER,
         period: float = 0.025,
         message_logger: MessageLogger | None = None,
+        max_consecutive_errors: int = 3,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.working_mode: WorkingMode = working_mode
         self.period: float = period
-        self.message_logger: MessageLogger | None = message_logger
         self.encoder: int = 0
         self.counter_1: int = 0
         self.counter_2: int = 0
@@ -91,55 +98,74 @@ class WJ150:
         """Wątek cyklicznie odczytujący wartości enkodera lub liczników (zależnie od trybu)."""
         while not self._stop_event.is_set():
             now = time.time()
-            match self.working_mode:
-                case WorkingMode.AB_ENCODER:
-                    with self.__lock:
-                        response = self.bus.read_holding_registers(
-                            address=self.address, first_register=16, count=2
-                        )
-                        # debug(f"{self.device_name} - response: {response}", message_logger=self.message_logger)
-                        if response and len(response) == 2:
-                            # Register 16 (response[0]) contains lower 16 bits
-                            # Register 17 (response[1]) contains upper 16 bits
-                            value = (response[1] << 16) | response[0]
-                            if response[1] & 0x8000:
-                                self.encoder = value - (1 << 32)
+            try:
+                match self.working_mode:
+                    case WorkingMode.AB_ENCODER:
+                        with self.__lock:
+                            response = self.bus.read_holding_registers(
+                                address=self.address, first_register=16, count=2
+                            )
+                            # debug(f"{self.device_name} - response: {response}", message_logger=self.message_logger)
+                            if response and len(response) == 2:
+                                # Register 16 (response[0]) contains lower 16 bits
+                                # Register 17 (response[1]) contains upper 16 bits
+                                value = (response[1] << 16) | response[0]
+                                if response[1] & 0x8000:
+                                    self.encoder = value - (1 << 32)
+                                else:
+                                    self.encoder = value
+                                debug(
+                                    f"{self.device_name} - Response: {response} value: {self.encoder}",
+                                    message_logger=self.message_logger,
+                                )
+                                # Successful read - clear error counter
+                                self.clear_error()
                             else:
-                                self.encoder = value
-                            debug(
-                                f"{self.device_name} - Response: {response} value: {self.encoder}",
-                                message_logger=self.message_logger,
+                                error(
+                                    f"{self.device_name} {self.bus.serial_port} addr[{self.address}]: Error reading encoder or invalid response format",
+                                    message_logger=self.message_logger,
+                                )
+                                self.set_error(
+                                    "Error reading encoder or invalid response format"
+                                )
+                    case WorkingMode.INDEPENDENT_COUNTERS:
+                        with self.__lock:
+                            response = self.bus.read_holding_registers(
+                                address=self.address, first_register=32, count=4
                             )
-                        else:
-                            error(
-                                f"{self.device_name} {self.bus.serial_port} addr[{self.address}]: Error reading encoder or invalid response format",
-                                message_logger=self.message_logger,
-                            )
-                case WorkingMode.INDEPENDENT_COUNTERS:
-                    with self.__lock:
-                        response = self.bus.read_holding_registers(
-                            address=self.address, first_register=32, count=4
+                            if response and len(response) == 4:
+                                # Zakładamy, że liczniki są 32-bitowe unsigned int i każdy zajmuje 2 rejestry
+                                # Counter 1: response[0] (high), response[1] (low)
+                                # Counter 2: response[2] (high), response[3] (low)
+
+                                # Counter 1 (uint32)
+                                self.counter_1 = (response[0] << 16) | response[1]
+
+                                # Counter 2 (uint32)
+                                self.counter_2 = (response[2] << 16) | response[3]
+                                # Successful read - clear error counter
+                                self.clear_error()
+                            else:
+                                error(
+                                    f"{self.device_name} Error reading independent counters or invalid response format",
+                                    message_logger=self.message_logger,
+                                )
+                                self.set_error(
+                                    "Error reading independent counters or invalid response format"
+                                )
+                    case _:
+                        error(
+                            f"{self.device_name} Invalid working mode",
+                            message_logger=self.message_logger,
                         )
-                        if response and len(response) == 4:
-                            # Zakładamy, że liczniki są 32-bitowe unsigned int i każdy zajmuje 2 rejestry
-                            # Counter 1: response[0] (high), response[1] (low)
-                            # Counter 2: response[2] (high), response[3] (low)
+                        self.set_error("Invalid working mode")
+            except Exception as e:
+                error(
+                    f"{self.device_name} - Exception in encoder thread: {e}",
+                    message_logger=self.message_logger,
+                )
+                self.set_error(f"Exception in encoder thread: {e}")
 
-                            # Counter 1 (uint32)
-                            self.counter_1 = (response[0] << 16) | response[1]
-
-                            # Counter 2 (uint32)
-                            self.counter_2 = (response[2] << 16) | response[3]
-                        else:
-                            error(
-                                f"{self.device_name} Error reading independent counters or invalid response format",
-                                message_logger=self.message_logger,
-                            )
-                case _:
-                    error(
-                        f"{self.device_name} Invalid working mode",
-                        message_logger=self.message_logger,
-                    )
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def read_encoder(self):

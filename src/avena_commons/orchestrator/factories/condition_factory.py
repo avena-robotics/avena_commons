@@ -12,6 +12,7 @@ from ..conditions.logic_not_condition import LogicNotCondition
 from ..conditions.logic_or_condition import LogicOrCondition
 from ..conditions.logic_xor_condition import LogicXorCondition
 from ..conditions.time_condition import TimeCondition
+from ..conditions.virtual_device_error_condition import VirtualDeviceErrorCondition
 
 
 class ConditionFactory:
@@ -35,6 +36,7 @@ class ConditionFactory:
         "error_message": ErrorMessageCondition,
         "database": DatabaseCondition,
         "database_list": DatabaseListCondition,
+        "virtual_device_error": VirtualDeviceErrorCondition,
     }
 
     @classmethod

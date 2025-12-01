@@ -3,11 +3,12 @@ import time
 
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
-from ...device import modbus_check_device_connection
+from .. import modbus_check_device_connection
 from ..io_utils import init_device_di, init_device_do
+from ..physical_device_base import PhysicalDeviceBase
 
 
-class DSR:
+class DSR(PhysicalDeviceBase):
     """Sterownik napędu DSR z buforowanym odczytem DI, zapisem DO oraz trybem prędkościowym.
 
     Args:
@@ -21,6 +22,7 @@ class DSR:
         di_count (int): Liczba linii DI.
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Włącza logi debug.
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -35,8 +37,13 @@ class DSR:
         di_count: int = 5,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
+        max_consecutive_errors: int = 3,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.configuration_type = configuration_type
@@ -44,7 +51,6 @@ class DSR:
         self.period: float = period
         self.do_count = do_count
         self.di_count = di_count
-        self.message_logger = message_logger
         self.__debug = debug
 
         # Operation status properties (from register 3)
@@ -479,6 +485,8 @@ class DSR:
                                 f"{self.device_name} - DI value updated: {bin(response)}",
                                 message_logger=self.message_logger,
                             )
+                    # Successful read - clear error counter
+                    self.clear_error()
                 else:
                     if self.__debug:
                         warning(
@@ -524,6 +532,8 @@ class DSR:
                                 f"{self.device_name} - DO values updated: {do_current_state}",
                                 message_logger=self.message_logger,
                             )
+                        # Successful write - clear error counter
+                        self.clear_error()
                     except Exception as e:
                         error(
                             f"{self.device_name} - Error writing DO: {str(e)}",
@@ -539,6 +549,16 @@ class DSR:
             time.sleep(max(0, self.period - (time.time() - now)))
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+
+        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

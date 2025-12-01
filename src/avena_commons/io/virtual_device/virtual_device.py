@@ -4,10 +4,17 @@ from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
 from avena_commons.event_listener import Event, Result
-from avena_commons.util.logger import debug, error
+from avena_commons.util.logger import debug, error, warning
 from avena_commons.util.measure_time import MeasureTime
 
 from .sensor_watchdog import SensorTimerTask, SensorWatchdog
+
+# Import PhysicalDeviceState to check physical device states
+try:
+    from avena_commons.io.device import PhysicalDeviceState
+except ImportError:
+    # Fallback if not yet available (backwards compatibility)
+    PhysicalDeviceState = None
 
 
 class VirtualDeviceState(Enum):
@@ -53,6 +60,10 @@ class VirtualDevice(ABC):
         self._state = VirtualDeviceState.UNINITIALIZED
         self._error_message = None
         self._message_logger = kwargs["message_logger"]
+
+        # Tracking physical devices that caused errors
+        # Format: {"device_name": {"state": PhysicalDeviceState, "error_message": str, "timestamp": float}}
+        self._failed_physical_devices: Dict[str, Dict[str, Any]] = {}
 
         # Built-in sensor watchdog: common for all VirtualDevice subclasses
         # Default timeout action sets device state to ERROR and logs message
@@ -126,12 +137,13 @@ class VirtualDevice(ABC):
         """Wywołuje cykliczną obsługę wszystkich zadań watchdoga dla urządzenia."""
         self._watchdog.tick()
 
-    # Ensure watchdog.tick() is invoked before subclass tick() body
+    # Ensure watchdog.tick() and health checks are invoked before subclass tick() body
     def __init_subclass__(cls, **kwargs):
-        """Hak klasowy, który opakowuje metodę `tick` potomków.
+        """Hook klasowy, który opakowuje metodę `tick` potomków.
 
-        Zapewnia, że przed właściwą logiką `tick()` urządzenia zawsze
-        zostanie wywołany `watchdog.tick()`.
+        Zapewnia, że przed właściwą logiką `tick()` urządzenia zawsze:
+        1. Zostanie wywołany `watchdog.tick()` (monitoring timeoutów)
+        2. Zostanie wywołany `_check_physical_devices_health()` (monitoring urządzeń fizycznych)
         """
         super().__init_subclass__(**kwargs)
         if "tick" in cls.__dict__:
@@ -144,9 +156,147 @@ class VirtualDevice(ABC):
                 except Exception:
                     # Nie blokuj działania urządzenia w razie problemu z watchdogiem
                     pass
+
+                # Check physical devices health before processing
+                try:
+                    self._check_physical_devices_health()
+                except Exception as e:
+                    error(
+                        f"{self.device_name} - Error in physical device health check: {e}",
+                        message_logger=self._message_logger,
+                    )
+
                 return original_tick(self, *args, **kws)
 
             setattr(cls, "tick", wrapped_tick)
+
+    def _check_physical_devices_health(self) -> None:
+        """Sprawdza stan zdrowia wszystkich podłączonych urządzeń fizycznych.
+
+        Metoda wywoływana w tick() przed właściwą logiką urządzenia wirtualnego.
+        Dla każdego urządzenia fizycznego sprawdza jego stan FSM (jeśli dostępny).
+
+        Logika reakcji:
+        - Jeśli urządzenie fizyczne w ERROR: wywołuje _on_physical_device_error() (potomne mogą nadpisać)
+        - Jeśli urządzenie fizyczne w FAULT: wymusza przejście VirtualDevice do ERROR
+
+        Rozszerzone śledzenie:
+        - Zapisuje metadane urządzeń fizycznych które spowodowały błąd w self._failed_physical_devices
+        - Każdy wpis zawiera: state, error_message, timestamp
+        - Wykorzystywane przez IO_server do agregacji błędów i unikania duplikacji
+
+        Domyślnie _on_physical_device_error() natychmiast eskaluje do VirtualDevice.ERROR,
+        ale potomne klasy mogą nadpisać aby zaimplementować retry/recovery logic.
+        """
+        if not self.devices or PhysicalDeviceState is None:
+            return
+
+        import time
+
+        for device_name, device in self.devices.items():
+            try:
+                # Check if device has get_state method (PhysicalDeviceBase protocol)
+                if hasattr(device, "get_state") and callable(device.get_state):
+                    device_state = device.get_state()
+
+                    # FAULT state - critical error, always escalate
+                    if device_state == PhysicalDeviceState.FAULT:
+                        error_msg = getattr(device, "_error_message", "Unknown fault")
+
+                        # Record failed device metadata
+                        self._failed_physical_devices[device_name] = {
+                            "state": "FAULT",
+                            "error_message": error_msg,
+                            "timestamp": time.time(),
+                            "device_type": type(device).__name__,
+                        }
+
+                        error(
+                            f"{self.device_name} - Physical device '{device_name}' in FAULT: {error_msg}",
+                            message_logger=self._message_logger,
+                        )
+                        self.set_state(VirtualDeviceState.ERROR)
+                        self._error_message = f"Physical device '{device_name}' ({type(device).__name__}) in FAULT: {error_msg}"
+                        return
+
+                    # ERROR state - let virtual device decide how to handle
+                    elif device_state == PhysicalDeviceState.ERROR:
+                        error_msg = getattr(device, "_error_message", "Unknown error")
+
+                        # Record failed device metadata
+                        self._failed_physical_devices[device_name] = {
+                            "state": "ERROR",
+                            "error_message": error_msg,
+                            "timestamp": time.time(),
+                            "device_type": type(device).__name__,
+                        }
+
+                        warning(
+                            f"{self.device_name} - Physical device '{device_name}' in ERROR: {error_msg}",
+                            message_logger=self._message_logger,
+                        )
+                        # Call overridable handler - subclasses can implement retry logic
+                        self._on_physical_device_error(device_name, error_msg)
+
+                    # Device recovered - remove from failed list
+                    elif device_state == PhysicalDeviceState.WORKING:
+                        if device_name in self._failed_physical_devices:
+                            debug(
+                                f"{self.device_name} - Physical device '{device_name}' recovered from error",
+                                message_logger=self._message_logger,
+                            )
+                            del self._failed_physical_devices[device_name]
+
+            except Exception as e:
+                error(
+                    f"{self.device_name} - Error checking health of physical device '{device_name}': {e}",
+                    message_logger=self._message_logger,
+                )
+
+    def _on_physical_device_error(self, device_name: str, error_message: str) -> None:
+        """Obsługuje błąd urządzenia fizycznego (ERROR state, nie FAULT).
+
+        Domyślna implementacja: natychmiast eskaluje do VirtualDevice.ERROR (bezpieczna strategia).
+
+        Potomne klasy mogą nadpisać tę metodę aby zaimplementować:
+        - Retry logic (próba ponownego wykonania operacji)
+        - Fallback do innego urządzenia fizycznego
+        - Graceful degradation (ograniczona funkcjonalność)
+        - Ignorowanie przejściowych błędów
+
+        Przykład nadpisania w potomnej klasie:
+        ```python
+        def _on_physical_device_error(self, device_name, error_message):
+            self._retry_count += 1
+            if self._retry_count >= 3:
+                # Po 3 nieudanych próbach - eskaluj
+                self.set_state(VirtualDeviceState.ERROR)
+                self._error_message = f"Device {device_name} error after retries: {error_message}"
+            else:
+                # Retry logic
+                debug(f"Retrying operation on {device_name} (attempt {self._retry_count})")
+        ```
+
+        Args:
+            device_name: Nazwa urządzenia fizycznego w stanie ERROR.
+            error_message: Komunikat błędu z urządzenia fizycznego.
+        """
+        # Default: Safe strategy - immediately escalate to ERROR
+        # Get device type from failed_physical_devices metadata if available
+        device_type = "unknown"
+        if device_name in self._failed_physical_devices:
+            device_type = self._failed_physical_devices[device_name].get(
+                "device_type", "unknown"
+            )
+
+        warning(
+            f"{self.device_name} - Escalating physical device error to virtual device ERROR (override _on_physical_device_error to customize)",
+            message_logger=self._message_logger,
+        )
+        self.set_state(VirtualDeviceState.ERROR)
+        self._error_message = (
+            f"Physical device '{device_name}' ({device_type}) in ERROR: {error_message}"
+        )
 
     def set_state(self, new_state: VirtualDeviceState):
         """
@@ -419,6 +569,9 @@ class VirtualDevice(ABC):
         result = {
             "name": self.device_name,
             "connected_devices": connected_devices_info,
+            "failed_physical_devices": self._failed_physical_devices.copy()
+            if hasattr(self, "_failed_physical_devices")
+            else {},
         }
 
         try:

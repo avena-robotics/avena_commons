@@ -351,6 +351,13 @@ class IO_server(EventListener):
             self._add_to_processing(event)
         return True
 
+    async def _analyze_orchestrator_event(self, event: Event) -> bool:
+        debug(
+            f"Analyzing Orchestrator event {event.event_type} default -> move to analyze_event",
+            message_logger=self._message_logger,
+        )
+        return self._analyze_event(event)
+
     async def device_selector(self, event: Event) -> bool:
         """
         Wybiera właściwe urządzenie wirtualne na podstawie danych zdarzenia i typu akcji.
@@ -469,28 +476,27 @@ class IO_server(EventListener):
                                     )
                                     raise e
 
-                            # Proactive error detection: if any virtual device reports ERROR, trigger IO FSM ON_ERROR
+                            # Proactive error detection: collect errors from virtual devices
+                            # (aggregate before escalating to avoid duplicate logging)
                             try:
                                 if hasattr(device, "get_current_state") and callable(
                                     device.get_current_state
                                 ):
                                     current_state = device.get_current_state()
                                     if current_state == VirtualDeviceState.ERROR:
-                                        # Zapisz źródło błędu
-                                        self._error = True
-                                        self._error_message = device._error_message
-                                        if self.fsm_state not in {
-                                            EventListenerState.ON_ERROR,
-                                            EventListenerState.FAULT,
-                                        }:
-                                            error(
-                                                f"Virtual device {device_name} in ERROR; switching IO FSM to ON_ERROR",
-                                                message_logger=self._message_logger,
-                                            )
-                                            self._change_fsm_state(
-                                                EventListenerState.ON_ERROR
-                                            )
-                                            return
+                                        # Collect error info but don't escalate immediately
+                                        if not hasattr(self, "_virtual_device_errors"):
+                                            self._virtual_device_errors = {}
+
+                                        # Get failed physical devices metadata from virtual device
+                                        failed_physical = getattr(
+                                            device, "_failed_physical_devices", {}
+                                        )
+
+                                        self._virtual_device_errors[device_name] = {
+                                            "error_message": device._error_message,
+                                            "failed_physical_devices": failed_physical.copy(),
+                                        }
                             except Exception as e:
                                 error(
                                     f"Error checking state for {device_name}: {str(e)}",
@@ -553,72 +559,78 @@ class IO_server(EventListener):
                 self._change_fsm_state(EventListenerState.ON_ERROR)
                 return
 
-            # Proaktywna detekcja błędów urządzeń fizycznych (eskalacja do ON_ERROR przy problemie ruchu)
-            try:
-                if hasattr(self, "physical_devices") and isinstance(
-                    self.physical_devices, dict
-                ):
-                    for device_name, device in self.physical_devices.items():
-                        if device is None:
-                            continue
-                        try:
-                            # Preferuj atrybuty _error/_error_message gdy dostępne
-                            dev_error = False
-                            dev_error_message = None
+            # === AGGREGATE AND ESCALATE VIRTUAL DEVICE ERRORS ===
+            # After processing all devices, check if any reported errors and escalate once
+            if hasattr(self, "_virtual_device_errors") and self._virtual_device_errors:
+                # Aggregate failed physical devices across all virtual devices
+                # to avoid duplicate error messages for same physical device
+                all_failed_physical = {}
+                virtual_errors_summary = []
 
-                            if hasattr(device, "_error"):
-                                try:
-                                    dev_error = bool(getattr(device, "_error"))
-                                except Exception:
-                                    dev_error = False
-                            # Dodatkowo spróbuj odczytać error z to_dict() gdy dostępne
-                            if (
-                                not dev_error
-                                and hasattr(device, "to_dict")
-                                and callable(device.to_dict)
-                            ):
-                                try:
-                                    d = device.to_dict() or {}
-                                    dev_error = bool(d.get("error", False))
-                                    dev_error_message = d.get("error_message")
-                                except Exception:
-                                    pass
-                            if dev_error_message is None and hasattr(
-                                device, "_error_message"
-                            ):
-                                try:
-                                    dev_error_message = getattr(
-                                        device, "_error_message"
-                                    )
-                                except Exception:
-                                    dev_error_message = None
+                for vdev_name, error_info in self._virtual_device_errors.items():
+                    virtual_errors_summary.append(
+                        f"{vdev_name}: {error_info.get('error_message', 'Unknown error')}"
+                    )
 
-                            if dev_error:
-                                # Ustaw lokalny stan błędu IO i przełącz FSM do ON_ERROR
-                                self._error = True
-                                self._error_message = f"{device_name}: {dev_error_message if dev_error_message else 'unknown device error'}"
-                                error(
-                                    f"Detected physical device error → IO ON_ERROR: {self._error_message}",
-                                    message_logger=self._message_logger,
-                                )
-                                if self.fsm_state not in {
-                                    EventListenerState.ON_ERROR,
-                                    EventListenerState.FAULT,
-                                }:
-                                    self._change_fsm_state(EventListenerState.ON_ERROR)
-                                    return
-                        except Exception as dev_scan_exc:
-                            # Nie blokuj przetwarzania w razie problemów w pojedynczym urządzeniu
-                            warning(
-                                f"Error while scanning physical device '{device_name}': {dev_scan_exc}",
-                                message_logger=self._message_logger,
-                            )
-            except Exception as scan_exc:
-                # Nie przerywaj dalszej logiki w razie błędów skanowania urządzeń fizycznych
-                warning(
-                    f"Error while scanning physical devices: {scan_exc}",
-                    message_logger=self._message_logger,
+                    # Collect unique physical device failures
+                    for phys_name, phys_info in error_info.get(
+                        "failed_physical_devices", {}
+                    ).items():
+                        if phys_name not in all_failed_physical:
+                            all_failed_physical[phys_name] = {
+                                "state": phys_info.get("state", "ERROR"),
+                                "error_message": phys_info.get(
+                                    "error_message", "Unknown"
+                                ),
+                                "device_type": phys_info.get("device_type", "Unknown"),
+                                "affected_virtual_devices": [vdev_name],
+                            }
+                        else:
+                            # Same physical device failed in multiple virtual devices
+                            all_failed_physical[phys_name][
+                                "affected_virtual_devices"
+                            ].append(vdev_name)
+
+                # Build comprehensive error message
+                error_parts = []
+                error_parts.append(
+                    f"Virtual device errors detected ({len(self._virtual_device_errors)} devices):"
                 )
+                for summary in virtual_errors_summary:
+                    error_parts.append(f"  - {summary}")
+
+                if all_failed_physical:
+                    error_parts.append(
+                        f"\nRoot cause - Failed physical devices ({len(all_failed_physical)}):"
+                    )
+                    for phys_name, phys_info in all_failed_physical.items():
+                        affected = phys_info["affected_virtual_devices"]
+                        error_parts.append(
+                            f"  - {phys_name} ({phys_info['device_type']}): {phys_info['state']} - {phys_info['error_message']}"
+                        )
+                        if len(affected) > 1:
+                            error_parts.append(
+                                f"    Affects {len(affected)} virtual devices: {', '.join(affected)}"
+                            )
+
+                self._error = True
+                self._error_message = "\n".join(error_parts)
+                
+                self.update_state() # Aktualizuj stan z nowym błędem
+
+                if self.fsm_state not in {
+                    EventListenerState.ON_ERROR,
+                    EventListenerState.FAULT,
+                }:
+                    error(
+                        self._error_message,
+                        message_logger=self._message_logger,
+                    )
+                    self._change_fsm_state(EventListenerState.ON_ERROR)
+
+                # Clear for next iteration
+                self._virtual_device_errors = {}
+                return
 
             # Proaktywny health-check magistral (eskalacja do ON_ERROR przy problemie)
             self._assert_bus_healthy(escalate_on_failure=True)
@@ -871,7 +883,7 @@ class IO_server(EventListener):
                             if hasattr(dev, "_stop_event"):
                                 getattr(dev, "_stop_event").set()
                                 stop_events_set += 1
-                            
+
                             if stop_events_set > 0 and self._debug:
                                 debug(
                                     f"physical_device {dname}: set {stop_events_set} stop events",
@@ -896,13 +908,13 @@ class IO_server(EventListener):
                                             threads_joined += 1
                                 except Exception:
                                     pass
-                            
+
                             if threads_joined > 0 and self._debug:
                                 debug(
                                     f"physical_device {dname}: joined {threads_joined} threads",
                                     message_logger=self._message_logger,
                                 )
-                            
+
                             # Krótka pauza po zatrzymaniu wątków, by dać im czas na zakończenie
                             if threads_joined > 0:
                                 time.sleep(0.1)
@@ -1875,6 +1887,20 @@ class IO_server(EventListener):
                     "load_state": self._load_state,
                     "error": self._error,
                     "error_message": self._error_message,
+                    "failed_virtual_devices": {
+                        vdev_name: {
+                            "state": "ERROR",
+                            "error_message": error_info.get("error_message", "Unknown"),
+                            "failed_physical_devices": error_info.get(
+                                "failed_physical_devices", {}
+                            ),
+                        }
+                        for vdev_name, error_info in getattr(
+                            self, "_virtual_device_errors", {}
+                        ).items()
+                    }
+                    if hasattr(self, "_virtual_device_errors")
+                    else {},
                 },
                 "virtual_devices": {},
                 "buses": {},

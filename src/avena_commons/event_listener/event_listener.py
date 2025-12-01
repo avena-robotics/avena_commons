@@ -16,8 +16,6 @@ from typing import Any
 import aiohttp
 import psutil
 import uvicorn
-import uvicorn.config
-import uvicorn.server
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -139,6 +137,7 @@ class EventListener:
 
         self.__state_file_path = TEMP_DIR / f"{name}_state.json"
         self.__config_file_path = f"{name}_config.json"
+        print(f"Config file path: {self.__config_file_path}")
         self.__name = name.lower()
         self.__port = int(port)
         self.__address = address
@@ -506,7 +505,7 @@ class EventListener:
                     message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
             else:
                 message = f"Event sent to {event.destination} [{event.destination_address}:{event.destination_port}{event.destination_endpoint}]: event_type='{event.event_type}' result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time} in {elapsed:.2f} ms"
-            info(
+            debug(
                 message,
                 message_logger=self._message_logger,
             )
@@ -520,7 +519,7 @@ class EventListener:
                 message += f"- event_type='{e['event_type']}' data={e['data']} result={e['result']['result'] if e['result'] else None} timestamp={e['timestamp']} MPT={e['maximum_processing_time']}\n"
         else:
             message = f"Event received from {event.source} [{event.source_address}:{event.source_port}{event.destination_endpoint}]: event_type={event.event_type} result={event.result.result if event.result else None} timestamp={event.timestamp} MPT={event.maximum_processing_time}"
-        info(
+        debug(
             message,
             message_logger=self._message_logger,
         )
@@ -1244,21 +1243,6 @@ class EventListener:
                     case EventListenerState.RUN:
                         await self.on_run()
                         await self._check_local_data()
-
-                        if (
-                            loop.loop_counter % self.__check_local_data_frequency == 0
-                        ):  # co 1 sekunde
-                            self.__received_events_per_second = (
-                                self.__received_events - self.__prev_received_events
-                            )
-                            self.__sended_events_per_second = (
-                                self.__sended_events - self.__prev_sended_events
-                            )
-
-                            # Aktualizacja poprzednich wartości i czasu
-                            self.__prev_received_events = self.__received_events
-                            self.__prev_sended_events = self.__sended_events
-
                     case EventListenerState.PAUSING:
                         await self.on_pausing()
                         self._change_fsm_state(EventListenerState.PAUSE)
@@ -1553,6 +1537,10 @@ class EventListener:
         - STOPPED: "Service stopped" - odrzuca eventy biznesowe
         - ON_ERROR: Brak przetwarzania, automatyczne przekierowanie
         """
+
+        if event.source == "orchestrator":
+            return await self._analyze_orchestrator_event(event)
+
         match self.__fsm_state:
             case EventListenerState.RUN:
                 # RUN: Pełne przetwarzanie wszystkich eventów - wywołanie logiki potomnych
@@ -1683,6 +1671,22 @@ class EventListener:
         Returns:
             bool: True jeśli event powinien być usunięty, False jeśli zachowany
         """
+        return True  # Domyślnie usuwamy event po przetworzeniu
+
+    async def _analyze_orchestrator_event(self, event: Event) -> bool:
+        """Metoda do przedefiniowania w klasach potomnych dla logiki biznesowej.
+
+        Wywoływana dla eventów z orchestratora.
+
+        Args:
+            event (Event): Event do analizy
+
+        Returns:
+            bool: True jeśli event powinien być usunięty, False jeśli zachowany
+        """
+        warning(
+            f"Przyszedł custom event z orchestratora, debug Event Listener. event type: {event.event_type}"
+        )
         return True  # Domyślnie usuwamy event po przetworzeniu
 
     async def _check_local_data(self):
@@ -2217,13 +2221,13 @@ class EventListener:
         #     f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
         #     message_logger=self._message_logger,
         # )
-
         event.data = {}
         event.data["fsm_state"] = self.__fsm_state.name
         # Pola błędu (jeśli klasa potomna je definiuje)
         event.data["error"] = getattr(self, "_error", False)
         event.data["error_code"] = getattr(self, "_error_code", False)
         event.data["error_message"] = getattr(self, "_error_message", None)
+        event.data["state"] = self._serialize_value((getattr(self, "_state", {})))
         event.result = Result(result="success")
         await self._reply(event)
 

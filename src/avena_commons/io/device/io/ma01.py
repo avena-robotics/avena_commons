@@ -4,8 +4,10 @@ import traceback
 
 from avena_commons.util.logger import MessageLogger, debug, error, info
 
+from ..physical_device_base import PhysicalDeviceBase
 
-class MA01:
+
+class MA01(PhysicalDeviceBase):
     """Moduł wyjść/wejść cyfrowych MA01 z buforowaniem zapisu DO i cache DI.
 
     Args:
@@ -14,6 +16,7 @@ class MA01:
         address: Adres urządzenia.
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Włącza logi debug.
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -23,16 +26,20 @@ class MA01:
         address,
         message_logger: MessageLogger | None = None,
         debug=True,
+        max_consecutive_errors: int = 3,
     ):
         """Inicjalizuje moduł MA01 i ustawia parametry buforowania DI/DO."""
         try:
-            self.device_name = device_name
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
             info(
                 f"Initializing MA01 at address {address}", message_logger=message_logger
             )
             self.bus = bus
             self.address = address
-            self.message_logger = message_logger
 
             self.__debug = debug
             self.coil_buffer = [0, 0]  # Only 2 coils

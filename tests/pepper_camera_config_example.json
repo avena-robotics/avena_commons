@@ -1,0 +1,104 @@
+{
+  "camera_configuration": {
+    "camera_ip": "192.168.1.10",
+    "model": "orbec_gemini_335le", 
+    "core": 1,
+    "color": {
+      "width": 640,
+      "height": 400,
+      "fps": 30,
+      "format": "MJPG",
+      "exposure": 500,
+      "gain": 10,
+      "white_balance": 4000
+    },
+    "depth": {
+      "exposure": 500,
+      "gain": 10,
+      "laser_power": 5
+    },
+    "align": "d2c",
+    "disparity_to_depth": true,
+    "filters": {
+      "spatial": false,
+      "temporal": false
+    }
+  },
+  "camera_pipeline": {
+    "camera_number": 1,
+    "image_config": {
+      "resolution": [640, 400],
+      "color_format": "MJPG",
+      "depth_format": "Y16"
+    },
+    "framerate": 30,
+    "fragments": [
+      {
+        "fragment_id": 0,
+        "name": "pepper_region_1",
+        "position": "top-left",
+        "roi": {
+          "x": [100, 640],
+          "y": [50, 400]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": true,
+            "source_path": "/resources/pepper_vision/nozzle_mask_camera1.png",
+            "crop_to_roi": true,
+            "operations": ["erode:2", "dilate:1"]
+          }
+        },
+        "address": "192.168.11.1"
+      },
+      {
+        "fragment_id": 1,
+        "name": "pepper_region_2", 
+        "position": "top-right",
+        "roi": {
+          "x": [640, 1180],
+          "y": [50, 400]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": true,
+            "source_path": "/resources/pepper_vision/nozzle_mask_camera1.png",
+            "crop_to_roi": true,
+            "operations": []
+          }
+        },
+        "address": "192.168.11.2"
+      },
+      {
+        "fragment_id": 2,
+        "name": "pepper_region_3",
+        "position": "bottom-left", 
+        "roi": {
+          "x": [100, 640],
+          "y": [400, 750]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": false
+          }
+        },
+        "address": "192.168.11.3"
+      },
+      {
+        "fragment_id": 3,
+        "name": "pepper_region_4",
+        "position": "bottom-right",
+        "roi": {
+          "x": [640, 1180], 
+          "y": [400, 750]
+        },
+        "mask_config": {
+          "nozzle_mask": {
+            "enabled": false
+          }
+        },
+        "address": "192.168.11.4"
+      }
+    ]
+  }
+}

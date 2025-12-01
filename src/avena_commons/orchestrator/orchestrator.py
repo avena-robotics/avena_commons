@@ -1451,6 +1451,8 @@ class Orchestrator(EventListener):
                         "error_message"
                     )
 
+                    self._state[event.source]["state"] = event.data.get("state", {})
+
                     debug(
                         f"📊 _state update: {event.source} FSM: {old_state} → {new_state}",
                         message_logger=self._message_logger,

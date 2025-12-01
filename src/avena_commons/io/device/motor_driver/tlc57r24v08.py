@@ -1,13 +1,30 @@
 import threading
 import time
+import traceback
+from enum import Enum
 
-from avena_commons.io.device import modbus_check_device_connection
+from avena_commons.io.device import (
+    modbus_check_device_connection,
+)
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 
-class TLC57R24V08:
+class DriverMode(Enum):
+    JOG = 1
+    POSITION = 2
+    STOP = -1
+
+
+# class DriverState(Enum):
+#     IDLE = 1
+#     IN_MOVE = 2
+#     IN_ERROR = -1
+
+
+class TLC57R24V08(PhysicalDeviceBase):
     """Sterownik TLC57R24V08 z trybem jog/pozycja, wątkami DI/DO i obsługą błędów.
 
     Args:
@@ -36,93 +53,116 @@ class TLC57R24V08:
         period: float = 0.05,
         do_count: int = 3,
         di_count: int = 5,
-        movement_retry_attempts: int = 3,
-        movement_retry_delay: float = 0.2,
+        # movement_retry_attempts: int = 3,
+        # movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
-        command_send_retry_attempts: int = 3,
+        command_send_retry_attempts: int = 10, # ilosc prob wyslania komendy ruchu
+        max_consecutive_errors: int = 3,
     ):
-        self.device_name = device_name
-        self.bus = bus
-        self.address = address
-        self.configuration_type = configuration_type
-        self.reverse_direction = reverse_direction
-        self.period: float = period
-        self.do_count = do_count
-        self.di_count = di_count
-        self.message_logger = message_logger
-        self.__debug = debug
-        self.operation_status_in_place = False
-        self.operation_status_homing_completed = False
-        self.operation_status_motor_running = False
-        self.operation_status_failure = False
-        self.operation_status_motor_enabling = False
-        self.operation_status_positive_software_limit = False
-        self.operation_status_negative_software_limit = False
-        self.current_alarm_overcurrent = False
-        self.current_alarm_overvoltage = False
-        self.current_alarm_undervoltage = False
-        self.__motor_running = False
+        try:
+            # Initialize PhysicalDeviceBase first
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
 
-        # Jog threading control flags
-        self._stop_event = threading.Event()
-        self._run = False
-        self._jog_speed = 0
-        self._jog_accel = 0
-        self._jog_decel = 0
-        self._jog_control_word = 8
-        self._jog_lock = threading.Lock()
-        self._jog_thread = None
-        self._jog_counter = 0
+            self.set_state(PhysicalDeviceState.INITIALIZING)
 
-        # Position mode variables
-        self._position_mode = False  # True for position mode, False for jog mode
-        self._position_target = 0
-        self._position_speed = 0
-        self._position_accel = 0
-        self._position_decel = 0
-        self._position_start_speed = 0
-        self._position_control_word = 1
+            self.device_name = device_name
+            self.bus = bus
+            self.address = address
+            self.configuration_type = configuration_type
+            self.reverse_direction = reverse_direction
+            self.period: float = period
+            self.do_count = do_count
+            self.di_count = di_count
+            self.message_logger = message_logger
+            self.__debug = debug
+            self.operation_status_in_place = False
+            self.operation_status_homing_completed = False
+            self.operation_status_motor_running = False
+            self.operation_status_failure = False
+            self.operation_status_motor_enabling = False
+            self.operation_status_positive_software_limit = False
+            self.operation_status_negative_software_limit = False
+            self.current_alarm_overcurrent = False
+            self.current_alarm_overvoltage = False
+            self.current_alarm_undervoltage = False
+            # self.__motor_running = False
 
-        # DI reading thread properties
-        self.di_value: int = 0
-        self.__di_lock: threading.Lock = threading.Lock()
-        self._di_thread: threading.Thread | None = None
-        self._di_stop_event: threading.Event = threading.Event()
+            # Jog threading control flags
+            self._stop_event = threading.Event()
+            # self._run = False  # znacznik informujący wątek jog o konieczności wysłania nowych parametrów
+            self._jog_speed = 0
+            self._jog_accel = 0
+            self._jog_decel = 0
+            # self._jog_control_word = 8
+            self._jog_lock = threading.Lock()
+            self._jog_thread = None
+            self._jog_counter = 0
 
-        # DO writing thread properties
-        self.do_current_state: list[int] = [0] * self.do_count
-        self.do_state_changed: bool = False
-        self.do_previous_state: list[int] = [0] * self.do_count
-        self.__do_lock: threading.Lock = threading.Lock()
-        self._do_thread: threading.Thread | None = None
-        self._do_stop_event: threading.Event = threading.Event()
+            # Position mode variables
+            # self._position_mode = False  # True for position mode, False for jog mode
+            self._running_mode = DriverMode.STOP
+            self._position_target = 0
+            self._position_speed = 0
+            self._position_accel = 0
+            self._position_decel = 0
+            self._position_start_speed = 0
+            # self._position_control_word = 1
 
-        # Error propagation fields (for IO_server escalation)
-        self._error: bool = False
-        self._error_message: str | None = None
+            # DI reading thread properties
+            self.di_value: int = 0
+            self.__di_lock: threading.Lock = threading.Lock()
+            self._di_thread: threading.Thread | None = None
+            self._di_stop_event: threading.Event = threading.Event()
 
-        # Movement retry configuration/state
-        self._move_retry_attempts: int = (
-            int(movement_retry_attempts) if movement_retry_attempts is not None else 0
-        )
-        self._move_retry_delay: float = (
-            float(movement_retry_delay) if movement_retry_delay is not None else 0.0
-        )
-        self._move_in_progress: bool = False
-        self._move_attempts_made: int = 0
-        self._last_command_type: str | None = None  # 'jog' | 'position' | None
-        self._waiting_for_failure_clear: bool = False
+            # DO writing thread properties
+            self.do_current_state: list[int] = [0] * self.do_count
+            self.do_state_changed: bool = False
+            self.do_previous_state: list[int] = [0] * self.do_count
+            self.__do_lock: threading.Lock = threading.Lock()
+            self._do_thread: threading.Thread | None = None
+            self._do_stop_event: threading.Event = threading.Event()
 
-        # Command send retry configuration/state (independent from movement retries)
-        self._command_send_retry_attempts: int = (
-            int(command_send_retry_attempts)
-            if command_send_retry_attempts is not None
-            else 0
-        )
-        self._command_send_attempts_made: int = 0
+            # Error propagation fields (for IO_server escalation)
+            self._error: bool = False
+            self._error_message: str | None = None
 
-        self.__setup()
+            # Movement retry configuration/state
+            # self._move_retry_attempts: int = int(movement_retry_attempts) if movement_retry_attempts is not None else 0
+            # self._move_retry_delay: float = float(movement_retry_delay) if movement_retry_delay is not None else 0.0
+            # self._move_in_progress: bool = False
+            # self._move_attempts_made: int = 0
+            # self._last_command_type: str | None = None  # 'jog' | 'position' | None
+            # self._waiting_for_failure_clear: bool = False
+
+            # Command send retry configuration/state (independent from movement retries)
+            self._command_send_retry_attempts: int = (
+                int(command_send_retry_attempts)
+                if command_send_retry_attempts is not None
+                else 0
+            )
+            self._command_send_attempts_made: int = 0  # liczba prób wysłania bieżącej komendy - konieczne restartowanie przy nowej komendzie
+
+            self.__setup()
+
+            if self.check_device_connection():
+                self.set_state(PhysicalDeviceState.WORKING)
+            else:
+                self.set_error(
+                    f"Initial connection check failed at address {address}, device {device_name}."
+                )
+
+        except Exception as e:
+            error(
+                f"{self.device_name} - Error initializing: {str(e)}",
+                message_logger=message_logger,
+            )
+            error(traceback.format_exc(), message_logger=message_logger)
+            self.set_error(f"Initialization exception: {str(e)}")
 
     def __setup(self):
         """Konfiguruje rejestry sterownika, uruchamia wątki jog/DI/DO."""
@@ -194,156 +234,142 @@ class TLC57R24V08:
         """Wątek: wysyła parametry jog/pozycja po ustawieniu flagi run, z obsługą retry."""
 
         while not self._stop_event.is_set():
-            now = time.time()
-
             try:
                 with self._jog_lock:
-                    current_run = self._run
-                    position_mode = self._position_mode
+                    match self._running_mode:  # ustawianie parametrow ruchu
+                        case DriverMode.POSITION:
+                            target = self._position_target
+                            speed = self._position_speed
+                            accel = self._position_accel
+                            decel = self._position_decel
+                            start_speed = self._position_start_speed
+                            control_word = 1
 
-                    if position_mode:
-                        # Position mode parameters
-                        target = self._position_target
-                        speed = self._position_speed
-                        accel = self._position_accel
-                        decel = self._position_decel
-                        start_speed = self._position_start_speed
-                        control_word = self._position_control_word
-                    else:
-                        # Jog mode parameters
-                        speed = self._jog_speed
-                        accel = self._jog_accel
-                        decel = self._jog_decel
-                        control_word = self._jog_control_word
+                        case DriverMode.JOG:
+                            speed = self._jog_speed
+                            accel = self._jog_accel
+                            decel = self._jog_decel
+                            control_word = 8
 
-                    jog_counter = self._jog_counter
+                        case DriverMode.STOP:
+                            target = 0
+                            speed = 0
+                            accel = 0
+                            decel = 0
+                            start_speed = 0
+                            control_word = 32
 
-                # Send parameters only once when enabled, then disable the flag
-                if current_run:
-                    # Immediately set run to false after sending parameters
-                    with self._jog_lock:
-                        if position_mode:
-                            # Position enabled - send position parameters once and disable the flag
-                            response = self.__send_position_parameters(
-                                target, speed, accel, decel, start_speed, control_word
-                            )
-                            if response:
-                                self._run = False
-                                self._command_send_attempts_made = 0
-                            else:
-                                self._command_send_attempts_made += 1
-                                if (
-                                    self._command_send_retry_attempts > 0
-                                    and self._command_send_attempts_made
-                                    >= self._command_send_retry_attempts
-                                ):
-                                    self._error = True
-                                    self._error_message = (
-                                        f"{self.device_name} - Wysyłanie parametrów pozycji: "
-                                        f"przekroczono liczbę prób ("
-                                        f"{self._command_send_attempts_made}/"
-                                        f"{self._command_send_retry_attempts})"
+                match self._jog_counter % 2:
+                    case 0:
+                        # polecenie ruchu jezeli jest tryb a nie ma potwierdzenia wyslania
+                        match self._running_mode:  # ustawianie parametrow ruchu
+                            case DriverMode.POSITION:
+                                if not self.operation_status_motor_running:
+                                    self._command_send_attempts_made += (
+                                        1  # kolejny licznik proby wysylki polecenia
                                     )
-                                    error(
-                                        self._error_message,
+                                    debug(
+                                        f"{self.device_name} Sending position parameters: target={target}, speed={speed}, accel={accel}, decel={decel}, start_speed={start_speed}, control_word={control_word} [{self._command_send_attempts_made}]",
                                         message_logger=self.message_logger,
                                     )
-                                    self._move_in_progress = False
-                                    self._last_command_type = None
-                                    self._run = False
-                                else:
-                                    self._run = True
-                            debug(
-                                f"{self.device_name} Position parameters sent: target={target}, speed={speed}, accel={accel}, decel={decel}",
-                                message_logger=self.message_logger,
-                            )
-                        else:
-                            # Jog enabled - send jog parameters once and disable the flag
-                            response = self.__send_jog_parameters(
-                                speed, accel, decel, control_word
-                            )
-                            if response:
-                                self._run = False
-                                self._command_send_attempts_made = 0
-                            else:
-                                self._command_send_attempts_made += 1
-                                if (
-                                    self._command_send_retry_attempts > 0
-                                    and self._command_send_attempts_made
-                                    >= self._command_send_retry_attempts
-                                ):
-                                    self._error = True
-                                    self._error_message = (
-                                        f"{self.device_name} - Wysyłanie parametrów ruchu: "
-                                        f"przekroczono liczbę prób ("
-                                        f"{self._command_send_attempts_made}/"
-                                        f"{self._command_send_retry_attempts})"
+                                    self.__send_position_parameters(
+                                        target,
+                                        speed,
+                                        accel,
+                                        decel,
+                                        start_speed,
+                                        control_word,
                                     )
-                                    error(
-                                        self._error_message,
+
+                            case DriverMode.JOG:
+                                if not self.operation_status_motor_running:
+                                    self._command_send_attempts_made += (
+                                        1  # kolejny licznik proby wysylki polecenia
+                                    )
+                                    debug(
+                                        f"{self.device_name} Sending jog parameters: speed={speed}, accel={accel}, decel={decel}, control_word={control_word} [{self._command_send_attempts_made}]",
                                         message_logger=self.message_logger,
                                     )
-                                    self._move_in_progress = False
-                                    self._last_command_type = None
-                                    self._run = False
-                                else:
-                                    self._run = True
-                            debug(
-                                f"{self.device_name} Jog parameters sent: speed={speed}, accel={accel}, decel={decel}",
-                                message_logger=self.message_logger,
+                                    self.__send_jog_parameters(
+                                        speed, accel, decel, control_word
+                                    )
+
+                            case DriverMode.STOP:
+                                if (
+                                    self.operation_status_motor_running
+                                ):  # silnik wciaz sie rusza
+                                    self._command_send_attempts_made += (
+                                        1  # kolejny licznik proby wysylki polecenia
+                                    )
+                                    debug(
+                                        f"{self.device_name} Sending stop jog parameters [{self._command_send_attempts_made}]",
+                                        message_logger=self.message_logger,
+                                    )
+                                    self.__send_jog_parameters(0, 0, 0, control_word)
+                                else:  # silnik zatrzymany
+                                    self._command_send_attempts_made = (
+                                        0  # zerujemy licznik prob wysylki
+                                    )
+
+                    case 1:
+                        # odczyt statusu
+                        response_status = self.bus.read_holding_registers(
+                            address=self.address, first_register=4, count=2
+                        )
+                        if response_status and len(response_status) == 2:
+                            # status_value = response_status[0] if isinstance(response_status, list) else response_status
+                            status_value = response_status[0]
+                            self.operation_status_in_place = bool(status_value & 1)
+                            self.operation_status_homing_completed = bool(
+                                status_value >> 1 & 1
+                            )
+                            self.operation_status_motor_running = bool(
+                                status_value >> 2 & 1
+                            )
+                            self.operation_status_failure = bool(status_value >> 3 & 1)
+                            self.operation_status_motor_enabling = bool(
+                                status_value >> 4 & 1
+                            )
+                            self.operation_status_positive_software_limit = bool(
+                                status_value >> 5 & 1
+                            )
+                            self.operation_status_negative_software_limit = bool(
+                                status_value >> 6 & 1
                             )
 
-                # time.sleep(max(0, self.period - (time.time() - now)))
-                # co 10 raz wykonac to:
-                if jog_counter % 10 == 0:
-                    response_status = self.bus.read_holding_registers(
-                        address=self.address, first_register=4, count=2
-                    )
-                    if response_status and len(response_status) == 2:
-                        # status_value = response_status[0] if isinstance(response_status, list) else response_status
-                        status_value = response_status[0]
-                        self.operation_status_in_place = bool(status_value & 1)
-                        self.operation_status_homing_completed = bool(
-                            status_value >> 1 & 1
-                        )
-                        self.operation_status_motor_running = bool(
-                            status_value >> 2 & 1
-                        )
-                        self.operation_status_failure = bool(status_value >> 3 & 1)
-                        self.operation_status_motor_enabling = bool(
-                            status_value >> 4 & 1
-                        )
-                        self.operation_status_positive_software_limit = bool(
-                            status_value >> 5 & 1
-                        )
-                        self.operation_status_negative_software_limit = bool(
-                            status_value >> 6 & 1
-                        )
+                            current_alarm = response_status[1]
+                            self.current_alarm_overcurrent = (
+                                True if current_alarm == 1 else False
+                            )
+                            self.current_alarm_overvoltage = (
+                                True if current_alarm == 2 else False
+                            )
+                            self.current_alarm_undervoltage = (
+                                True if current_alarm == 3 else False
+                            )
+                            
+                            if self.operation_status_in_place and self._command_send_attempts_made > 0: # uruchomione przynajmniej raz
+                                debug(f"{self.device_name} Zatrzymanie po in_place [{self._command_send_attempts_made}]", message_logger=self.message_logger)
+                                self._running_mode = DriverMode.STOP
 
-                        current_alarm = response_status[1]
-                        self.current_alarm_overcurrent = (
-                            True if current_alarm == 1 else False
-                        )
-                        self.current_alarm_overvoltage = (
-                            True if current_alarm == 2 else False
-                        )
-                        self.current_alarm_undervoltage = (
-                            True if current_alarm == 3 else False
-                        )
-
-                        message = f"{self.device_name} Operation status: in_place={self.operation_status_in_place} homing_completed={self.operation_status_homing_completed} motor_running={self.operation_status_motor_running} failure={self.operation_status_failure} motor_enabling={self.operation_status_motor_enabling} positive_limit={self.operation_status_positive_software_limit} negative_limit={self.operation_status_negative_software_limit} overcurrent={self.current_alarm_overcurrent} overvoltage={self.current_alarm_overvoltage} undervoltage={self.current_alarm_undervoltage}"
-                        if self.operation_status_failure:
-                            error(message, message_logger=self.message_logger)
-                        else:
-                            debug(message, message_logger=self.message_logger)
-
-                        # Movement error handling with retry and reset
-                        try:
+                            message = f"{self.device_name} Operation status: in_place={self.operation_status_in_place} homing_completed={self.operation_status_homing_completed} motor_running={self.operation_status_motor_running} failure={self.operation_status_failure} motor_enabling={self.operation_status_motor_enabling} positive_limit={self.operation_status_positive_software_limit} negative_limit={self.operation_status_negative_software_limit} overcurrent={self.current_alarm_overcurrent} overvoltage={self.current_alarm_overvoltage} undervoltage={self.current_alarm_undervoltage}"
                             if self.operation_status_failure:
-                                # Avoid hammering retry while failure bit still set
-                                if not self._waiting_for_failure_clear:
-                                    # Reset error at drive and schedule retry or escalate
+                                error(message, message_logger=self.message_logger)
+                            else:
+                                debug(message, message_logger=self.message_logger)
+                                pass
+
+                            # reakcja na blad
+                            try:
+                                if self.operation_status_failure:
                                     try:
+                                        self._command_send_attempts_made += (
+                                            1  # kolejny licznik proby wysylki polecenia
+                                        )
+                                        debug(
+                                            f"{self.device_name} Resetting error due to operation failure [{self._command_send_attempts_made}]",
+                                            message_logger=self.message_logger,
+                                        )
                                         self.reset_error()
                                     except Exception as _e:
                                         error(
@@ -351,65 +377,40 @@ class TLC57R24V08:
                                             message_logger=self.message_logger,
                                         )
 
-                                    self._move_attempts_made += 1
-                                    if (
-                                        self._move_in_progress
-                                        and self._move_attempts_made
-                                        <= self._move_retry_attempts
-                                    ):
-                                        # Re-send the last command by toggling _run
-                                        with self._jog_lock:
-                                            self._run = True
-                                        if self._move_retry_delay > 0:
-                                            time.sleep(self._move_retry_delay)
-                                    else:
-                                        # Exceeded retry attempts → escalate error
-                                        self._error = True
-                                        self._error_message = (
-                                            f"{self.device_name} - Błąd ruchu podczas {self._last_command_type or 'unknown'}: "
-                                            f"przekroczono liczbę prób ({self._move_attempts_made}/{self._move_retry_attempts})"
-                                        )
-                                        error(
-                                            self._error_message,
-                                            message_logger=self.message_logger,
-                                        )
-                                        # Stop trying further
-                                        self._move_in_progress = False
-                                        self._last_command_type = None
+                            except Exception as _eh:
+                                error(
+                                    f"{self.device_name} - Error in movement retry handler: {_eh}",
+                                    message_logger=self.message_logger,
+                                )
 
-                                    # From now wait until failure bit clears to avoid repeated retries in tight loop
-                                    self._waiting_for_failure_clear = True
-                            else:
-                                # Failure bit cleared → allow next detection
-                                if self._waiting_for_failure_clear:
-                                    self._waiting_for_failure_clear = False
-
-                                # Detect success and clear in-progress flags
-                                if self._move_in_progress:
-                                    if (
-                                        self.operation_status_in_place
-                                        or self.operation_status_motor_running
-                                    ):
-                                        self._move_in_progress = False
-                                        self._last_command_type = None
-                                        self._move_attempts_made = 0
-                        except Exception as _eh:
-                            error(
-                                f"{self.device_name} - Error in movement retry handler: {_eh}",
+                        else:
+                            warning(
+                                f"{self.device_name} - Unable to read status registers",
                                 message_logger=self.message_logger,
                             )
 
-                with self._jog_lock:
-                    self._jog_counter = jog_counter + 1
+                if (
+                    self._command_send_retry_attempts > 0
+                    and self._command_send_attempts_made
+                    >= self._command_send_retry_attempts
+                ):  # Przekroczenie ilosci prob wyslania komendy
+                    self._running_mode = (
+                        DriverMode.STOP
+                    )  # zatrzymanie dalszych prób ruchu
+                    self.set_error(
+                        f"{self.device_name} - Wysyłanie parametrów ruchu: przekroczono liczbę prób ({self._command_send_attempts_made}/{self._command_send_retry_attempts})"
+                    )
 
-                time.sleep(0.005)
+                self._jog_counter += 1
+                time.sleep(0.010)
 
             except Exception as e:
                 error(
                     f"{self.device_name} Error in jog thread: {e}",
                     message_logger=self.message_logger,
                 )
-                time.sleep(0.1)
+                self.set_error(f"Jog thread exception: {e}")
+                time.sleep(0.01)
 
     def __send_jog_parameters(
         self, speed: int, accel: int, decel: int, control_word: int
@@ -480,40 +481,6 @@ class TLC57R24V08:
             )
             return False
 
-    def __operation_status_thread(self):
-        """Wątek śledzący status operacyjny podczas pracy silnika."""
-        while self.__motor_running:
-            response_status = self.bus.read_holding_registers(
-                address=self.address, first_register=4, count=2
-            )
-            # status_value = response_status[0] if isinstance(response_status, list) else response_status
-            status_value = response_status[0]
-            self.operation_status_in_place = bool(status_value & 1)
-            self.operation_status_homing_completed = bool(status_value >> 1 & 1)
-            self.operation_status_motor_running = bool(status_value >> 2 & 1)
-            self.operation_status_failure = bool(status_value >> 3 & 1)
-            self.operation_status_motor_enabling = bool(status_value >> 4 & 1)
-            self.operation_status_positive_software_limit = bool(status_value >> 5 & 1)
-            self.operation_status_negative_software_limit = bool(status_value >> 6 & 1)
-
-            current_alarm = response_status[1]
-            self.current_alarm_overcurrent = True if current_alarm == 1 else False
-            self.current_alarm_overvoltage = True if current_alarm == 2 else False
-            self.current_alarm_undervoltage = True if current_alarm == 3 else False
-
-            message = f"{self.device_name} Operation status: in_place={self.operation_status_in_place} homing_completed={self.operation_status_homing_completed} motor_running={self.operation_status_motor_running} failure={self.operation_status_failure} motor_enabling={self.operation_status_motor_enabling} positive_limit={self.operation_status_positive_software_limit} negative_limit={self.operation_status_negative_software_limit} overcurrent={self.current_alarm_overcurrent} overvoltage={self.current_alarm_overvoltage} undervoltage={self.current_alarm_undervoltage}"
-            if self.operation_status_failure:
-                error(message, message_logger=self.message_logger)
-            else:
-                debug(message, message_logger=self.message_logger)
-            time.sleep(0.1)
-
-    def __run_operation_status_read(self):
-        """Uruchamia wątek odczytu statusu operacyjnego."""
-        self.__motor_running = True
-        self._status_thread = threading.Thread(target=self.__operation_status_thread)
-        self._status_thread.start()
-
     def is_motor_running(self):
         """Zwraca True, jeśli silnik jest uruchomiony (bit motor_running)."""
         return self.operation_status_motor_running
@@ -525,6 +492,7 @@ class TLC57R24V08:
     def reset_error(self):
         """Resetuje błąd w urządzeniu (zapis do rejestru resetu błędów)."""
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
+        self.clear_error()  # czyszczenie błędów klasy nadrzędnej
         debug(
             f"{self.device_name} - Reset po byciu w stanie failure",
             message_logger=self.message_logger,
@@ -559,21 +527,15 @@ class TLC57R24V08:
         )
 
         with self._jog_lock:
-            self._position_mode = True
+            self._running_mode = DriverMode.POSITION
             self._position_target = position
             self._position_speed = speed
             self._position_accel = accel
             self._position_decel = decel
             self._position_start_speed = start_speed
-            self._position_control_word = 1
-            self._run = True
-        # Initialize movement tracking
-        self._move_in_progress = True
-        self._last_command_type = "position"
-        self._move_attempts_made = 0
-        self._error = False
-        self._error_message = None
-        self._command_send_attempts_made = 0
+            self._error = False
+            self._error_message = None
+            self._command_send_attempts_made = 0
 
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         """Włącza tryb jog z podanymi parametrami (wysyłką zajmuje się wątek jog).
@@ -589,39 +551,26 @@ class TLC57R24V08:
         )
 
         with self._jog_lock:
-            self._position_mode = False
+            self._running_mode = DriverMode.JOG
             self._jog_speed = speed
             self._jog_accel = accel
             self._jog_decel = decel
-            self._jog_control_word = 8
-            self._run = True
-        # Initialize movement tracking
-        self._move_in_progress = True
-        self._last_command_type = "jog"
-        self._move_attempts_made = 0
-        self._error = False
-        self._error_message = None
-        self._command_send_attempts_made = 0
+            self._command_send_attempts_made = 0
+            self._error = False
+            self._error_message = None
 
     def stop(self):
         """Zatrzymuje silnik i wyłącza tryb jog."""
-        self.__motor_running = False
-
         # Disable jog mode
         with self._jog_lock:
-            self._run = True
-            self._position_mode = False  # Reset to jog mode
+            self._running_mode = DriverMode.STOP
             self._jog_speed = 0
             self._jog_accel = 0
             self._jog_decel = 0
-            self._jog_control_word = 32
-
+            self._command_send_attempts_made = 0
+            self._error = False
+            self._error_message = None
         info(f"{self.device_name}.stop", message_logger=self.message_logger)
-        # The jog thread will handle sending the stop command when jog is disabled
-        # Clear movement tracking (stop requested)
-        self._move_in_progress = False
-        self._last_command_type = None
-        self._command_send_attempts_made = 0
 
     def di(self, index: int):
         """Read DI value from cached data"""
@@ -653,6 +602,15 @@ class TLC57R24V08:
             return None
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

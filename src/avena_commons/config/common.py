@@ -26,7 +26,7 @@ class Config:
                 return
 
         # Zapisz zawartość pliku, pomijając linie od początku do pierwszej pustej linii
-        with open(self.config_file(), "w") as file:
+        with open(self.config_file(), "w", encoding="utf-8") as file:
             file.writelines(lines[first_blank_line_index + 1 :])
 
     def config_file(self):
@@ -39,7 +39,7 @@ class Config:
 
     def save_to_file(self):
         if not self._read_only:
-            with open(self.config_file(), "w") as file:
+            with open(self.config_file(), "w", encoding="utf-8") as file:
                 self.config.write(file)
             self.__remove_content_up_to_first_blank_line()
 

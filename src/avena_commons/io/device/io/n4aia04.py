@@ -4,10 +4,11 @@ import traceback
 
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
-from ...device import modbus_check_device_connection
+from .. import modbus_check_device_connection
+from ..physical_device_base import PhysicalDeviceBase
 
 
-class N4AIA04:
+class N4AIA04(PhysicalDeviceBase):
     """Moduł 2x napięcie (V) i 2x prąd (mA) czytany przez Modbus Holding Registers.
 
     Args:
@@ -18,6 +19,7 @@ class N4AIA04:
         period (float): Okres odczytu rejestrów (s).
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Włącza logi debug.
+        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -29,9 +31,14 @@ class N4AIA04:
         period: float = 0.05,
         message_logger: MessageLogger | None = None,
         debug=True,
+        max_consecutive_errors: int = 3,
     ):
         try:
-            self.device_name = device_name
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
             info(
                 f"{self.device_name} - Initializing at address {address}",
                 message_logger=message_logger,
@@ -40,7 +47,6 @@ class N4AIA04:
             self.address = address
             self.offset = offset  # atrybut do ogarniania roznicy pomiedzy wewnetrzna numeracja p7674 a numerami IO napisanymi na PCB
             self.period: float = period  # Period for analog reading thread
-            self.message_logger = message_logger
             self.__debug = debug
 
             # Raw analog values with thread safety
@@ -281,6 +287,16 @@ class N4AIA04:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+
+        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

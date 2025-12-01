@@ -40,7 +40,7 @@ from avena_commons.util.logger import MessageLogger
 with MeasureTime("Database operation") as timer:
     database_query()
     
-print(f"Execution time: {timer.elapsed:.2f}ms")
+print(f"Execution time: {timer.t:.2f}ms")
 ```
 
 ### Usage as decorator:

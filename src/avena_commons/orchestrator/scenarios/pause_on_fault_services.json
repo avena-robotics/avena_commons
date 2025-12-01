@@ -37,7 +37,10 @@
       "type": "send_sms",
       "description": "Powiadomienie SMS o wykryciu błędu",
       "to": [
-        "48517383507"
+        "+48601463410",
+        "+48501005512",
+        "+48508967700",
+        "+48502854988"
       ],
       "text": "[ALERT] Wykryto stan FAULT w {{ clients_in_fault }}. Błędy {{ clients_error_messages_sms }}"
     },
@@ -45,7 +48,7 @@
       "type": "send_email",
       "description": "Powiadomienie o wykryciu błędu",
       "to": [
-        "norbert.niemc@pomagier.info",
+        "kamil.ochal@pomagier.info",
         "mikolaj.galant@pomagier.info",
         "damian.gawin@pomagier.info",
         "lukasz.lecki@pomagier.info"
@@ -93,7 +96,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages_sms }}"
+      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy: w mailu."
     },
     {
       "type": "send_email",

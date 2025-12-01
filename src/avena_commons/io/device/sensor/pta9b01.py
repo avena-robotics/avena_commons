@@ -1,11 +1,13 @@
 import threading
 
-from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, error, info
 
+from .. import modbus_check_device_connection
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
-class PTA9B01:
+
+class PTA9B01(PhysicalDeviceBase):
     """Czujnik temperatury PTA9B01 z wątkiem okresowego odczytu.
 
     Args:
@@ -23,18 +25,29 @@ class PTA9B01:
         address,
         loop_temperature_read_frequency: int = 5,
         message_logger: MessageLogger | None = None,
+        max_consecutive_errors: int = 3,
     ):
+        # Initialize PhysicalDeviceBase first
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
+
+        self.set_state(PhysicalDeviceState.INITIALIZING)
+
         self.bus = bus
-        self.device_name = device_name
         self.address = address
-        self.message_logger = message_logger
         self.temperature: float = 0.0
         self.__loop_temperature_read_frequency: int = loop_temperature_read_frequency
         self.__new_temperature: float = 0.0
         self._thread = None
         self._stop_event = threading.Event()
         self.__setup()
-        self.check_device_connection()
+        if self.check_device_connection():
+            self.set_state(PhysicalDeviceState.WORKING)
+        else:
+            self.set_error(f"Initial connection check failed at address {address}")
 
     def __setup(self):
         """Inicjalizuje i uruchamia wątek odczytu temperatury."""
@@ -46,11 +59,11 @@ class PTA9B01:
                 self._thread.start()
                 info(
                     "Temperature monitoring thread started",
-                    message_logger=self.message_logger,
+                    message_logger=self._message_logger,
                 )
 
         except Exception as e:
-            error(f"Error writing to device: {e}", message_logger=self.message_logger)
+            error(f"Error writing to device: {e}", message_logger=self._message_logger)
             return None
 
     def __read_temperature(self):
@@ -65,15 +78,15 @@ class PTA9B01:
 
             # Check if any operation failed
             if not (response1):
-                error("Error reading register 0", message_logger=self.message_logger)
+                error("Error reading register 0", message_logger=self._message_logger)
                 return False
 
             self.__new_temperature = response1 / 10.0
-            # debug(f"Temperature read: {self.__new_temperature}", message_logger=self.message_logger)
+            # debug(f"Temperature read: {self.__new_temperature}", message_logger=self._message_logger)
             return True
 
         except Exception as e:
-            error(f"Error reading register 0: {e}", message_logger=self.message_logger)
+            error(f"Error reading register 0: {e}", message_logger=self._message_logger)
             return False
 
     def _temperature_thread(self):
@@ -87,8 +100,10 @@ class PTA9B01:
             ok = self.__read_temperature()
             if ok:
                 self.temperature = self.__new_temperature
+                self.clear_error()  # Clear error on successful read
             else:
-                error("Error reading temperature", message_logger=self.message_logger)
+                error("Error reading temperature", message_logger=self._message_logger)
+                self.set_error("Error reading temperature")
             loop.loop_end()
 
     def read_temperature(self):
@@ -145,12 +160,14 @@ class PTA9B01:
                 - temperature: aktualna temperatura
                 - main_state: główny stan urządzenia
                 - error: informacja o błędzie (jeśli wystąpił)
+                - (z PhysicalDeviceBase): state, state_name, consecutive_errors, etc.
         """
-        result = {
-            "name": self.device_name,
-            "address": self.address,
-            "temperature": self.temperature,
-        }
+        # Get base class state
+        result = super().to_dict()
+
+        # Add PTA9B01-specific fields
+        result["address"] = self.address
+        result["temperature"] = self.temperature
 
         try:
             # Dodanie głównego stanu urządzenia
@@ -162,25 +179,18 @@ class PTA9B01:
         except Exception as e:
             # W przypadku błędu dodajemy informację o błędzie
             result["main_state"] = "ERROR"
-            result["error"] = str(e)
+            if "error_message" not in result or not result["error_message"]:
+                result["error_message"] = str(e)
 
-            if self.message_logger:
+            if self._message_logger:
                 error(
                     f"{self.device_name} - Error creating dict representation: {e}",
-                    message_logger=self.message_logger,
+                    message_logger=self._message_logger,
                 )
 
         return result
 
-    # def __del__(self):
-    #     if self._thread is not None and self._thread.is_alive():
-    #         self._stop_event.set()
-    #         self._thread.join()
-    #         self._thread = None
-    #         info("Temperature monitoring thread stopped", message_logger=self.message_logger)
-
     def __del__(self):
-        self.message_logger = None
         try:
             if (
                 hasattr(self, "_thread")
@@ -195,10 +205,20 @@ class PTA9B01:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        """Sprawdza połączenie urządzenia i status FSM.
+
+        Returns:
+            bool: True jeśli urządzenie nie jest w FAULT i połączenie działa.
+        """
+        # First check FSM health
+        if not self.check_health():
+            return False
+
+        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
             address=self.address,
             register=0,
-            message_logger=self.message_logger,
+            message_logger=self._message_logger,
         )

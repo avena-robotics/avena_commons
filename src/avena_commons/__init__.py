@@ -5,6 +5,21 @@ Avena Commons
 Kompleksowy zbiór narzędzi do robotyki i monitorowania systemów
 zapewniający komunikację czasu rzeczywistego, zarządzanie konfiguracją i możliwości monitorowania.
 
+## Automatyczna Instalacja SDK
+
+Pakiet automatycznie instaluje odpowiedni pyorbbecsdk dla Twojego systemu.
+Aby wyłączyć automatyczną instalację, ustaw zmienną środowiskową:
+    export AVENA_COMMONS_SKIP_AUTO_INSTALL=1
+
+Ręczna instalacja SDK:
+    install_orbec_sdk --check    # sprawdź status
+    install_orbec_sdk --force    # wymuś reinstalację
+
+## Integracja SDK
+
+Automatyczna instalacja SDK jest obsługiwana przez moduł install_sdk,
+który zostanie zaimportowany przy pierwszym użyciu modułów kamer.
+
 ## Moduły
 
 #### config - Zarządzanie Konfiguracją

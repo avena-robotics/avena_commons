@@ -4,8 +4,10 @@ import time
 from avena_commons.io.device import modbus_check_device_connection
 from avena_commons.util.logger import MessageLogger, error, info, warning
 
+from ..physical_device_base import PhysicalDeviceBase
 
-class AS228P:
+
+class AS228P(PhysicalDeviceBase):
     """Czujnik/enkoder AS228P odczytywany przez Modbus z wątkiem monitorującym.
 
     Args:
@@ -13,6 +15,7 @@ class AS228P:
         bus: Magistrala Modbus/komunikacyjna.
         address: Adres urządzenia.
         period (float): Okres odczytu rejestrów (s).
+        max_consecutive_errors (int): Maksymalna liczba kolejnych błędów przed FAULT.
         message_logger (MessageLogger | None): Logger wiadomości.
     """
 
@@ -22,13 +25,17 @@ class AS228P:
         bus,
         address,
         period: float = 0.025,
+        max_consecutive_errors: int = 3,
         message_logger: MessageLogger | None = None,
     ):
-        self.device_name = device_name
+        super().__init__(
+            device_name=device_name,
+            max_consecutive_errors=max_consecutive_errors,
+            message_logger=message_logger,
+        )
         self.bus = bus
         self.address = address
         self.period: float = period
-        self.message_logger: MessageLogger | None = message_logger
         self.encoder_1: int = 0
         self.encoder_2: int = 0
         self.encoder_3: int = 0
@@ -76,6 +83,7 @@ class AS228P:
                 )
 
                 if registers is not None and len(registers) >= 6:
+                    self.clear_error()
                     with self.__lock:
                         # For each encoder pair:
                         # If odd register (sign register) is 0, value is positive in even register
@@ -144,6 +152,8 @@ class AS228P:
             pass  # nie loguj tutaj!
 
     def check_device_connection(self) -> bool:
+        if not self.check_health():
+            return False
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,

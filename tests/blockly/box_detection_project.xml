@@ -1,0 +1,420 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xml xmlns="https://developers.google.com/blockly/xml" id="box_detection_project" style="display: none">
+  <variables>
+    <variable id="photo_data">photo_data</variable>
+    <variable id="camera_params">camera_params</variable>
+    <variable id="bgr_image">bgr_image</variable>
+    <variable id="depth_image">depth_image</variable>
+    <variable id="color_mask">color_mask</variable>
+    <variable id="fixed_depth">fixed_depth</variable>
+    <variable id="depth_mask">depth_mask</variable>
+    <variable id="combined_mask">combined_mask</variable>
+    <variable id="processed_mask">processed_mask</variable>
+    <variable id="undistorted_mask">undistorted_mask</variable>
+    <variable id="contours">contours</variable>
+    <variable id="filtered_contours">filtered_contours</variable>
+    <variable id="edge_filtered_contours">edge_filtered_contours</variable>
+    <variable id="inner_contours">inner_contours</variable>
+    <variable id="min_rectangle">min_rectangle</variable>
+    <variable id="validation_result">validation_result</variable>
+    <variable id="image_output">image_output</variable>
+    <variable id="box_output">box_output</variable>
+  </variables>
+  
+  <!-- Główny przepływ detekcji pudełka -->
+  <block type="vision_take_photo" id="take_photo" x="50" y="50">
+    <next>
+      <block type="vision_camera_params" id="camera_params_block" x="50" y="100">
+        <next>
+          <block type="vision_bgr_image" id="bgr_image_block" x="50" y="150">
+            <value name="PHOTO">
+              <block type="variables_get" id="photo_var">
+                <field name="VAR">photo_data</field>
+              </block>
+            </value>
+            <next>
+              <block type="vision_depth_image" id="depth_image_block" x="50" y="200">
+                <value name="PHOTO">
+                  <block type="variables_get" id="photo_var2">
+                    <field name="VAR">photo_data</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="vision_create_color_mask" id="color_mask_block" x="50" y="250">
+                    <value name="BGR">
+                      <block type="variables_get" id="bgr_var">
+                        <field name="VAR">bgr_image</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="vision_fix_depth" id="fix_depth_block" x="50" y="300">
+                        <value name="DEPTH">
+                          <block type="variables_get" id="depth_var">
+                            <field name="VAR">depth_image</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="vision_create_depth_mask" id="depth_mask_block" x="50" y="350">
+                            <value name="DEPTH">
+                              <block type="variables_get" id="fixed_depth_var">
+                                <field name="VAR">fixed_depth</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="vision_combine_masks" id="combine_masks_block" x="50" y="400">
+                                <value name="COLOR_MASK">
+                                  <block type="variables_get" id="color_mask_var">
+                                    <field name="VAR">color_mask</field>
+                                  </block>
+                                </value>
+                                <value name="DEPTH_MASK">
+                                  <block type="variables_get" id="depth_mask_var">
+                                    <field name="VAR">depth_mask</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="vision_preprocess_mask" id="preprocess_mask_block" x="50" y="450">
+                                    <value name="MASK">
+                                      <block type="variables_get" id="combined_mask_var">
+                                        <field name="VAR">combined_mask</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="vision_undistort" id="undistort_block" x="50" y="500">
+                                        <value name="MASK">
+                                          <block type="variables_get" id="processed_mask_var">
+                                            <field name="VAR">processed_mask</field>
+                                          </block>
+                                        </value>
+                                        <value name="CAMERA_PARAMS">
+                                          <block type="variables_get" id="camera_params_var">
+                                            <field name="VAR">camera_params</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="vision_find_contours" id="find_contours_block" x="50" y="550">
+                                            <value name="MASK">
+                                              <block type="variables_get" id="undistorted_mask_var">
+                                                <field name="VAR">undistorted_mask</field>
+                                              </block>
+                                            </value>
+                                            <next>
+                                              <block type="vision_remove_outside_contours" id="remove_outside_block" x="50" y="600">
+                                                <value name="CONTOURS">
+                                                  <block type="variables_get" id="contours_var">
+                                                    <field name="VAR">contours</field>
+                                                  </block>
+                                                </value>
+                                                <next>
+                                                  <block type="vision_remove_edge_contours" id="remove_edge_block" x="50" y="650">
+                                                    <value name="CONTOURS">
+                                                      <block type="variables_get" id="filtered_contours_var">
+                                                        <field name="VAR">filtered_contours</field>
+                                                      </block>
+                                                    </value>
+                                                    <next>
+                                                      <block type="vision_find_inner_contours" id="find_inner_block" x="50" y="700">
+                                                        <value name="CONTOURS">
+                                                          <block type="variables_get" id="edge_filtered_contours_var">
+                                                            <field name="VAR">edge_filtered_contours</field>
+                                                          </block>
+                                                        </value>
+                                                        <next>
+                                                          <block type="vision_create_min_rectangle" id="create_rect_block" x="50" y="750">
+                                                            <value name="CONTOURS">
+                                                              <block type="variables_get" id="inner_contours_var">
+                                                                <field name="VAR">inner_contours</field>
+                                                              </block>
+                                                            </value>
+                                                            <next>
+                                                              <block type="vision_validate_rectangle" id="validate_rect_block" x="50" y="800">
+                                                                <value name="RECT">
+                                                                  <block type="variables_get" id="min_rectangle_var">
+                                                                    <field name="VAR">min_rectangle</field>
+                                                                  </block>
+                                                                </value>
+                                                                <next>
+                                                                  <block type="vision_prepare_image_output" id="prepare_image_block" x="50" y="850">
+                                                                    <value name="IMAGE">
+                                                                      <block type="variables_get" id="bgr_image_var2">
+                                                                        <field name="VAR">bgr_image</field>
+                                                                      </block>
+                                                                    </value>
+                                                                    <next>
+                                                                      <block type="vision_prepare_box_output" id="prepare_box_block" x="50" y="900">
+                                                                        <value name="RECT">
+                                                                          <block type="variables_get" id="min_rectangle_var2">
+                                                                            <field name="VAR">min_rectangle</field>
+                                                                          </block>
+                                                                        </value>
+                                                                      </block>
+                                                                    </next>
+                                                                  </block>
+                                                                </next>
+                                                              </block>
+                                                            </next>
+                                                          </block>
+                                                        </next>
+                                                      </block>
+                                                    </next>
+                                                  </block>
+                                                </next>
+                                              </block>
+                                            </next>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </next>
+  </block>
+  
+  <!-- Bloczki przypisujące wyniki do zmiennych -->
+  <block type="variables_set" id="set_photo" x="300" y="50">
+    <field name="VAR">photo_data</field>
+    <value name="VALUE">
+      <block type="vision_take_photo" id="take_photo_var">
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_camera_params" x="300" y="100">
+    <field name="VAR">camera_params</field>
+    <value name="VALUE">
+      <block type="vision_camera_params" id="camera_params_var2">
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_bgr_image" x="300" y="150">
+    <field name="VAR">bgr_image</field>
+    <value name="VALUE">
+      <block type="vision_bgr_image" id="bgr_image_var2">
+        <value name="PHOTO">
+          <block type="variables_get" id="photo_var3">
+            <field name="VAR">photo_data</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_depth_image" x="300" y="200">
+    <field name="VAR">depth_image</field>
+    <value name="VALUE">
+      <block type="vision_depth_image" id="depth_image_var2">
+        <value name="PHOTO">
+          <block type="variables_get" id="photo_var4">
+            <field name="VAR">photo_data</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_color_mask" x="300" y="250">
+    <field name="VAR">color_mask</field>
+    <value name="VALUE">
+      <block type="vision_create_color_mask" id="color_mask_var2">
+        <value name="BGR">
+          <block type="variables_get" id="bgr_var2">
+            <field name="VAR">bgr_image</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_fixed_depth" x="300" y="300">
+    <field name="VAR">fixed_depth</field>
+    <value name="VALUE">
+      <block type="vision_fix_depth" id="fix_depth_var2">
+        <value name="DEPTH">
+          <block type="variables_get" id="depth_var2">
+            <field name="VAR">depth_image</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_depth_mask" x="300" y="350">
+    <field name="VAR">depth_mask</field>
+    <value name="VALUE">
+      <block type="vision_create_depth_mask" id="depth_mask_var2">
+        <value name="DEPTH">
+          <block type="variables_get" id="photo_var5">
+            <field name="VAR">fixed_depth</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_combined_mask" x="300" y="400">
+    <field name="VAR">combined_mask</field>
+    <value name="VALUE">
+      <block type="vision_combine_masks" id="combine_masks_var2">
+        <value name="COLOR_MASK">
+          <block type="variables_get" id="color_mask_var3">
+            <field name="VAR">color_mask</field>
+          </block>
+        </value>
+        <value name="DEPTH_MASK">
+          <block type="variables_get" id="depth_mask_var3">
+            <field name="VAR">depth_mask</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_processed_mask" x="300" y="450">
+    <field name="VAR">processed_mask</field>
+    <value name="VALUE">
+      <block type="vision_preprocess_mask" id="preprocess_mask_var2">
+        <value name="MASK">
+          <block type="variables_get" id="combined_mask_var2">
+            <field name="VAR">combined_mask</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_undistorted_mask" x="300" y="500">
+    <field name="VAR">undistorted_mask</field>
+    <value name="VALUE">
+      <block type="vision_undistort" id="undistort_var2">
+        <value name="MASK">
+          <block type="variables_get" id="processed_mask_var2">
+            <field name="VAR">processed_mask</field>
+          </block>
+        </value>
+        <value name="CAMERA_PARAMS">
+          <block type="variables_get" id="camera_params_var3">
+            <field name="VAR">camera_params</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_contours" x="300" y="550">
+    <field name="VAR">contours</field>
+    <value name="VALUE">
+      <block type="vision_find_contours" id="find_contours_var2">
+        <value name="MASK">
+          <block type="variables_get" id="undistorted_mask_var2">
+            <field name="VAR">undistorted_mask</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_filtered_contours" x="300" y="600">
+    <field name="VAR">filtered_contours</field>
+    <value name="VALUE">
+      <block type="vision_remove_outside_contours" id="remove_outside_var2">
+        <value name="CONTOURS">
+          <block type="variables_get" id="contours_var2">
+            <field name="VAR">contours</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_edge_filtered_contours" x="300" y="650">
+    <field name="VAR">edge_filtered_contours</field>
+    <value name="VALUE">
+      <block type="vision_remove_edge_contours" id="remove_edge_var2">
+        <value name="CONTOURS">
+          <block type="variables_get" id="filtered_contours_var2">
+            <field name="VAR">filtered_contours</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_inner_contours" x="300" y="700">
+    <field name="VAR">inner_contours</field>
+    <value name="VALUE">
+      <block type="vision_find_inner_contours" id="find_inner_var2">
+        <value name="CONTOURS">
+          <block type="variables_get" id="edge_filtered_contours_var2">
+            <field name="VAR">edge_filtered_contours</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_min_rectangle" x="300" y="750">
+    <field name="VAR">min_rectangle</field>
+    <value name="VALUE">
+      <block type="vision_create_min_rectangle" id="create_rect_var2">
+        <value name="CONTOURS">
+          <block type="variables_get" id="inner_contours_var2">
+            <field name="VAR">inner_contours</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_validation_result" x="300" y="800">
+    <field name="VAR">validation_result</field>
+    <value name="VALUE">
+      <block type="vision_validate_rectangle" id="validate_rect_var2">
+        <value name="RECT">
+          <block type="variables_get" id="min_rectangle_var3">
+            <field name="VAR">min_rectangle</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_image_output" x="300" y="850">
+    <field name="VAR">image_output</field>
+    <value name="VALUE">
+      <block type="vision_prepare_image_output" id="prepare_image_var2">
+        <value name="IMAGE">
+          <block type="variables_get" id="bgr_image_var3">
+            <field name="VAR">bgr_image</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+  
+  <block type="variables_set" id="set_box_output" x="300" y="900">
+    <field name="VAR">box_output</field>
+    <value name="VALUE">
+      <block type="vision_prepare_box_output" id="prepare_box_var2">
+        <value name="RECT">
+          <block type="variables_get" id="min_rectangle_var4">
+            <field name="VAR">min_rectangle</field>
+          </block>
+        </value>
+      </block>
+    </value>
+  </block>
+</xml>
