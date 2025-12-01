@@ -192,8 +192,8 @@ class TLC57R24V08(PhysicalDeviceBase):
                 address=self.address, first_register=28, values=[9, 10, 11]
             )
 
-            init_device_di(TLC57R24V082, first_index=0, count=self.di_count)
-            init_device_do(TLC57R24V082, first_index=0, count=self.do_count)
+            init_device_di(TLC57R24V08, first_index=0, count=self.di_count)
+            init_device_do(TLC57R24V08, first_index=0, count=self.do_count)
 
             # Start the continuous jog thread
             self._start_jog_thread()
