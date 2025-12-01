@@ -96,7 +96,7 @@
       "to": [
         "48517383507"
       ],
-      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy {{ clients_error_messages_sms }}"
+      "text": "Wszystkie komponenty zostały wstrzymane. Wymagana interwencja administratora. Lista: {{ clients_in_fault }}, błędy: w mailu."
     },
     {
       "type": "send_email",

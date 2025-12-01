@@ -1,15 +1,15 @@
 import threading
 import time
+import traceback
 from enum import Enum
 
 from avena_commons.io.device import (
-    PhysicalDeviceBase,
-    PhysicalDeviceState,
     modbus_check_device_connection,
 )
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 
 class DriverMode(Enum):

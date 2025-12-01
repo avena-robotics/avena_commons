@@ -4,13 +4,12 @@ import traceback
 from enum import Enum
 
 from avena_commons.io.device import (
-    PhysicalDeviceBase,
-    PhysicalDeviceState,
     modbus_check_device_connection,
 )
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
+from ..physical_device_base import PhysicalDeviceBase, PhysicalDeviceState
 
 
 class DriverMode(Enum):
@@ -106,7 +105,7 @@ class TLC57R24V082(PhysicalDeviceBase):
 
             # Position mode variables
             # self._position_mode = False  # True for position mode, False for jog mode
-            self._running_mode = DriverMode.NONE
+            self._running_mode = DriverMode.STOP
             self._position_target = 0
             self._position_speed = 0
             self._position_accel = 0
@@ -560,7 +559,7 @@ class TLC57R24V082(PhysicalDeviceBase):
         """Zatrzymuje silnik i wyłącza tryb jog."""
         # Disable jog mode
         with self._jog_lock:
-            self._running_mode = DriverMode.NONE
+            self._running_mode = DriverMode.STOP
             self._jog_speed = 0
             self._jog_accel = 0
             self._jog_decel = 0
