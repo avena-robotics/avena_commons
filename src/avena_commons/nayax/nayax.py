@@ -1,21 +1,22 @@
-import serial
 import threading
 import time
-from decimal import Decimal
 import traceback
+from decimal import Decimal
 from enum import Enum
 
+import serial
+
+from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
+from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import (
     # LoggerPolicyPeriod,
     # MessageLogger,
     debug,
+    error,
     info,
     warning,
-    error,
 )
-from avena_commons.util.worker import Worker, Connector
-from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
-from avena_commons.util.control_loop import ControlLoop
+from avena_commons.util.worker import Connector, Worker
 
 # D,0	#Disable
 # D,1	#Enable in "Authorize First" Mode
@@ -40,6 +41,8 @@ class NayaxCommand(Enum):
     REQUEST_ENABLE_DEVICE = "D,READER,1" # Enable Device
     REQUEST_CHARGE = "D,REQ," # Charge FORMAT: D,REQ,1.20,10
     REQUEST_GET_STATUS = "D,STATUS"
+    REQUEST_STATUS_END = "D,END"
+    REQUEST_STATUS_FAILED_END = "D,END,-1"
 # 
 class NayaxResponse(Enum):
     RESPONSE_CASHLESS_ERROR = str('D,ERR,"cashless master is on"') # Cashless error response - nalezy wylaczyc
@@ -61,9 +64,9 @@ class NayaxWorker(Worker):
         self._pipe_loop_freq = 5  # Hz
         self._status = MdbStatus.DISCONNECTED
         self._rx_buffer = bytearray()
-        self.__start_time_after_success = None
+        self.__start_time_after_payment = None
         self.__wait_after_success_duration = 15  # seconds
-        self.__start_time_after_failure = None
+        self.__start_time_after_payment = None
         self.__wait_after_failure_duration = 20  # seconds
         self.__charge_amount = Decimal(0)
         self.__last_payment_result: MdbTransactionResult = MdbTransactionResult.NONE
@@ -238,20 +241,21 @@ class NayaxWorker(Worker):
                     
                     case MdbStatus.PROCESSING_WAIT_STATUS_RESULT:
                         pass
+                                                   
+                    case MdbStatus.SENDING_END_AFTER_RESULT:
+                        self._write_to_serial(NayaxCommand.REQUEST_STATUS_END.value) 
+                        self.status = MdbStatus.WAITING_AFTER_PAYMENT
 
-                    case MdbStatus.WAITING_AFTER_SUCCESS:
-                        if self.__start_time_after_success is not None:
-                            elapsed = time.time() - self.__start_time_after_success
+                    case MdbStatus.SENDING_END_AFTER_FAILED_RESULT:
+                        self._write_to_serial(NayaxCommand.REQUEST_STATUS_FAILED_END.value) 
+                        self.status = MdbStatus.WAITING_AFTER_PAYMENT
+
+                    case MdbStatus.WAITING_AFTER_PAYMENT:
+                        if self.__start_time_after_payment is not None:
+                            elapsed = time.time() - self.__start_time_after_payment
                             if elapsed >= self.__wait_after_success_duration:
                                 self.status = MdbStatus.IDLE
-                                self.__start_time_after_success = None
-
-                    case MdbStatus.WAITING_AFTER_FAILURE:
-                        if self.__start_time_after_failure is not None:
-                            elapsed = time.time() - self.__start_time_after_failure
-                            if elapsed >= self.__wait_after_failure_duration:
-                                self.status = MdbStatus.IDLE
-                                self.__start_time_after_failure = None
+                                self.__start_time_after_payment = None
 
                 # MARK: HANDLE RESPONSE
                 try:
@@ -307,26 +311,37 @@ class NayaxWorker(Worker):
                                     if NayaxResponse.RESPONSE_DEVICE_STATUS_RESULT.value in response:
                                         if ",-1" in response:
                                             # failure
-                                            self.status = MdbStatus.WAITING_AFTER_FAILURE
+                                            self.status = MdbStatus.SENDING_END_AFTER_FAILED_RESULT
                                             self.__last_payment_result = MdbTransactionResult.FAILED
-                                            self.__start_time_after_failure = time.time()
+                                            self.__start_time_after_payment = time.time()
                                             pass
                                         elif f",1,{self.__charge_amount:.2f}" in response:
                                             # success
-                                            pass
+                                            self.status = MdbStatus.SENDING_END_AFTER_RESULT
+                                            self.__last_payment_result = MdbTransactionResult.SUCCESS
+                                            self.__start_time_after_payment = time.time()
                                         else:
                                             error(f"Unexpected amount in response while  [{self.status}] [{response}]", message_logger=self._message_logger)
-                                    elif NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value in response:
-                                        # success
-                                        self.__last_payment_result = MdbTransactionResult.SUCCESS
-                                        self.status = MdbStatus.WAITING_AFTER_SUCCESS
-                                        self.__start_time_after_success = time.time()
-                                        pass
+                                    # elif NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value in response:
+                                    #     # success
+                                    #     self.__last_payment_result = MdbTransactionResult.SUCCESS
+                                    #     self.status = MdbStatus.WAITING_AFTER_PAYMENT
+                                    #     self.__start_time_after_payment = time.time()
+                                    #     pass
                                     else:
                                         error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                                                
+                                case MdbStatus.WAITING_AFTER_PAYMENT:
+                                    match response:
+                                        case NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value:
+                                            # self.status = MdbStatus.IDLE
+                                            pass
+                                        case _:
+                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
 
                                 case _:
                                     error(f"Unhandled state while reading response: [{self.status}] [{response}] [{NayaxResponse.RESPONSE_DEVICE_STATUS_OFF.value}]", message_logger=self._message_logger)
+                                    
                             # debug(f"{len(self._rx_buffer)} '{response}'", message_logger=self._message_logger)
                 except Exception as e:
                     warning(f"Exception while reading response: {e}", message_logger=self._message_logger)
