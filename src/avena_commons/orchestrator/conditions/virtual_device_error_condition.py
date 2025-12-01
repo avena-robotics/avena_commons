@@ -87,7 +87,7 @@ class VirtualDeviceErrorCondition(BaseCondition):
                 if extract_id_to and hasattr(context, "set"):
                     match = re.search(r"(\d+)$", device_name)
                     if match:
-                        context.set(extract_id_to, match.group(1))
+                        context.set(extract_id_to, int(match.group(1)))
 
                 # Ekstrahuj informacje o urządzeniach fizycznych
                 failed_physical = device_info.get("failed_physical_devices", {})
