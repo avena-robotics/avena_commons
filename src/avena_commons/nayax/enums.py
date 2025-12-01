@@ -10,6 +10,7 @@ class MdbTransactionResult(Enum):
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
 
+
 class MdbStatus(Enum):
     """Status states for MDB service"""
 

@@ -1,28 +1,18 @@
 import argparse
-from enum import Enum
 import os
 import sys
-import traceback
-import time
-import threading
-import serial
 
-from unittest import case 
 from decimal import Decimal
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from avena_commons.util.control_loop import ControlLoop
 from avena_commons.nayax.nayax import NayaxConnector
 from avena_commons.event_listener import EventListener, Event
 from avena_commons.util.logger import (
     # LoggerPolicyPeriod,
     # MessageLogger,
-    debug,
     info,
-    warning,
-    error,
 )
-from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
+from avena_commons.nayax.enums import MdbStatus
 
 # from avena_commons.util.worker import Worker, Connector
 
@@ -47,7 +37,7 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 #     REQUEST_ENABLE_DEVICE = "D,READER,1" # Enable Device
 #     REQUEST_CHARGE = "D,REQ," # Charge FORMAT: D,REQ,1.20,10
 #     REQUEST_GET_STATUS = "D,STATUS"
-# # 
+# #
 # class NayaxResponse(Enum):
 #     RESPONSE_CASHLESS_ERROR = str('D,ERR,"cashless master is on"') # Cashless error response - nalezy wylaczyc
 #     RESPONSE_ERROR_MASTER_IS_OFF = str('D,ERR,"cashless master is off"') # Cashless error response - nalezy wylaczyc
@@ -206,7 +196,7 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 #             cl = ControlLoop(
 #                 "NayaxWorker_Loop",
 #                 period=1 / self._pipe_loop_freq,
-#                 message_logger=self._message_logger, 
+#                 message_logger=self._message_logger,
 #                 warning_printer=False,
 #             )
 
@@ -281,7 +271,7 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 #                         self._write_to_serial(NayaxCommand.REQUEST_ENABLE_DEVICE.value)
 #                         pass
 
-#                     case MdbStatus.IDLE:                        
+#                     case MdbStatus.IDLE:
 #                         pass
 
 #                     case MdbStatus.PROCESSING_SEND_COMMAND:
@@ -292,7 +282,7 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 
 #                     case MdbStatus.PROCESSING_WAIT_STATUS_VEND:
 #                         pass
-                    
+
 #                     case MdbStatus.PROCESSING_WAIT_STATUS_RESULT:
 #                         pass
 
@@ -374,8 +364,8 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 #                                             self.status = MdbStatus.PROCESSING_WAIT_STATUS_RESULT
 #                                         case _:
 #                                             error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
-                                
-#                                 case MdbStatus.PROCESSING_WAIT_STATUS_RESULT: 
+
+#                                 case MdbStatus.PROCESSING_WAIT_STATUS_RESULT:
 #                                     if NayaxResponse.RESPONSE_DEVICE_STATUS_RESULT.value in response:
 #                                         if ",-1" in response:
 #                                             # failure
@@ -463,6 +453,7 @@ from avena_commons.nayax.enums import MdbStatus, MdbTransactionResult
 #         )
 #         worker._run(pipe_in)
 
+
 class TestNayaxServer(EventListener):
     def __init__(
         self,
@@ -480,7 +471,9 @@ class TestNayaxServer(EventListener):
             port=port,
             message_logger=message_logger,
         )
-        self._nayax_connector = NayaxConnector(core=3, serial=self.serial, message_logger=message_logger)
+        self._nayax_connector = NayaxConnector(
+            core=3, serial=self.serial, message_logger=message_logger
+        )
         self._nayax_connector._connect()
         self.start()
 
@@ -488,7 +481,10 @@ class TestNayaxServer(EventListener):
         pass
 
     async def _check_local_data(self):  # MARK: CHECK LOCAL DATA
-        info(f"NAYAX STATUS: {self._nayax_connector.state} {self._nayax_connector.last_payment_result}", message_logger=self._message_logger)
+        info(
+            f"NAYAX STATUS: {self._nayax_connector.state} {self._nayax_connector.last_payment_result}",
+            message_logger=self._message_logger,
+        )
         if self._nayax_connector.state == MdbStatus.IDLE:
             # warning(f"NAYAX in ERROR state, reconnecting...", message_logger=self._message_logger)
             self._nayax_connector.charge(0.09)
@@ -533,7 +529,8 @@ if __name__ == "__main__":
             address="127.0.0.1",
             port=8001,
             message_logger=message_logger,
-            serial='/dev/ttyS0',  )
+            serial="/dev/ttyS0",
+        )
 
     except KeyboardInterrupt:
         pass

@@ -145,7 +145,8 @@ class P7674(PhysicalDeviceBase):
                     )
 
             except Exception as e:
-                self.set_error(f"Error reading DI: {e}")
+                # self.set_error(f"Error reading DI: {e}")
+                warning(f"Error reading DI: {str(e)}", self.message_logger)
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -185,7 +186,8 @@ class P7674(PhysicalDeviceBase):
                         warning(f"Error writing DO: {str(e)}", self.message_logger)
 
             except Exception as e:
-                self.set_error(f"Error in DO thread: {e}")
+                # self.set_error(f"Error in DO thread: {e}")
+                warning(f"Error in DO thread: {str(e)}", self.message_logger)
 
             time.sleep(max(0, self.period - (time.time() - now)))
 

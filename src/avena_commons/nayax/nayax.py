@@ -35,18 +35,24 @@ from avena_commons.util.worker import Connector, Worker
 
 
 class NayaxCommand(Enum):
-    REQUEST_DISABLE_CASHLESS = "D,0" # Disable cashless
-    REQUEST_DEVICE_STATUS1 = "D,1" # Device status
-    REQUEST_DEVICE_STATUS = "D,2" # Device status
-    REQUEST_ENABLE_DEVICE = "D,READER,1" # Enable Device
-    REQUEST_CHARGE = "D,REQ," # Charge FORMAT: D,REQ,1.20,10
+    REQUEST_DISABLE_CASHLESS = "D,0"  # Disable cashless
+    REQUEST_DEVICE_STATUS1 = "D,1"  # Device status
+    REQUEST_DEVICE_STATUS = "D,2"  # Device status
+    REQUEST_ENABLE_DEVICE = "D,READER,1"  # Enable Device
+    REQUEST_CHARGE = "D,REQ,"  # Charge FORMAT: D,REQ,1.20,10
     REQUEST_GET_STATUS = "D,STATUS"
     REQUEST_STATUS_END = "D,END"
     REQUEST_STATUS_FAILED_END = "D,END,-1"
-# 
+
+
+#
 class NayaxResponse(Enum):
-    RESPONSE_CASHLESS_ERROR = str('D,ERR,"cashless master is on"') # Cashless error response - nalezy wylaczyc
-    RESPONSE_ERROR_MASTER_IS_OFF = str('D,ERR,"cashless master is off"') # Cashless error response - nalezy wylaczyc
+    RESPONSE_CASHLESS_ERROR = str(
+        'D,ERR,"cashless master is on"'
+    )  # Cashless error response - nalezy wylaczyc
+    RESPONSE_ERROR_MASTER_IS_OFF = str(
+        'D,ERR,"cashless master is off"'
+    )  # Cashless error response - nalezy wylaczyc
     RESPONSE_DEVICE_STATUS_RESET = str("d,STATUS,RESET")
     RESPONSE_DEVICE_STATUS_VEND = str("d,STATUS,VEND")
     RESPONSE_DEVICE_STATUS_RESULT = str("d,STATUS,RESULT")
@@ -56,7 +62,6 @@ class NayaxResponse(Enum):
 
 
 class NayaxWorker(Worker):
-
     def __init__(self, serial: str, message_logger=None):
         super().__init__(message_logger=message_logger)
         self._serial_name = serial
@@ -77,7 +82,10 @@ class NayaxWorker(Worker):
 
     @status.setter
     def status(self, value: MdbStatus):
-        debug(f"NayaxWorker status changed from `{self.status}` to `{value}`", message_logger=self._message_logger)
+        debug(
+            f"NayaxWorker status changed from `{self.status}` to `{value}`",
+            message_logger=self._message_logger,
+        )
         self._status = value
 
     def _connect_serial(self):
@@ -92,7 +100,10 @@ class NayaxWorker(Worker):
             self._serial.reset_output_buffer()
             self._rx_buffer.clear()
 
-            error(f"Serial port {self._serial_name} opened", message_logger=self._message_logger)
+            error(
+                f"Serial port {self._serial_name} opened",
+                message_logger=self._message_logger,
+            )
 
             return True
 
@@ -126,7 +137,10 @@ class NayaxWorker(Worker):
                 line = self._rx_buffer[: newline_index + 1]
                 del self._rx_buffer[: newline_index + 1]
                 text = line.decode("ascii", errors="ignore")
-                debug(f"Received: {len(text)} [{text.strip()}]", message_logger=self._message_logger)
+                debug(
+                    f"Received: {len(text)} [{text.strip()}]",
+                    message_logger=self._message_logger,
+                )
                 return text.strip()
 
             waiting = self._serial.in_waiting
@@ -142,7 +156,10 @@ class NayaxWorker(Worker):
             text = self._rx_buffer.decode("ascii", errors="ignore")
             self._rx_buffer.clear()
             # if self.debug:
-            debug(f"Received partial: {len(text)} [{text.strip()}]", message_logger=self._message_logger)
+            debug(
+                f"Received partial: {len(text)} [{text.strip()}]",
+                message_logger=self._message_logger,
+            )
             return text
 
         return ""
@@ -153,7 +170,7 @@ class NayaxWorker(Worker):
             cl = ControlLoop(
                 "NayaxWorker_Loop",
                 period=1 / self._pipe_loop_freq,
-                message_logger=self._message_logger, 
+                message_logger=self._message_logger,
                 warning_printer=False,
             )
 
@@ -183,13 +200,19 @@ class NayaxWorker(Worker):
                         case "SET_CHARGE":
                             # w zaleznosci od stanu urzadzenia
                             if self.status == MdbStatus.IDLE:
-                                info(f"SET_CHARGE({data[1]:.2f}): returning True", message_logger=self._message_logger)
+                                info(
+                                    f"SET_CHARGE({data[1]:.2f}): returning True",
+                                    message_logger=self._message_logger,
+                                )
                                 self.__last_payment_result = MdbTransactionResult.NONE
                                 self.__charge_amount = Decimal(data[1])
                                 self.status = MdbStatus.PROCESSING_SEND_COMMAND
                                 pipe_in.send(True)
                             else:
-                                error(f"SET_CHARGE({data[1]:.2f}): returning False, device busy", message_logger=self._message_logger)
+                                error(
+                                    f"SET_CHARGE({data[1]:.2f}): returning False, device busy",
+                                    message_logger=self._message_logger,
+                                )
                                 pipe_in.send(False)
 
                         # if unknown message
@@ -199,7 +222,6 @@ class NayaxWorker(Worker):
                                 message_logger=self._message_logger,
                             )
                             pipe_in.send(False)
-
 
                 # MARK: SEND COMMAND
                 # periodic tasks
@@ -219,7 +241,9 @@ class NayaxWorker(Worker):
                         self._write_to_serial(NayaxCommand.REQUEST_DEVICE_STATUS.value)
 
                     case MdbStatus.RESTARTING_CASHLESS:
-                        self._write_to_serial(NayaxCommand.REQUEST_DISABLE_CASHLESS.value)
+                        self._write_to_serial(
+                            NayaxCommand.REQUEST_DISABLE_CASHLESS.value
+                        )
                         self._write_to_serial(NayaxCommand.REQUEST_DEVICE_STATUS.value)
 
                     case MdbStatus.INITIALIZING:
@@ -228,26 +252,31 @@ class NayaxWorker(Worker):
                     case MdbStatus.STARTING:
                         self._write_to_serial(NayaxCommand.REQUEST_ENABLE_DEVICE.value)
 
-                    case MdbStatus.IDLE:                        
+                    case MdbStatus.IDLE:
                         pass
 
                     case MdbStatus.PROCESSING_SEND_COMMAND:
-                        self._write_to_serial(NayaxCommand.REQUEST_CHARGE.value + f"{self.__charge_amount:.2f},10")
+                        self._write_to_serial(
+                            NayaxCommand.REQUEST_CHARGE.value
+                            + f"{self.__charge_amount:.2f},10"
+                        )
                         self.status = MdbStatus.PROCESSING_WAIT_STATUS_VEND
                         continue
 
                     case MdbStatus.PROCESSING_WAIT_STATUS_VEND:
                         pass
-                    
+
                     case MdbStatus.PROCESSING_WAIT_STATUS_RESULT:
                         pass
-                                                   
+
                     case MdbStatus.SENDING_END_AFTER_RESULT:
-                        self._write_to_serial(NayaxCommand.REQUEST_STATUS_END.value) 
+                        self._write_to_serial(NayaxCommand.REQUEST_STATUS_END.value)
                         self.status = MdbStatus.WAITING_AFTER_PAYMENT
 
                     case MdbStatus.SENDING_END_AFTER_FAILED_RESULT:
-                        self._write_to_serial(NayaxCommand.REQUEST_STATUS_FAILED_END.value) 
+                        self._write_to_serial(
+                            NayaxCommand.REQUEST_STATUS_FAILED_END.value
+                        )
                         self.status = MdbStatus.WAITING_AFTER_PAYMENT
 
                     case MdbStatus.WAITING_AFTER_PAYMENT:
@@ -265,37 +294,57 @@ class NayaxWorker(Worker):
                             match self.status:
                                 case MdbStatus.CONNECTING:
                                     match response:  # remove newline
-                                        case NayaxResponse.RESPONSE_CASHLESS_ERROR.value:
+                                        case (
+                                            NayaxResponse.RESPONSE_CASHLESS_ERROR.value
+                                        ):
                                             self.status = MdbStatus.RESTARTING_CASHLESS
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
 
                                 case MdbStatus.RESTARTING_CASHLESS:
                                     match response:  # remove newline
                                         case NayaxResponse.RESPONSE_DEVICE_STATUS_OFF.value:
                                             self.status = MdbStatus.INITIALIZING
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
 
                                 case MdbStatus.INITIALIZING:
                                     match response:  # remove newline
                                         case NayaxResponse.RESPONSE_DEVICE_STATUS_INITIALIZED.value:
                                             self.status = MdbStatus.STARTING
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
 
                                 case MdbStatus.STARTING:
                                     match response:  # remove newline
                                         case NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value:
                                             self.status = MdbStatus.IDLE
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
 
                                 case MdbStatus.IDLE:
-                                    if NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value in response:
+                                    if (
+                                        NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value
+                                        in response
+                                    ):
                                         pass
                                     else:
-                                        error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                        error(
+                                            f"Unexpected response while  [{self.status}] [{response}]",
+                                            message_logger=self._message_logger,
+                                        )
 
                                 case MdbStatus.PROCESSING_SEND_COMMAND:
                                     pass
@@ -303,48 +352,78 @@ class NayaxWorker(Worker):
                                 case MdbStatus.PROCESSING_WAIT_STATUS_VEND:
                                     match response:  # remove newline
                                         case NayaxResponse.RESPONSE_DEVICE_STATUS_VEND.value:
-                                            self.status = MdbStatus.PROCESSING_WAIT_STATUS_RESULT
+                                            self.status = (
+                                                MdbStatus.PROCESSING_WAIT_STATUS_RESULT
+                                            )
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
-                                
-                                case MdbStatus.PROCESSING_WAIT_STATUS_RESULT: 
-                                    if NayaxResponse.RESPONSE_DEVICE_STATUS_RESULT.value in response:
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
+
+                                case MdbStatus.PROCESSING_WAIT_STATUS_RESULT:
+                                    if (
+                                        NayaxResponse.RESPONSE_DEVICE_STATUS_RESULT.value
+                                        in response
+                                    ):
                                         if ",-1" in response:
                                             # failure
                                             self.status = MdbStatus.SENDING_END_AFTER_FAILED_RESULT
-                                            self.__last_payment_result = MdbTransactionResult.FAILED
-                                            self.__start_time_after_payment = time.time()
+                                            self.__last_payment_result = (
+                                                MdbTransactionResult.FAILED
+                                            )
+                                            self.__start_time_after_payment = (
+                                                time.time()
+                                            )
                                             pass
-                                        elif f",1,{self.__charge_amount:.2f}" in response:
+                                        elif (
+                                            f",1,{self.__charge_amount:.2f}" in response
+                                        ):
                                             # success
-                                            self.status = MdbStatus.SENDING_END_AFTER_RESULT
-                                            self.__last_payment_result = MdbTransactionResult.SUCCESS
-                                            self.__start_time_after_payment = time.time()
+                                            self.status = (
+                                                MdbStatus.SENDING_END_AFTER_RESULT
+                                            )
+                                            self.__last_payment_result = (
+                                                MdbTransactionResult.SUCCESS
+                                            )
+                                            self.__start_time_after_payment = (
+                                                time.time()
+                                            )
                                         else:
-                                            error(f"Unexpected amount in response while  [{self.status}] [{response}]", message_logger=self._message_logger)
-                                    # elif NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value in response:
-                                    #     # success
-                                    #     self.__last_payment_result = MdbTransactionResult.SUCCESS
-                                    #     self.status = MdbStatus.WAITING_AFTER_PAYMENT
-                                    #     self.__start_time_after_payment = time.time()
-                                    #     pass
+                                            error(
+                                                f"Unexpected amount in response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
+
                                     else:
-                                        error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
-                                                                
+                                        error(
+                                            f"Unexpected response while  [{self.status}] [{response}]",
+                                            message_logger=self._message_logger,
+                                        )
+
                                 case MdbStatus.WAITING_AFTER_PAYMENT:
                                     match response:
                                         case NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value:
                                             # self.status = MdbStatus.IDLE
                                             pass
                                         case _:
-                                            error(f"Unexpected response while  [{self.status}] [{response}]", message_logger=self._message_logger)
+                                            error(
+                                                f"Unexpected response while  [{self.status}] [{response}]",
+                                                message_logger=self._message_logger,
+                                            )
 
                                 case _:
-                                    error(f"Unhandled state while reading response: [{self.status}] [{response}] [{NayaxResponse.RESPONSE_DEVICE_STATUS_OFF.value}]", message_logger=self._message_logger)
-                                    
+                                    error(
+                                        f"Unhandled state while reading response: [{self.status}] [{response}] [{NayaxResponse.RESPONSE_DEVICE_STATUS_OFF.value}]",
+                                        message_logger=self._message_logger,
+                                    )
+
                             # debug(f"{len(self._rx_buffer)} '{response}'", message_logger=self._message_logger)
                 except Exception as e:
-                    warning(f"Exception while reading response: {e}", message_logger=self._message_logger)
+                    warning(
+                        f"Exception while reading response: {e}",
+                        message_logger=self._message_logger,
+                    )
                     self.status = MdbStatus.DISCONNECTED
 
                 cl.loop_end()
@@ -355,15 +434,22 @@ class NayaxWorker(Worker):
             warning(f"Exception in worker: {e}", message_logger=self._message_logger)
             traceback.print_exception(e)
         finally:
-            debug(f"Exiting NayaxConnector subprocess", message_logger=self._message_logger)
+            debug(
+                f"Exiting NayaxConnector subprocess",
+                message_logger=self._message_logger,
+            )
+
 
 class NayaxConnector(Connector):
-    def __init__(self, serial: str, core:int, message_logger=None):
+    def __init__(self, serial: str, core: int, message_logger=None):
         super().__init__(core=core, message_logger=message_logger)
         self.serial = serial
         self.__lock = threading.Lock()
         # self._state
-        debug(f"Initialized NayaxConnector with serial: {self.serial}", message_logger=message_logger)
+        debug(
+            f"Initialized NayaxConnector with serial: {self.serial}",
+            message_logger=message_logger,
+        )
 
     # PROPERTIES
     @property
@@ -381,7 +467,9 @@ class NayaxConnector(Connector):
     @property
     def last_payment_result(self) -> MdbTransactionResult:
         with self.__lock:
-            last_payment_result = super()._send_thru_pipe(self._pipe_out, ["GET_LAST_PAYMENT_RESULT"])
+            last_payment_result = super()._send_thru_pipe(
+                self._pipe_out, ["GET_LAST_PAYMENT_RESULT"]
+            )
             return last_payment_result
 
     @last_payment_result.setter
@@ -391,7 +479,9 @@ class NayaxConnector(Connector):
 
     def charge(self, amount: Decimal) -> bool:
         with self.__lock:
-            cmd_accepted = super()._send_thru_pipe(self._pipe_out, ["SET_CHARGE", amount])
+            cmd_accepted = super()._send_thru_pipe(
+                self._pipe_out, ["SET_CHARGE", amount]
+            )
             return cmd_accepted
 
     def _run(self, pipe_in, message_logger) -> None:
@@ -399,6 +489,5 @@ class NayaxConnector(Connector):
         worker = NayaxWorker(
             serial=self.serial,
             message_logger=message_logger,
-
         )
         worker._run(pipe_in)
