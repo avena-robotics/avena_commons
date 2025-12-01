@@ -963,7 +963,7 @@ class EventListener:
         # Czekamy na gotowość systemu
         self._system_ready.wait()
         debug(
-            f"Analyze_queues loop activated...",
+            f"Analyze_queues loop activated... {self.__analyze_queue_frequency}",
             message_logger=self._message_logger,
         )
 
@@ -1194,6 +1194,7 @@ class EventListener:
                             f"Added event to incomming events queue: {event}",
                             message_logger=self._message_logger,
                         )
+                        debug(f"IN Event Handler - incoming events: {self.__incoming_events}", message_logger=self._message_logger)
             self.__received_events += 1
         except Exception as e:
             error(f"__event_handler: {e}", message_logger=self._message_logger)

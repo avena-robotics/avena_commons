@@ -113,7 +113,7 @@ def check_ethercat(iface_name: str, device_check_loop: bool = False):
         else:
             print("EtherCAT is working on interface:", iface_name)
             for i, slave in enumerate(master.slaves):
-                print(f"Slave {i} '{slave.name}' state=0x{slave.state:X}")
+                print(f"Slave {i} '{slave.name}' state=0x{slave.state:X}, {slave.man} {slave.id}")
                 print(f"Slave {i} '{slave.name}' output={slave.output}")
                 print(f"Slave {i} '{slave.name}' input={slave.input}")
                 # print("--------------------------------")

@@ -55,7 +55,7 @@ def transform_camera_to_base(
         new_camera_object_euler[2] - item_pose_oryginal_euler[2]
     ) % 360
     if new_camera_object_euler[2] > 180:
-        new_camera_object_euler[2] -= 360
+        new_camera_object_euler[2] -=360
 
     # Normalize all rotation angles
     # rx, ry, rz = [normalize_angle(angle) for angle in new_camera_object_euler]

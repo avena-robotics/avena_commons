@@ -183,7 +183,8 @@ class EtherCATWorker(Worker):
 
     def __configure(self, slave_args: list):
         """Konfiguruje slave'y, ustawia PREOP, mapuje PDO i przygotowuje DC."""
-        for slave_arg in slave_args:
+        info(f"slave_args {slave_args}", message_logger=self._message_logger)
+        for i, slave_arg in enumerate(slave_args):
             device_name = slave_arg[0]
             slave_product_code = slave_arg[1]
             slave_vendor_code = slave_arg[2]
@@ -198,8 +199,9 @@ class EtherCATWorker(Worker):
                 and self.master.slaves[slave_address].man == slave_vendor_code
             ):
                 self._add_device(slave_arg)
+                info(f"slave_address {slave_address}, slaves {self.master.slaves}", self._message_logger)
                 self.master.slaves[slave_address].config_func = self._slaves[
-                    slave_address
+                    i
                 ]._config_function  # przypisanie funkcji konfiguracji do slave
             else:
                 error(
@@ -576,6 +578,14 @@ class EtherCATWorker(Worker):
                                 )
                                 value = self._slaves[data[1]].is_motor_running()
                                 pipe_in.send(value)
+                            case "READ_CNT":
+                                info(
+                                    f"{self.device_name} - READ_CNT, {data[1]}",
+                                    message_logger=self._message_logger,
+                                )
+                                print(f"In worker {data[1]} {len(self._slaves)}")
+                                value = self._slaves[data[1]].read_counter(data[2])
+                                pipe_in.send(value)
                             case _:
                                 error(
                                     f"{self.device_name} - Unknown command: {data[0]}",
@@ -888,6 +898,11 @@ class EtherCAT(Connector):
             result = self.__execute_command(["WRITE_OUTPUT", address, port, value])
             return result
 
+    def read_counter(self, address: int, port: int):
+        with self.__lock:
+            result = self.__execute_command(["READ_CNT", address, port])
+            return result
+        
     def start_axis_pos_profile(
         self, address: int, axis: int, pos: int, vel: int, direction: bool
     ):

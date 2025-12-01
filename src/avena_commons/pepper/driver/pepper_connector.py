@@ -915,6 +915,13 @@ class PepperWorker(Worker):
         )
         _pipe_loop_freq = 1000  # Hz
 
+        cl = ControlLoop(
+            name="nozzle_worker_loop",
+            period=1.0 / 120,  # 120 Hz
+            auto_synchronizer=True,
+            warning_printer=False,
+        )
+
         debug(
             f"{self.device_name} - Worker started with local logger on PID: {os.getpid()}",
             self._message_logger,
@@ -922,6 +929,8 @@ class PepperWorker(Worker):
 
         try:
             while True:
+                # cl.loop_begin() #FIXME: Dyskusyjne. Zmniejsza obciążenie, ale pojawiają się overtime'y
+
                 if pipe_in.poll(1 / _pipe_loop_freq):  # Czekaj na dane z pipe
                     data = pipe_in.recv()
 
@@ -1029,6 +1038,8 @@ class PepperWorker(Worker):
                                 f"{self.device_name} - Unknown command: {data[0]}",
                                 self._message_logger,
                             )
+
+                # cl.loop_end()
 
         except asyncio.CancelledError:
             info(f"{self.device_name} - Task was cancelled", self._message_logger)

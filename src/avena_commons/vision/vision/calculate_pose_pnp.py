@@ -44,6 +44,7 @@ def calculate_pose_pnp(
             [a / 2, b / 2, 0],  # Dolny prawy róg
             [a / 2, -b / 2, 0],  # Górny prawy róg
             [-a / 2, -b / 2, 0],  # Górny lewy róg
+            # [0.0, 0.0, 0.0],  # Centrum obiektu
         ],
         dtype=np.float32,
     )

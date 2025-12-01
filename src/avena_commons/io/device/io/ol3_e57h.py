@@ -49,6 +49,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.actual_position = 0
         self.actual_velocity = 0
         self.input_values = 0
+        self.output_values = [1, 0, 0]
 
         self.control_word = 0x0080  # 0x80 = Clear Fault
         self.mode = 0
@@ -99,6 +100,8 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.master.slaves[slave_pos].sdo_write(0x2522, 0, struct.pack("<H", 11))
 
         self.master.slaves[slave_pos].sdo_write(0x2500, 0, struct.pack("<H", 0))
+        self.master.slaves[slave_pos].sdo_write(0x2303, 0, struct.pack("<H", 1500))
+        
         # PDO Mapping for OL3-E57H
         self.master.slaves[slave_pos].sdo_write(0x1C12, 0, struct.pack("B", 0))
         self.master.slaves[slave_pos].sdo_write(0x1C13, 0, struct.pack("B", 0))
@@ -129,8 +132,8 @@ class OL3_E57H_Slave(EtherCatSlave):
                 "subindex": 0x00,
                 "bitlength": 0x20,
             },  # Profile Deceleration
-            {"index": 0x60FE, "subindex": 0x01, "bitlength": 0x10},  # Physical Output
-            {"index": 0x60FE, "subindex": 0x02, "bitlength": 0x10},  # Bit Mask
+            {"index": 0x60FE, "subindex": 0x01, "bitlength": 0x20},  # Physical Output
+            {"index": 0x60FE, "subindex": 0x02, "bitlength": 0x20},  # Bit Mask
         ]
 
         for subindex, content in enumerate(rx_entries, start=1):
@@ -191,7 +194,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         # Your raw input data from slave.inputs
         input_data = input_bytes
 
-        print(f"Reading PDO from OL3-E57H {input_data}")
+        # print(f"Reading PDO from OL3-E57H {input_data}")
 
         # Define the format string based on your TxPDO map
         # < = little-endian
@@ -222,7 +225,7 @@ class OL3_E57H_Slave(EtherCatSlave):
             # print(f"Mode Display: {self.mode_display}")
             # print(f"Actual Position: {self.actual_position}")
             # print(f"Actual Velocity: {self.actual_velocity}")
-            print(f"Input Values: {self.input_values}")
+            # print(f"Input Values: {self.input_values:b}")
 
             # STATUS WORD BITS
             # Bit 0: Ready to start
@@ -243,7 +246,7 @@ class OL3_E57H_Slave(EtherCatSlave):
 
     def _write_pdo(self):
         output_bytes = self.master.slaves[self.address].output
-        print(f"Writing PDO to OL3-E57H {output_bytes}")
+        # print(f"Writing PDO to OL3-E57H {output_bytes}")
 
         # self.control_word = 0x0080  # 0x80 = Clear Fault
         # self.mode = 0
@@ -253,11 +256,17 @@ class OL3_E57H_Slave(EtherCatSlave):
         # self.prof_accel = 0
         # self.prof_decel = 0
 
-        pdo_format = "<HbiiIIIHH"
+        pdo_format = "<HbiiIIIII"
 
         # print(f"Target Velocity: {self.target_vel}, Profile Velocity: {self.prof_vel}, Profile Accel: {self.prof_accel}, Profile Decel: {self.prof_decel}, control word: {self.control_word}, mode: {self.mode}")
         # print(f"Actual Velocity: {self.actual_velocity}, Actual Position: {self.actual_position}, status word: {self.status_word}, mode display: {self.mode_display}")
         # Pack the data into a 23-byte string
+        
+        output_values = (int(self.output_values[0]) << 16) | \
+                        (int(self.output_values[1]) << 17) | \
+                        (int(self.output_values[2]) << 18)
+        print(output_values)
+        
         output_data = struct.pack(
             pdo_format,
             self.control_word,
@@ -267,8 +276,8 @@ class OL3_E57H_Slave(EtherCatSlave):
             self.prof_vel,
             self.prof_accel,
             self.prof_decel,
-            0,
-            0,
+            458752,
+            output_values,
         )
 
         self.master.slaves[self.address].output = output_data
@@ -277,7 +286,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.cia402_state = self.decode_cia402_state(self.status_word)
         # print(f"{self.device_name}: Current CIA402 State: {self.cia402_state.name}")
 
-        print(f"{self.device_name}: FSM State: {self.fsm.name}")
+        # print(f"{self.device_name}: FSM State: {self.fsm.name}")
 
         match self.fsm:
             case OL3_E57H_FSM.IDLE:
@@ -296,7 +305,7 @@ class OL3_E57H_Slave(EtherCatSlave):
             case OL3_E57H_FSM.START_PROFILE_VELOCITY:
                 if self.mode_display == 3:  # Profile Velocity Mode
                     self.fsm = OL3_E57H_FSM.IN_PROFILE_VELOCITY
-                    print(f"{self.device_name}: Entered Profile Velocity Mode.")
+                    # print(f"{self.device_name}: Entered Profile Velocity Mode.")
 
             case OL3_E57H_FSM.IN_PROFILE_VELOCITY:
                 # pass
@@ -307,7 +316,7 @@ class OL3_E57H_Slave(EtherCatSlave):
             case OL3_E57H_FSM.START_PROFILE_POSITION:
                 if self.mode_display == 1:  # Profile Position Mode
                     self.fsm = OL3_E57H_FSM.IN_PROFILE_POSITION
-                    print(f"{self.device_name}: Entered Profile Position Mode.")
+                    # print(f"{self.device_name}: Entered Profile Position Mode.")
 
             case OL3_E57H_FSM.IN_PROFILE_POSITION:
                 pass
@@ -315,7 +324,7 @@ class OL3_E57H_Slave(EtherCatSlave):
             case OL3_E57H_FSM.STOPPING:
                 if self.is_stopped():
                     self.fsm = OL3_E57H_FSM.OPERATIONAL
-                    print(f"{self.device_name}: Drive stopped successfully.")
+                    # print(f"{self.device_name}: Drive stopped successfully.")
             case OL3_E57H_FSM.ERROR:
                 pass
             case _:
@@ -329,28 +338,28 @@ class OL3_E57H_Slave(EtherCatSlave):
 
         if (status_word & 0x004F) == 0x0000:
             state = cia402_states.NOT_READY_TO_SWITCH_ON
-            print(f"{self.device_name}: State - NOT_READY_TO_SWITCH_ON")
+            # print(f"{self.device_name}: State - NOT_READY_TO_SWITCH_ON")
         elif (status_word & 0x004F) == 0x0040:
             state = cia402_states.SWITCH_ON_DISABLED
-            print(f"{self.device_name}: State - SWITCH_ON_DISABLED")
+            # print(f"{self.device_name}: State - SWITCH_ON_DISABLED")
         elif (status_word & 0x006F) == 0x0021:
             state = cia402_states.READY_TO_SWITCH_ON
-            print(f"{self.device_name}: State - READY_TO_SWITCH_ON")
+            # print(f"{self.device_name}: State - READY_TO_SWITCH_ON")
         elif (status_word & 0x006F) == 0x0023:
             state = cia402_states.SWITCHED_ON
-            print(f"{self.device_name}: State - SWITCHED_ON")
+            # print(f"{self.device_name}: State - SWITCHED_ON")
         elif (status_word & 0x006F) == 0x0027:
             state = cia402_states.OPERATION_ENABLED
-            print(f"{self.device_name}: State - OPERATION_ENABLED")
+            # print(f"{self.device_name}: State - OPERATION_ENABLED")
         elif (status_word & 0x006F) == 0x0007:
             state = cia402_states.QUICK_STOP_ACTIVE
-            print(f"{self.device_name}: State - QUICK_STOP_ACTIVE")
+            # print(f"{self.device_name}: State - QUICK_STOP_ACTIVE")
         elif (status_word & 0x004F) == 0x000F:
             state = cia402_states.FAULT_REACTION_ACTIVE
-            print(f"{self.device_name}: State - FAULT_REACTION_ACTIVE")
+            # print(f"{self.device_name}: State - FAULT_REACTION_ACTIVE")
         elif (status_word & 0x004F) == 0x0008:
             state = cia402_states.FAULT
-            print(f"{self.device_name}: State - FAULT")
+            # print(f"{self.device_name}: State - FAULT")
 
         return state
 
@@ -448,7 +457,8 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.fsm = OL3_E57H_FSM.STOPPING
 
     def read_input(self, port):
-        io_mapping = {1: 17, 2: 18, 3: 20, 4: 21, 5: 22, 6: 23}
+        # io_mapping = {1: 17, 2: 18, 3: 20, 4: 21, 5: 22, 6: 23}
+        io_mapping = {1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21}
 
         if port not in io_mapping:
             print(f"Error: Port {port} not mapped.")
@@ -464,9 +474,9 @@ class OL3_E57H_Slave(EtherCatSlave):
         )
 
         return is_active
-
-    def set_output(self, port, state: bool):
-        pass
+    
+    def write_output(self, port, value):
+        self.output_values[port] = value
 
     def is_motor_running(self) -> bool:
         """Sprawdza Bit 0 w Status Word (Switch On Status)"""
@@ -498,7 +508,8 @@ class OL3_E57H(EtherCatDevice):
             message_logger,
             debug,
         )
-
+        self.outputs_ports = [0, 0, 0]
+        
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         try:
             result = self.bus.run_jog(self.address, speed, accel, decel)
@@ -522,6 +533,16 @@ class OL3_E57H(EtherCatDevice):
     def read_input(self, port):
         value = self.bus.read_input(self.address, port)
         return value
+    
+    def _read_output(self, port: int):
+        """Zwraca stan bufora wyjścia cyfrowego."""
+        return self.outputs_ports[port]
+
+    def _write_output(self, port: int, value: bool):
+        """Ustawia wyjście cyfrowe w urządzeniu przez magistralę i aktualizuje bufor."""
+        self.outputs_ports[port] = value
+        # debug(f"{self.device_name} - Writing output {port} to {value}", message_logger=self.message_logger)
+        self.bus.write_output(self.address, port, value)
 
     @property
     def di1(self):
@@ -551,6 +572,21 @@ class OL3_E57H(EtherCatDevice):
     @property
     def di6(self):
         value = self.read_input(6)
+        return value
+    
+    @property
+    def do1(self):
+        value = self._read_output(0)
+        return value
+
+    @property
+    def do2(self):
+        value = self._read_output(1)
+        return value
+
+    @property
+    def do3(self):
+        value = self._read_output(2)
         return value
 
     @property
