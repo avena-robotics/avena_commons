@@ -15,7 +15,10 @@ class TaskTimeout(ABC):
         """Inicjalizuje TaskTimeout i uruchamia wątek pętli sterującej do tickowania watchdogów."""
 
         self.message_logger = message_logger
-        self.__watchdog = SensorWatchdog(on_timeout_default=self.__on_sensor_timeout_wrapper, log_error=lambda msg: error(msg, message_logger=self.message_logger))
+        self.__watchdog = SensorWatchdog(
+            on_timeout_default=self.__on_sensor_timeout_wrapper,
+            log_error=lambda msg: error(msg, message_logger=self.message_logger),
+        )
 
         self._stop_event = Event()
         self._thread = None
@@ -26,21 +29,21 @@ class TaskTimeout(ABC):
             auto_synchronizer=True,
             warning_printer=False,
         )
-        
+
         def _tick_loop():
             while not self._stop_event.is_set():
                 self.cl.loop_begin()
                 self.__tick_watchdogs()
                 self.cl.loop_end()
-                
+
         self._thread = Thread(target=_tick_loop, daemon=True)
         self._thread.start()
 
     def __del__(self):
         """Zatrzymuje wątek tickowania watchdogów przy usuwaniu obiektu."""
-        if hasattr(self, '_stop_event') and self._stop_event:
+        if hasattr(self, "_stop_event") and self._stop_event:
             self._stop_event.set()
-        if hasattr(self, '_thread') and self._thread:
+        if hasattr(self, "_thread") and self._thread:
             self._thread.join(timeout=1)
 
     def on_sensor_timeout(self, task: SensorTimerTask) -> None:
@@ -56,7 +59,10 @@ class TaskTimeout(ABC):
         Wywołuje on_sensor_timeout(nadpisywalne), zapisuje błąd.
         """
         self.on_sensor_timeout(task)
-        error(f"{self.device_name} - Timeout: {task.description}, {task.metadata}", message_logger=self.message_logger)
+        error(
+            f"{self.device_name} - Timeout: {task.description}, {task.metadata}",
+            message_logger=self.message_logger,
+        )
 
     def add_sensor_timeout(
         self,

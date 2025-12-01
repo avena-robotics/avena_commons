@@ -520,17 +520,8 @@ class OL3_E57H(EtherCatDevice):
             self.set_error(f"Exception in stop: {e}")
 
     def read_input(self, port):
-        try:
-            value = self.bus.read_input(self.address, port)
-            if value is not None:
-                self.clear_error()
-                return value
-            else:
-                self.set_error(f"Failed to read input port {port}")
-                return None
-        except Exception as e:
-            self.set_error(f"Exception reading input port {port}: {e}")
-            return None
+        value = self.bus.read_input(self.address, port)
+        return value
 
     @property
     def di1(self):

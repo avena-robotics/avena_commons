@@ -143,7 +143,6 @@ class P7674(PhysicalDeviceBase):
                         f"{self.device_name} - Unable to read DI register",
                         message_logger=self.message_logger,
                     )
-                    self.set_error("Unable to read DI register")
 
             except Exception as e:
                 self.set_error(f"Error reading DI: {e}")
@@ -183,7 +182,7 @@ class P7674(PhysicalDeviceBase):
                         # Clear error on successful write
                         self.clear_error()
                     except Exception as e:
-                        self.set_error(f"Error writing DO: {str(e)}")
+                        warning(f"Error writing DO: {str(e)}", self.message_logger)
 
             except Exception as e:
                 self.set_error(f"Error in DO thread: {e}")

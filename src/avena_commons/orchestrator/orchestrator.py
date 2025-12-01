@@ -1450,7 +1450,7 @@ class Orchestrator(EventListener):
                     self._state[event.source]["error_message"] = event.data.get(
                         "error_message"
                     )
-                    
+
                     self._state[event.source]["state"] = event.data.get("state", {})
 
                     debug(

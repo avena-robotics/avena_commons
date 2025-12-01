@@ -2228,7 +2228,7 @@ class EventListener:
         event.data["error"] = getattr(self, "_error", False)
         event.data["error_code"] = getattr(self, "_error_code", False)
         event.data["error_message"] = getattr(self, "_error_message", None)
-        event.data["state"] = getattr(self, "_state", {})
+        event.data["state"] = self._serialize_value((getattr(self, "_state", {})))
         event.result = Result(result="success")
         await self._reply(event)
 

@@ -1,12 +1,16 @@
 import threading
 import time
+import traceback
 from enum import Enum
 
-from avena_commons.io.device import modbus_check_device_connection
+from avena_commons.io.device import (
+    PhysicalDeviceBase,
+    PhysicalDeviceState,
+    modbus_check_device_connection,
+)
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
 
 from ..io_utils import init_device_di, init_device_do
-from ..physical_device_base import PhysicalDeviceBase
 
 
 class DriverMode(Enum):
@@ -38,7 +42,6 @@ class TLC57R24V082(PhysicalDeviceBase):
         message_logger (MessageLogger | None): Logger wiadomości.
         debug (bool): Włącza logi debug.
         command_send_retry_attempts (int): Próby ponownego wysłania komendy (niezależnie od retry ruchu).
-        max_consecutive_errors (int): Próg błędów przed FAULT.
     """
 
     def __init__(
@@ -51,94 +54,116 @@ class TLC57R24V082(PhysicalDeviceBase):
         period: float = 0.05,
         do_count: int = 3,
         di_count: int = 5,
-        movement_retry_attempts: int = 15,
+        movement_retry_attempts: int = 3,
         movement_retry_delay: float = 0.2,
         message_logger: MessageLogger | None = None,
         debug: bool = True,
-        command_send_retry_attempts: int = 15,
+        command_send_retry_attempts: int = 3,
         max_consecutive_errors: int = 3,
     ):
-        super().__init__(
-            device_name=device_name,
-            max_consecutive_errors=max_consecutive_errors,
-            message_logger=message_logger,
-        )
-        self.bus = bus
-        self.address = address
-        self.configuration_type = configuration_type
-        self.reverse_direction = reverse_direction
-        self.period: float = period
-        self.do_count = do_count
-        self.di_count = di_count
-        self.__debug = debug
-        self.operation_status_in_place = False
-        self.operation_status_homing_completed = False
-        self.operation_status_motor_running = False
-        self.operation_status_failure = False
-        self.operation_status_motor_enabling = False
-        self.operation_status_positive_software_limit = False
-        self.operation_status_negative_software_limit = False
-        self.current_alarm_overcurrent = False
-        self.current_alarm_overvoltage = False
-        self.current_alarm_undervoltage = False
-        # self.__motor_running = False
+        try:
+            # Initialize PhysicalDeviceBase first
+            super().__init__(
+                device_name=device_name,
+                max_consecutive_errors=max_consecutive_errors,
+                message_logger=message_logger,
+            )
 
-        # Jog threading control flags
-        self._stop_event = threading.Event()
-        # self._run = False  # znacznik informujący wątek jog o konieczności wysłania nowych parametrów
-        self._jog_speed = 0
-        self._jog_accel = 0
-        self._jog_decel = 0
-        # self._jog_control_word = 8
-        self._jog_lock = threading.Lock()
-        self._jog_thread = None
-        self._jog_counter = 0
+            self.set_state(PhysicalDeviceState.INITIALIZING)
 
-        # Position mode variables
-        # self._position_mode = False  # True for position mode, False for jog mode
-        self._running_mode = DriverMode.STOP
-        self._position_target = 0
-        self._position_speed = 0
-        self._position_accel = 0
-        self._position_decel = 0
-        self._position_start_speed = 0
-        # self._position_control_word = 1
+            self.device_name = device_name
+            self.bus = bus
+            self.address = address
+            self.configuration_type = configuration_type
+            self.reverse_direction = reverse_direction
+            self.period: float = period
+            self.do_count = do_count
+            self.di_count = di_count
+            self.message_logger = message_logger
+            self.__debug = debug
+            self.operation_status_in_place = False
+            self.operation_status_homing_completed = False
+            self.operation_status_motor_running = False
+            self.operation_status_failure = False
+            self.operation_status_motor_enabling = False
+            self.operation_status_positive_software_limit = False
+            self.operation_status_negative_software_limit = False
+            self.current_alarm_overcurrent = False
+            self.current_alarm_overvoltage = False
+            self.current_alarm_undervoltage = False
+            # self.__motor_running = False
 
-        # DI reading thread properties
-        self.di_value: int = 0
-        self.__di_lock: threading.Lock = threading.Lock()
-        self._di_thread: threading.Thread | None = None
-        self._di_stop_event: threading.Event = threading.Event()
+            # Jog threading control flags
+            self._stop_event = threading.Event()
+            # self._run = False  # znacznik informujący wątek jog o konieczności wysłania nowych parametrów
+            self._jog_speed = 0
+            self._jog_accel = 0
+            self._jog_decel = 0
+            # self._jog_control_word = 8
+            self._jog_lock = threading.Lock()
+            self._jog_thread = None
+            self._jog_counter = 0
 
-        # DO writing thread properties
-        self.do_current_state: list[int] = [0] * self.do_count
-        self.do_state_changed: bool = False
-        self.do_previous_state: list[int] = [0] * self.do_count
-        self.__do_lock: threading.Lock = threading.Lock()
-        self._do_thread: threading.Thread | None = None
-        self._do_stop_event: threading.Event = threading.Event()
+            # Position mode variables
+            # self._position_mode = False  # True for position mode, False for jog mode
+            self._running_mode = DriverMode.NONE
+            self._position_target = 0
+            self._position_speed = 0
+            self._position_accel = 0
+            self._position_decel = 0
+            self._position_start_speed = 0
+            # self._position_control_word = 1
 
-        # Error propagation fields (for IO_server escalation)
-        self._error: bool = False
-        self._error_message: str | None = None
+            # DI reading thread properties
+            self.di_value: int = 0
+            self.__di_lock: threading.Lock = threading.Lock()
+            self._di_thread: threading.Thread | None = None
+            self._di_stop_event: threading.Event = threading.Event()
 
-        # Movement retry configuration/state
-        # self._move_retry_attempts: int = int(movement_retry_attempts) if movement_retry_attempts is not None else 0
-        # self._move_retry_delay: float = float(movement_retry_delay) if movement_retry_delay is not None else 0.0
-        # self._move_in_progress: bool = False
-        # self._move_attempts_made: int = 0
-        # self._last_command_type: str | None = None  # 'jog' | 'position' | None
-        # self._waiting_for_failure_clear: bool = False
+            # DO writing thread properties
+            self.do_current_state: list[int] = [0] * self.do_count
+            self.do_state_changed: bool = False
+            self.do_previous_state: list[int] = [0] * self.do_count
+            self.__do_lock: threading.Lock = threading.Lock()
+            self._do_thread: threading.Thread | None = None
+            self._do_stop_event: threading.Event = threading.Event()
 
-        # Command send retry configuration/state (independent from movement retries)
-        self._command_send_retry_attempts: int = (
-            int(command_send_retry_attempts)
-            if command_send_retry_attempts is not None
-            else 0
-        )
-        self._command_send_attempts_made: int = 0  # liczba prób wysłania bieżącej komendy - konieczne restartowanie przy nowej komendzie
+            # Error propagation fields (for IO_server escalation)
+            self._error: bool = False
+            self._error_message: str | None = None
 
-        self.__setup()
+            # Movement retry configuration/state
+            # self._move_retry_attempts: int = int(movement_retry_attempts) if movement_retry_attempts is not None else 0
+            # self._move_retry_delay: float = float(movement_retry_delay) if movement_retry_delay is not None else 0.0
+            # self._move_in_progress: bool = False
+            # self._move_attempts_made: int = 0
+            # self._last_command_type: str | None = None  # 'jog' | 'position' | None
+            # self._waiting_for_failure_clear: bool = False
+
+            # Command send retry configuration/state (independent from movement retries)
+            self._command_send_retry_attempts: int = (
+                int(command_send_retry_attempts)
+                if command_send_retry_attempts is not None
+                else 0
+            )
+            self._command_send_attempts_made: int = 0  # liczba prób wysłania bieżącej komendy - konieczne restartowanie przy nowej komendzie
+
+            self.__setup()
+
+            if self.check_device_connection():
+                self.set_state(PhysicalDeviceState.WORKING)
+            else:
+                self.set_error(
+                    f"Initial connection check failed at address {address}, device {device_name}."
+                )
+
+        except Exception as e:
+            error(
+                f"{self.device_name} - Error initializing: {str(e)}",
+                message_logger=message_logger,
+            )
+            error(traceback.format_exc(), message_logger=message_logger)
+            self.set_error(f"Initialization exception: {str(e)}")
 
     def __setup(self):
         """Konfiguruje rejestry sterownika, uruchamia wątki jog/DI/DO."""
@@ -366,14 +391,11 @@ class TLC57R24V082(PhysicalDeviceBase):
                     and self._command_send_attempts_made
                     >= self._command_send_retry_attempts
                 ):  # Przekroczenie ilosci prob wyslania komendy
-                    self._error = True
-                    self._error_message = f"{self.device_name} - Wysyłanie parametrów ruchu: przekroczono liczbę prób ({self._command_send_attempts_made}/{self._command_send_retry_attempts})"
                     self._running_mode = (
                         DriverMode.STOP
                     )  # zatrzymanie dalszych prób ruchu
-                    error(
-                        self._error_message,
-                        message_logger=self.message_logger,
+                    self.set_error(
+                        f"{self.device_name} - Wysyłanie parametrów ruchu: przekroczono liczbę prób ({self._command_send_attempts_made}/{self._command_send_retry_attempts})"
                     )
 
                 self._jog_counter += 1
@@ -384,6 +406,7 @@ class TLC57R24V082(PhysicalDeviceBase):
                     f"{self.device_name} Error in jog thread: {e}",
                     message_logger=self.message_logger,
                 )
+                self.set_error(f"Jog thread exception: {e}")
                 time.sleep(0.01)
 
     def __send_jog_parameters(
@@ -466,6 +489,7 @@ class TLC57R24V082(PhysicalDeviceBase):
     def reset_error(self):
         """Resetuje błąd w urządzeniu (zapis do rejestru resetu błędów)."""
         self.bus.write_holding_register(address=self.address, register=79, value=0x0300)
+        self.clear_error()  # czyszczenie błędów klasy nadrzędnej
         debug(
             f"{self.device_name} - Reset po byciu w stanie failure",
             message_logger=self.message_logger,
@@ -536,7 +560,7 @@ class TLC57R24V082(PhysicalDeviceBase):
         """Zatrzymuje silnik i wyłącza tryb jog."""
         # Disable jog mode
         with self._jog_lock:
-            self._running_mode = DriverMode.STOP
+            self._running_mode = DriverMode.NONE
             self._jog_speed = 0
             self._jog_accel = 0
             self._jog_decel = 0
@@ -584,7 +608,6 @@ class TLC57R24V082(PhysicalDeviceBase):
         if not self.check_health():
             return False
 
-        # Then check Modbus connection
         return modbus_check_device_connection(
             device_name=self.device_name,
             bus=self.bus,
@@ -652,22 +675,18 @@ class TLC57R24V082(PhysicalDeviceBase):
                                 f"{self.device_name} - DI value updated: {bin(response)}",
                                 message_logger=self.message_logger,
                             )
-                    # Successful read - clear error counter
-                    self.clear_error()
                 else:
                     if self.__debug:
                         warning(
                             f"{self.device_name} - Unable to read DI register",
                             message_logger=self.message_logger,
                         )
-                    self.set_error("Unable to read DI register")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error reading DI: {e}",
                     message_logger=self.message_logger,
                 )
-                self.set_error(f"Error reading DI: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -701,21 +720,17 @@ class TLC57R24V082(PhysicalDeviceBase):
                                 f"{self.device_name} - DO value updated: {bin(do_current_state)}",
                                 message_logger=self.message_logger,
                             )
-                        # Successful write - clear error counter
-                        self.clear_error()
                     except Exception as e:
                         error(
                             f"{self.device_name} - Error writing DO: {str(e)}",
                             message_logger=self.message_logger,
                         )
-                        self.set_error(f"Error writing DO: {str(e)}")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error in DO thread: {e}",
                     message_logger=self.message_logger,
                 )
-                self.set_error(f"Error in DO thread: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 

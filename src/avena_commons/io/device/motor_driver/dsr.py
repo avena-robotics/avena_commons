@@ -493,14 +493,12 @@ class DSR(PhysicalDeviceBase):
                             f"{self.device_name} - Unable to read DI register",
                             message_logger=self.message_logger,
                         )
-                    self.set_error("Unable to read DI register")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error reading DI: {e}",
                     message_logger=self.message_logger,
                 )
-                self.set_error(f"Error reading DI: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
@@ -541,14 +539,12 @@ class DSR(PhysicalDeviceBase):
                             f"{self.device_name} - Error writing DO: {str(e)}",
                             message_logger=self.message_logger,
                         )
-                        self.set_error(f"Error writing DO: {str(e)}")
 
             except Exception as e:
                 error(
                     f"{self.device_name} - Error in DO thread: {e}",
                     message_logger=self.message_logger,
                 )
-                self.set_error(f"Error in DO thread: {e}")
 
             time.sleep(max(0, self.period - (time.time() - now)))
 
