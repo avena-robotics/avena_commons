@@ -2221,7 +2221,6 @@ class EventListener:
         #     f"Processing CMD_GET_STATE event ({event}), sending state: {self._state}",
         #     message_logger=self._message_logger,
         # )
-
         event.data = {}
         event.data["fsm_state"] = self.__fsm_state.name
         # Pola błędu (jeśli klasa potomna je definiuje)
