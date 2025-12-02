@@ -9,6 +9,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -332,6 +333,8 @@ class EventListener:
             return value.isoformat()
         elif isinstance(value, Enum):
             return value.value
+        elif isinstance(value, Decimal):
+            return float(value)
         return value
 
     def __save_state(self):
