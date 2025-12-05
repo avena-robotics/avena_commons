@@ -47,6 +47,7 @@ class Supervisor(EventListener):
         name: str,
         suffix=1,
         message_logger=None,
+        loop_synchronization=False,
         debug=False,
         load_state: bool = False,
     ):
@@ -131,6 +132,7 @@ class Supervisor(EventListener):
             name=name,
             port=os.getenv(f"SUPERVISOR_{suffix}_LISTENER_PORT"),
             load_state=load_state,
+            loop_synchronization=loop_synchronization,
             message_logger=message_logger,
         )
 
