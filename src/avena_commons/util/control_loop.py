@@ -36,7 +36,7 @@ class ControlLoop:
         message_logger=None,
         overtime_info_callback: Optional[Callable[[], str]] = None,
         synchronizer: Optional[LoopSynchronizer] = None,
-        auto_synchronizer: bool = True,
+        auto_synchronizer: bool = False,
         overrun_strategy: str = OVERRUN_SKIP,
         busy_wait_ns: int = 100_000,
     ) -> None:

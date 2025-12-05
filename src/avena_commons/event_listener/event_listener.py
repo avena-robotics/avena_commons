@@ -105,6 +105,7 @@ class EventListener:
         load_state: bool = False,
         discovery_neighbours: bool = False,
         raport_overtime: bool = True,
+        loop_synchronizer: bool = False,
         # use_parallel_send: bool = True,
         use_cumulative_send: bool = True,
     ):
@@ -135,6 +136,9 @@ class EventListener:
         # For non-blocking CPU calculation
         self.__last_proc_cpu_times: dict = {}
         self.__last_cpu_calc_time: float = 0.0
+        
+        # Auto Control Loop synchronization
+        self.__loop_synchronize = loop_synchronizer
 
         self.__state_file_path = TEMP_DIR / f"{name}_state.json"
         self.__config_file_path = f"{name}_config.json"
@@ -961,6 +965,7 @@ class EventListener:
             period=1 / self.__analyze_queue_frequency,
             warning_printer=self.__raport_overtime,
             message_logger=self._message_logger,
+            auto_synchronizer=self.__loop_synchronize,
         )
 
         # Czekamy na gotowość systemu
@@ -1126,6 +1131,7 @@ class EventListener:
             period=1 / self.__discovery_frequency,
             warning_printer=False,
             message_logger=self._message_logger,
+            auto_synchronizer=self.__loop_synchronize,
         )
 
         # Czekamy na gotowość systemu
@@ -1212,6 +1218,7 @@ class EventListener:
             period=1 / self.__check_local_data_frequency,
             warning_printer=self.__raport_overtime,
             message_logger=self._message_logger,
+            auto_synchronizer=self.__loop_synchronize,
         )
 
         # Czekamy na gotowość systemu
@@ -1335,6 +1342,7 @@ class EventListener:
             period=1 / self.__send_queue_frequency,
             warning_printer=self.__raport_overtime,
             message_logger=self._message_logger,
+            auto_synchronizer=self.__loop_synchronize,
         )
 
         # Czekamy na gotowość systemu
