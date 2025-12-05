@@ -76,6 +76,7 @@ class RobotController(Connector):
         if configuration is None:
             self._state = RobotControllerState.ERROR
             self._error_message = (f"{__name__}: Configuration must be provided",)
+            return
 
         self.__configuration = configuration
         # self.__gripper_state = gripper_state
@@ -97,7 +98,7 @@ class RobotController(Connector):
         self._tool = 0  # tool coordinate system number for flange
         self._tool_weight = 0  # tool weight
 
-        self._error_message = None
+        self._error_message = ""
 
         self._state = RobotControllerState.STOPPED
         self.__pressure_calculator = PressureCalculator()
@@ -173,7 +174,7 @@ class RobotController(Connector):
         pass
 
     @handle_errors()
-    def get_status(self):
+    def get_status_update(self):
         """
         Pobiera aktualny status supervisora.
 
@@ -183,12 +184,6 @@ class RobotController(Connector):
         main_code = self.robot.robot_state_pkg.main_code
         sub_code = self.robot.robot_state_pkg.sub_code
         joint_current_torque = list(self.robot.robot_state_pkg.jt_cur_tor)
-        # current_pose_from_state_pkg = list(self.robot.robot_state_pkg.tl_cur_pos)
-        
-        # debug(f"Current pose from state pkg: {current_pose_from_state_pkg}", self._message_logger)
-        # debug(f"Current pose from state pkg: {self.cartesian_position}", self._message_logger)
-
-        # if not self._gripper_pump_on:
         self._robot_current_position = self.cartesian_position
 
         return {
@@ -201,7 +196,7 @@ class RobotController(Connector):
                 ],
                 "enable_state": self.robot.robot_state_pkg.rbtEnableState,
                 "mode_state": self.robot.robot_state_pkg.robot_mode,
-                "current_position": self.cartesian_position,
+                "current_position": self._robot_current_position,
                 "joint_current_torque": joint_current_torque,
             },
             "path_execution_state": {
@@ -1050,7 +1045,7 @@ class RobotController(Connector):
             str: Tekst opisujący stan Supervisora w chwili overtime.
         """
         try:
-            status = self.get_status()
+            status = self.get_status_update()
         except Exception as e:
             status = f"Error getting status: {e}"
         return f"Supervisor Overtime Info: {self.__supervisor_overtime_info},\nRobot Get Status: {status}"
@@ -1253,7 +1248,7 @@ class RobotController(Connector):
                                 if safe_wait_ticks > safe_wait_limit_ticks:
                                     robot_collision_detected = True  # Ponawiamy próbę ruchu po kolizji, ponieważ aktualna nie została poprawnie wykonana.
                                     warning(
-                                        f"Post-collision safe movement timeout ({self._post_collision_safe_timeout_s:.2f}s) with no sufficient movement, retrying. Supervisor Status: {self.get_status()}",
+                                        f"Post-collision safe movement timeout ({self._post_collision_safe_timeout_s:.2f}s) with no sufficient movement, retrying. Supervisor Status: {self.get_status_update()}",
                                     )
                         except Exception as e:
                             self._state = RobotControllerState.STOPPED

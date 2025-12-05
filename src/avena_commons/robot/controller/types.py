@@ -140,9 +140,7 @@ class SupervisorModel(BaseModel):
     """Represents the state of the Supervisor and it's modules."""
 
     id: int
-    current_errors: List = Field(
-        default=[]
-    )  # Use empty list instead of None
+    current_error: str = ""
 
     # gripper_state: GripperModel = Field(default=GripperModel())
     robot_state: RobotModel = Field(default=RobotModel())
@@ -191,25 +189,22 @@ class SupervisorModel(BaseModel):
         )
 
     def __str__(self) -> str:
-        error_count = len(self.current_errors) if self.current_errors else 0
         flags = []
         if self.interrupt:
             flags.append("INTERRUPT")
         if self.collision_detected:
             flags.append("COLLISION")
-        if self.testing_move_check:
-            flags.append("TEST_MOVE")
+        if not self.testing_move_check:
+            flags.append("TEST_MOVE_FAILED")
         if self.watchdog_override:
             flags.append("WATCHDOG_OVERRIDE")
 
         flags_str = f" [{', '.join(flags)}]" if flags else ""
-        errors_str = f" errors({error_count})" if error_count > 0 else ""
 
-        return f"Supervisor(id={self.id}, state={self.state}{errors_str}{flags_str})"
+        return f"Supervisor(id={self.id}, state={self.state}{flags_str})"
 
     def __repr__(self) -> str:
-        error_count = len(self.current_errors) if self.current_errors else 0
-        return f"Supervisor(id={self.id}, state={self.state}, robot={self.robot_state}, path={self.path_execution_state}, errors={error_count})"
+        return f"Supervisor(id={self.id}, state={self.state}, robot={self.robot_state}, path={self.path_execution_state}, error={self.current_error})"
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""

@@ -24,7 +24,7 @@ from avena_commons.util.logger import debug, error, info, warning
 
 from .controller.enum import RobotControllerState
 from .controller.robot_controller import RobotController
-from .controller.types import SupervisorModel
+from .controller.types import SupervisorModel, RobotModel
 
 load_dotenv(override=True)
 
@@ -244,7 +244,7 @@ class Supervisor(EventListener):
                 self._robot_controller.robot.ResetAllError()
                 info("FSM: Robot internal error reset", self._message_logger)
 
-        self._state.current_errors = []
+        self._state.current_error = ""
 
         debug("FSM: Fault acknowledged", self._message_logger)
 
@@ -548,16 +548,12 @@ class Supervisor(EventListener):
             event (Event): Zdarzenie żądające aktualnej pozycji robota
         """
         debug("Handling current position request", self._message_logger)
-
-        # Pobierz aktualną pozycję z stanu supervisora
-        current_pos = self._state.robot_state.current_position
-
-        debug(f"Current robot position: {current_pos}", self._message_logger)
+        debug(f"Current robot position: {self._state.robot_state.current_position}", self._message_logger)
 
         # Przygotuj odpowiedź z aktualną pozycją
         result = Result(result="success")
         event.result = result
-        event.data = {"current_position": current_pos}
+        event.data = {"current_position": self._state.robot_state.current_position}
 
         # Wyślij natychmiastową odpowiedź
         await self._reply(event)
@@ -581,65 +577,21 @@ class Supervisor(EventListener):
         # Not implemented yet
         return False
 
-    async def get_status(self):
-        """Update state from supervisor if available (FSM aware)"""
+    async def get_status_update(self):
+        """Update state from supervisor if available"""
         if self._robot_controller is None:
             return  # Supervisor not initialized yet
 
         try:
-            supervisor_status = self._robot_controller.get_status()
-
+            supervisor_status = self._robot_controller.get_status_update()
             # Update state from supervisor
-            self._state.state = supervisor_status["state"]
-            self._state.current_errors = supervisor_status["current_error"]
+            self._state = self._state_model.model_validate(
+                supervisor_status
+            )
+        except Exception as e:
+            error(f"Error updating supervisor status: {e}", self._message_logger)
 
-            # Robot state
-            self._state.robot_state.error_name = supervisor_status["robot_state"][
-                "error_name"
-            ]
-            self._state.robot_state.error_description = supervisor_status[
-                "robot_state"
-            ]["error_description"]
-            self._state.robot_state.enable_state = supervisor_status["robot_state"][
-                "enable_state"
-            ]
-            self._state.robot_state.mode_state = supervisor_status["robot_state"][
-                "mode_state"
-            ]
-            self._state.robot_state.current_position = supervisor_status["robot_state"][
-                "current_position"
-            ]
-            self._state.robot_state.joint_current_torque = supervisor_status[
-                "robot_state"
-            ]["joint_current_torque"]
-
-            # Path execution state
-            self._state.path_execution_state.start_position = supervisor_status[
-                "path_execution_state"
-            ]["start_position"]
-            self._state.path_execution_state.remaining_waypoints = supervisor_status[
-                "path_execution_state"
-            ]["remaining_waypoints"]
-            self._state.path_execution_state.current_waypoint = supervisor_status[
-                "path_execution_state"
-            ]["current_waypoint"]
-            self._state.path_execution_state.current_path = supervisor_status[
-                "path_execution_state"
-            ]["current_path"]
-            self._state.path_execution_state.interrupt = supervisor_status[
-                "path_execution_state"
-            ]["interrupt"]
-            self._state.path_execution_state.testing_move_check = supervisor_status[
-                "path_execution_state"
-            ]["testing_move_check"]
-            self._state.path_execution_state.watchdog_override = supervisor_status[
-                "path_execution_state"
-            ]["watchdog_override"]
-
-        except Exception:
-            pass  # Ignore errors during status update
-
-    async def __handle_event(self, action_types: tuple, waypoint_data=None):
+    async def _handle_event(self, action_types: tuple, waypoint_data=None):
         if self._robot_controller:
             self._robot_controller.state = RobotControllerState.IDLE
 
@@ -665,10 +617,10 @@ class Supervisor(EventListener):
                         # For test_failed, we do not change to error state
                         self._error = False
 
-                elif self._state.current_errors:
+                elif self._state.current_error:
                     self._error = True
                     self._error_code = 1  # default error code
-                    self._error_message = str(self._state.current_errors)
+                    self._error_message = str(self._state.current_error)
 
                     result = Result(
                         result=self._error_message,
@@ -726,20 +678,8 @@ class Supervisor(EventListener):
 
         self._temp_local_counter += 1
 
-        # Temperature monitoring plus torques (every 10 seconds)
-        try:
-            if self._temp_local_counter % (self.check_local_data_frequency * 10) == 0:
-                joint_torques = self._state.robot_state.joint_current_torque
-                self._temp_local_counter = 0
-
-                debug(f"Robot joint torques: {joint_torques}", self._message_logger)
-
-        except Exception as e:
-            error(f"Error checking data trq: {e}", self._message_logger)
-            self._temp_local_counter = 0
-
         # Update status from supervisor
-        await self.get_status()
+        await self.get_status_update()
 
         # Skip processing if supervisor is idle
         if self._state.state == RobotControllerState.IDLE:
@@ -759,7 +699,7 @@ class Supervisor(EventListener):
             # else:
             warning(f"Supervisor state: {self._state.state}", self._message_logger)
             warning(
-                f"Supervisor current error: {self._state.current_errors}",
+                f"Supervisor current error: {self._state.current_error}",
                 self._message_logger,
             )
 
@@ -768,10 +708,10 @@ class Supervisor(EventListener):
         # State-based event completion
         match self._state.state:
             case RobotControllerState.MOVEMENT_FINISHED:
-                await self.__handle_event(("move_l", "move_j"))
+                await self._handle_event(("move_l", "move_j"))
 
             case RobotControllerState.GRIPPER_FINISHED:
-                await self.__handle_event(("pump_on", "pump_off"))
+                await self._handle_event(("pump_on", "pump_off"))
 
     def _get_state_specific_error(self, event: Event) -> str | None:
         """
