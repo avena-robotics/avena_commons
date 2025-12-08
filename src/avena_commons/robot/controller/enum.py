@@ -14,7 +14,7 @@ class RobotControllerState(Enum):
     WAITING_FOR_GRIPPER_INFO = 7
     GRIPPER_FINISHED = 8
     WAITING = 9
-    PUMP_WATCHDOG_ERROR = 254
+    WATCHDOG_ERROR = 254
     ERROR = 255
 
 

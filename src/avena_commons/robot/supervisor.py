@@ -690,12 +690,12 @@ class Supervisor(EventListener):
         # Error handling (only if supervisor is available)
         if (
             self._robot_controller
-            and (self._state.state == RobotControllerState.ERROR or self._state.state == RobotControllerState.PUMP_WATCHDOG_ERROR)
+            and (self._state.state == RobotControllerState.ERROR or self._state.state == RobotControllerState.WATCHDOG_ERROR)
             and not self._error_read
         ):
             self._error_read = True
 
-            if self._state.state == RobotControllerState.PUMP_WATCHDOG_ERROR:
+            if self._state.state == RobotControllerState.WATCHDOG_ERROR:
                 self._state.pump_watchdog_failure = True  # For Handling event failure with new error code and status return to munchies
 
             # else:

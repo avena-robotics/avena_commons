@@ -1492,7 +1492,7 @@ class RobotController(Connector):
             self._pump_holding_timer = None
             self._pump_holding = False
             self._robot.StopMotion()  # Stop the robot if pump lost vacuum while holding
-            self._state = RobotControllerState.PUMP_WATCHDOG_ERROR
+            self._state = RobotControllerState.WATCHDOG_ERROR
             raise Exception(
                 f"Pump lost vacuum while holding! Current pressure: {self._gripper_pressure}",
             )
