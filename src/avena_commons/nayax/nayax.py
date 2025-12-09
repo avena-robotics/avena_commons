@@ -129,42 +129,22 @@ class NayaxWorker(Worker):
 
     def _read_response(self):
         """Read response from serial port"""
-        # if not self._serial or not self._serial.is_open:
-        #     raise MdbError("Serial port not connected")
+        # Sprawdź czy są nowe dane i doczytaj do bufora
+        waiting = self._serial.in_waiting
+        if waiting:
+            chunk = self._serial.read(waiting)
+            if chunk:
+                self._rx_buffer.extend(chunk)
 
-        deadline = time.time() + 0.1  # 100 ms timeout
+        # Szukaj pełnej linii
+        newline_index = self._rx_buffer.find(b"\n")
+        if newline_index != -1:
+            line = self._rx_buffer[: newline_index + 1]
+            del self._rx_buffer[: newline_index + 1]
+            text = line.decode("ascii", errors="ignore")
+            return text.strip()
 
-        while time.time() < deadline:
-            newline_index = self._rx_buffer.find(b"\n")
-            if newline_index != -1:
-                line = self._rx_buffer[: newline_index + 1]
-                del self._rx_buffer[: newline_index + 1]
-                text = line.decode("ascii", errors="ignore")
-                debug(
-                    f"Received: {len(text)} [{text.strip()}]",
-                    message_logger=self._message_logger,
-                )
-                return text.strip()
-
-            waiting = self._serial.in_waiting
-            if waiting:
-                chunk = self._serial.read(waiting)
-                if chunk:
-                    self._rx_buffer.extend(chunk)
-                    continue
-
-            time.sleep(0.05)
-
-        if self._rx_buffer:
-            text = self._rx_buffer.decode("ascii", errors="ignore")
-            self._rx_buffer.clear()
-            # if self.debug:
-            debug(
-                f"Received partial: {len(text)} [{text.strip()}]",
-                message_logger=self._message_logger,
-            )
-            return text
-
+        # Nie ma pełnej linii
         return ""
 
     def _run(self, pipe_in) -> None:
