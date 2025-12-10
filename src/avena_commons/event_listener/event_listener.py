@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import MessageLogger, debug, error, info, warning
+from avena_commons.event_listener.event_pool import IncomingEventPool, SendingEventPool, ProcessingEventPool
 
 from .event import Event, Result
 
@@ -44,7 +45,6 @@ class EventListenerState(Enum):
     FAULT = 11  # Stan błędu wymagający ACK operatora
     ON_ERROR = 12  # Trigger błędu - automatyczne przejście do FAULT
     ACK = 13  # Potwierdzenie operatora ze stanu FAULT → STOPPED
-
 
 class EventListener:
     __fsm_state: EventListenerState = EventListenerState.UNKNOWN
@@ -145,6 +145,11 @@ class EventListener:
         self.__raport_overtime = raport_overtime
         self.servers = {}
         self.__incoming_events = []
+        
+        self._incoming_pool = IncomingEventPool(max_size=10000, message_logger=message_logger)
+        self._processing_pool = ProcessingEventPool(max_timeout=60.0, message_logger=message_logger)
+        self._sending_pool = SendingEventPool(max_retries=3, message_logger=message_logger)
+
         self.__received_events = 0
         self.__sended_events = 0
         self.__prev_received_events = 0
