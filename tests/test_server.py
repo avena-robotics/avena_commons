@@ -27,7 +27,6 @@ class TestServer(EventListener):
             name=name,
             address=address,
             port=port,
-            do_not_load_state=True,
             message_logger=message_logger,
             # use_http_session=use_http_session,
             # use_parallel_send=use_parallel_send,

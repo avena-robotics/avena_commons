@@ -56,7 +56,6 @@ class EventListener:
     __retry_count: int = 100000000
     __discovery_neighbours = False
 
-    __incoming_events: list[Event] = []
     _processing_events_dict: dict = {}  # Structure: {timestamp: event}
     __events_to_send: list[
         dict
@@ -144,7 +143,6 @@ class EventListener:
         self.__address = address
         self.__raport_overtime = raport_overtime
         self.servers = {}
-        self.__incoming_events = []
         
         self._incoming_pool = IncomingEventPool(max_size=10000, message_logger=message_logger)
         self._processing_pool = ProcessingEventPool(max_timeout=60.0, message_logger=message_logger)
@@ -251,7 +249,7 @@ class EventListener:
         return self.__sended_events
 
     def size_of_incomming_events_queue(self):
-        return len(self.__incoming_events)
+        return len(self._incoming_pool)
 
     def size_of_processing_events_queue(self):
         return len(self._processing_events_dict)
@@ -351,7 +349,7 @@ class EventListener:
         """
         try:
             if not (
-                self.__incoming_events
+                self._incoming_pool
                 or self.__events_to_send
                 or self._state
                 or self._processing_events_dict
@@ -378,7 +376,7 @@ class EventListener:
 
                 queues_data = {
                     "incoming_events": [
-                        event.to_dict() for event in self.__incoming_events
+                        event.to_dict() for event in self._incoming_pool
                     ],
                     "processing_events": processing_events_list,
                     "events_to_send": [
@@ -400,7 +398,7 @@ class EventListener:
 
         except Exception as e:
             error(
-                f"Błąd podczas zapisywania kolejek: {e} {self.__incoming_events} {self._processing_events_dict} {self.__events_to_send}",
+                f"Błąd podczas zapisywania kolejek: {e} {self._incoming_pool} {self._processing_events_dict} {self.__events_to_send}",
                 message_logger=self._message_logger,
             )
             error(
@@ -425,7 +423,7 @@ class EventListener:
             # Konwersja danych na obiekty Event
             for event_data in json_data.get("incoming_events", []):
                 event = Event(**event_data)
-                self.__incoming_events.append(event)
+                self._incoming_pool.append(event)
 
             # Rekonstrukcja processing_events_dict
             for event_data in json_data.get("processing_events", []):
@@ -979,9 +977,9 @@ class EventListener:
             loop.loop_begin()
             try:
                 with self.__atomic_operation_for_incoming_events():
-                    if len(self.__incoming_events) > 0:
+                    if len(self._incoming_pool) > 0:
                         debug(
-                            f"Analyzing incoming events queue. size={len(self.__incoming_events)}",
+                            f"Analyzing incoming events queue. size={len(self._incoming_pool)}",
                             message_logger=self._message_logger,
                         )
                         await self.__analyze_incoming_events()
@@ -1005,8 +1003,8 @@ class EventListener:
         Args:
             queue (list[Event]): List of events to analyze
         """
-        events_to_process = self.__incoming_events.copy()
-        self.__incoming_events.clear()
+        events_to_process = self._incoming_pool.copy()
+        self._incoming_pool.clear()
 
         new_queue = []  # Tworzymy nową kolejkę dla eventów do zachowania
         for event in events_to_process:
@@ -1114,7 +1112,7 @@ class EventListener:
                 new_queue.append(event)
 
         # Na końcu zastępujemy oryginalną kolejkę nową
-        self.__incoming_events.extend(new_queue)
+        self._incoming_pool.extend(new_queue)
 
     def __start_analysis(self):
         """Starts the event queue analysis thread."""
@@ -1190,13 +1188,13 @@ class EventListener:
                 if event.event_type == "cumulative":
                     for event_data in event.data["events"]:
                         unpacked_event = Event(**event_data)
-                        self.__incoming_events.append(unpacked_event)
+                        self._incoming_pool.append(unpacked_event)
                     debug(
                         f"Unpacked cumulative event into {len(event.data['events'])} events",
                         message_logger=self._message_logger,
                     )
                 else:
-                    self.__incoming_events.append(event)
+                    self._incoming_pool.append(event)
                     if not event.is_system_event:
                         debug(
                             f"Added event to incomming events queue: {event}",
