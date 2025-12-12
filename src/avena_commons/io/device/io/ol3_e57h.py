@@ -49,22 +49,26 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.actual_position = 0
         self.actual_velocity = 0
         self.input_values = 0
-        self.output_values = [1, 0, 0]
+        self.output_values = [0, 0, 0]
 
-        self.control_word = 0x0080  # 0x80 = Clear Fault
-        self.mode = 0
+        self.control_word = 0  # 0x80 = Clear Fault
+        self.mode = 3
         self.target_pos = 0
         self.target_vel = 0
         self.prof_vel = 0
         self.prof_accel = 0
         self.prof_decel = 0
-
+        self.error_code = 0
+        
         self.cia402_state = cia402_states.UNKNOWN
         self.fsm = OL3_E57H_FSM.IDLE
 
         self.init_drive = False
 
         self.save_position = 0
+        
+        self.max_current = config.get("max_current", 1500)
+        self.steps_per_rev = 4000
 
     def check_io_config(self):
         print("--- Weryfikacja konfiguracji IO ---")
@@ -100,8 +104,12 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.master.slaves[slave_pos].sdo_write(0x2522, 0, struct.pack("<H", 11))
 
         self.master.slaves[slave_pos].sdo_write(0x2500, 0, struct.pack("<H", 0))
-        self.master.slaves[slave_pos].sdo_write(0x2303, 0, struct.pack("<H", 1500))
-        
+        self.master.slaves[slave_pos].sdo_write(0x2302, 0, struct.pack("<H", 4000))#3000))#1500))
+        self.master.slaves[slave_pos].sdo_write(0x2303, 0, struct.pack("<H", self.max_current))#3000))#1500))
+        self.master.slaves[slave_pos].sdo_write(0x230C, 0, struct.pack("<H", 4000))
+        self.master.slaves[slave_pos].sdo_write(0x2306, 0, struct.pack("<H", 100))
+
+
         # PDO Mapping for OL3-E57H
         self.master.slaves[slave_pos].sdo_write(0x1C12, 0, struct.pack("B", 0))
         self.master.slaves[slave_pos].sdo_write(0x1C13, 0, struct.pack("B", 0))
@@ -110,7 +118,9 @@ class OL3_E57H_Slave(EtherCatSlave):
 
         self.master.slaves[slave_pos].sdo_write(
             0x2201, 0, struct.pack("<H", 1)
-        )  # Modes of Operation: Profile Position Mode (1), Profile Velocity Mode (3), Homing Mode (6), Cyclic Synchronous Position Mode (8)
+        )  
+        
+        # Modes of Operation: Profile Position Mode (1), Profile Velocity Mode (3), Homing Mode (6), Cyclic Synchronous Position Mode (8)
 
         rx_entries = [
             {"index": 0x6040, "subindex": 0x00, "bitlength": 0x10},  # Control Word
@@ -218,7 +228,8 @@ class OL3_E57H_Slave(EtherCatSlave):
             self.actual_position = unpacked_data[2]
             self.actual_velocity = unpacked_data[3]
             self.input_values = unpacked_data[4]
-
+            self.error_code = unpacked_data[5]
+            # print(self.input_values)
             # print(f"--- Unpacked PDO Data ---")
             # print(f"Raw: {unpacked_data}")
             # print(f"Status Word: {self.status_word} (Hex: 0x{self.status_word:X})")
@@ -265,7 +276,7 @@ class OL3_E57H_Slave(EtherCatSlave):
         output_values = (int(self.output_values[0]) << 16) | \
                         (int(self.output_values[1]) << 17) | \
                         (int(self.output_values[2]) << 18)
-        print(output_values)
+        # print(output_values)
         
         output_data = struct.pack(
             pdo_format,
@@ -311,7 +322,7 @@ class OL3_E57H_Slave(EtherCatSlave):
                 # pass
                 # self.check_io_config()
                 # print(f"{self.device_name}: Running in Profile Velocity Mode at target velocity {self.target_vel}.")
-
+                # print(f"actual position {self.actual_position} IS MOTOR RUNNING: {self.is_motor_running()}")
                 pass
             case OL3_E57H_FSM.START_PROFILE_POSITION:
                 if self.mode_display == 1:  # Profile Position Mode
@@ -369,14 +380,14 @@ class OL3_E57H_Slave(EtherCatSlave):
     def process_init(self):
         match self.cia402_state:
             case cia402_states.SWITCH_ON_DISABLED:
-                self.control_word = 0x0006  # Enable Voltage
+                # self.control_word = 0x0006  # Enable Voltage
                 print(f"{self.device_name}: Enabling voltage.")
             case cia402_states.READY_TO_SWITCH_ON:
                 self.control_word = 0x0007  # Switch On
-                print(f"{self.device_name}: Switching on.")
+                # print(f"{self.device_name}: Switching on.")
             case cia402_states.SWITCHED_ON:
                 self.control_word = 0x000F  # Enable Operation
-                print(f"{self.device_name}: Enabling operation.")
+                # print(f"{self.device_name}: Enabling operation.")
             case cia402_states.OPERATION_ENABLED:
                 self.fsm = OL3_E57H_FSM.OPERATIONAL
                 print(f"{self.device_name}: Drive is now operational.")
@@ -385,10 +396,17 @@ class OL3_E57H_Slave(EtherCatSlave):
                     self.message_logger,
                 )
             case cia402_states.FAULT:
-                self.control_word = 0x0080  # Clear Fault
-                print(f"{self.device_name}: Clearing fault.")
+                self.control_word = self.control_word & 0xFF7F 
+                # In next cycle (or manually force write), set to 0x0080
+                # A simple way in your loop structure:
+                if (self.control_word & 0x0080) == 0x0080:
+                     self.control_word = 0x0000 # Drop it low
+                else:
+                     self.control_word = 0x0080 # Pull it high
+                     
+                print(f"{self.device_name}: Clearing fault. Control word {self.control_word} Status word {self.status_word} error code {self.actual_velocity}")
                 error(
-                    f"{self.device_name}: Drive in FAULT state. Clearing fault.",
+                    f"{self.device_name}: Drive in FAULT state. Clearing fault. Control word {self.control_word} Status word {self.status_word} error code {self.actual_velocity}",
                     self.message_logger,
                 )
             case _:
@@ -412,18 +430,22 @@ class OL3_E57H_Slave(EtherCatSlave):
         :param accel: Przyspieszenie
         :param decel: Hamowanie
         """
+        
+        print(f"{self.device_name}: Starting jog at speed {speed} accel {accel} deccel {decel}.")
+        info(f"{self.device_name}: Starting jog at speed {speed} accel {accel} deccel {decel}.", self.message_logger)
+        
         if self.fsm != OL3_E57H_FSM.OPERATIONAL:
             print(f"{self.device_name}: Drive not operational. Cannot run jog.")
             return
-
+        
         # 1. Ustaw tryb Profile Velocity (3)
         self.mode = 3
 
         # 2. Ustaw parametry ruchu
         self.prof_vel = abs(speed)
         self.target_vel = speed
-        self.prof_accel = 4 * abs(speed)  # accel # change to accel and decel
-        self.prof_decel = 4 * abs(speed)  # decel
+        self.prof_accel = accel #abs(speed)  # accel # change to accel and decel
+        self.prof_decel = decel #abs(speed)  # decel
 
         # 3. Control Word: Enable Operation (Bit 3=1) + HALT=0 (Bit 8=0)
         # 0x000F = 0000 0000 0000 1111
@@ -445,20 +467,32 @@ class OL3_E57H_Slave(EtherCatSlave):
         self.prof_accel = accel
         self.prof_decel = decel
 
-    def stop_motor(self):
-        if self.fsm != OL3_E57H_FSM.IN_PROFILE_VELOexCITY:
-            print(f"{self.device_name}: Drive not operational. Cannot run jog.")
-            return
-
+    def stop_motor(self, decel :int):
+        info(f"{self.device_name}: Stopping motor with deceleration {decel}.", self.message_logger)
+        # 1. Remove the blocking return. valid state check should only LOG, not BLOCK.
+        if self.fsm != OL3_E57H_FSM.IN_PROFILE_VELOCITY:
+            print(f"{self.device_name}: Warning - Stopping from state {self.fsm.name}")
+        
         print(f"{self.device_name}: Stopping drive.")
-        info(f"{self.device_name}: Stopping drive.", self.message_logger)
+        
+        # 2. Set Target Velocity to 0
         self.target_vel = 0
-        self.control_word = 0x010F  # Bit 1=1 (Switch Off), Bit 3=1 (Enable Operation)
+        
+        # 3. Use 0x000F (Enable Operation) instead of 0x010F (Halt).
+        # This instructs the drive to actively drive speed to 0 using the Profile Deceleration.
+        # 0x000F = Bit 0,1,2,3 High. Bit 8 (Halt) Low.
+        self.control_word = 0x000F 
+        
+        # 4. Ensure Deceleration is sufficient (Optional safety fallback)
+        # If prof_decel is 0, the motor will not stop. Set a default if needed.
+        self.prof_decel = decel # Default safe deceleration value
+
+        # Update state
         self.fsm = OL3_E57H_FSM.STOPPING
 
     def read_input(self, port):
         # io_mapping = {1: 17, 2: 18, 3: 20, 4: 21, 5: 22, 6: 23}
-        io_mapping = {1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21}
+        io_mapping = {1: 18, 2: 19, 3: 20, 4: 21, 5: 22, 6: 23}
 
         if port not in io_mapping:
             print(f"Error: Port {port} not mapped.")
@@ -469,9 +503,13 @@ class OL3_E57H_Slave(EtherCatSlave):
 
         is_active = (self.input_values & mask) != 0
 
-        print(
-            f"Input Port {port} (Bit {target_bit}) is {'ACTIVE' if is_active else 'INACTIVE'}."
-        )
+        # print(
+        #     f"Input Port {port} (Bit {target_bit}) is {'ACTIVE' if is_active else 'INACTIVE'}."
+        # )
+        if port == 1:
+            print( self.input_values, self.address, self.device_name)
+            print(self.master.slaves[self.address].output)
+            print(self.master.slaves[self.address].input)
 
         return is_active
     
@@ -494,11 +532,13 @@ class OL3_E57H_Slave(EtherCatSlave):
 
 
 class OL3_E57H(EtherCatDevice):
-    def __init__(self, device_name: str, bus, address, message_logger=None, debug=True):
+    def __init__(self, device_name: str, bus, address, max_current, message_logger=None, debug=True):
         self.device_name = device_name
         product_code = 8192  # 87 # Example product code for OL3-E57H
         vendor_code = 2681  # 26 # Example vendor code
-        configuration = {}
+        configuration = {
+            "max_current": max_current
+        }
         super().__init__(
             bus,
             vendor_code,
@@ -520,9 +560,9 @@ class OL3_E57H(EtherCatDevice):
         except Exception as e:
             self.set_error(f"Exception in run_jog: {e}")
 
-    def stop(self):
+    def stop(self, decel :int):
         try:
-            result = self.bus.stop_motor(self.address)
+            result = self.bus.stop_motor(self.address, decel = decel)
             if result is not None and result is not False:
                 self.clear_error()
             else:
@@ -541,11 +581,13 @@ class OL3_E57H(EtherCatDevice):
     def _write_output(self, port: int, value: bool):
         """Ustawia wyjście cyfrowe w urządzeniu przez magistralę i aktualizuje bufor."""
         self.outputs_ports[port] = value
+        print("write output")
         # debug(f"{self.device_name} - Writing output {port} to {value}", message_logger=self.message_logger)
         self.bus.write_output(self.address, port, value)
 
     @property
     def di1(self):
+        print(f"in device {self.device_name} {self.address}")
         value = self.read_input(1)
         return value
 
@@ -578,22 +620,32 @@ class OL3_E57H(EtherCatDevice):
     def do1(self):
         value = self._read_output(0)
         return value
+    
+    @do1.setter
+    def do1(self, value):
+        self._write_output(0, value)
 
     @property
     def do2(self):
         value = self._read_output(1)
         return value
 
+    @do2.setter
+    def do2(self, value):
+        self._write_output(1, value)
+
     @property
     def do3(self):
         value = self._read_output(2)
         return value
 
-    @property
-    def is_motor_running(self) -> bool:
+    @do3.setter
+    def do3(self, value):
+        self._write_output(2, value)
+
+    def is_motor_running(self):
         result = self.bus.is_motor_running(self.address)
         return result
 
-    @property
-    def is_failure(self) -> bool:
+    def is_failure(self):
         return False

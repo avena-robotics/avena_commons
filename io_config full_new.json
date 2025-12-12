@@ -1,0 +1,554 @@
+{
+    "bus": {
+        "ethercat": {
+            "class": "EtherCAT",
+            "configuration": {
+                "core": 5,
+                "network_interface": "enp1s0f0",
+                "number_of_devices": 9
+            }
+        }
+    },
+    "device": {
+        "EK1100": {
+            "bus": "ethercat",
+            "class": "io/ek1100",
+            "configuration": {
+                "address": 3
+            }
+        },
+        "EL5152_1": {
+            "bus": "ethercat",
+            "class": "io/el5152",
+            "configuration": {
+                "address": 4
+            }
+        },
+        "EL5152_2": {
+            "bus": "ethercat",
+            "class": "io/el5152",
+            "configuration": {
+                "address": 5
+            }
+        },
+        "LC_10_CONVEYOR_1": {
+            "bus": "ethercat",
+            "class": "io/lc_10",
+            "configuration": {
+                "address": 6
+            }
+        },
+        "LC_10_CONVEYOR_2": {
+            "bus": "ethercat",
+            "class": "io/lc_10",
+            "configuration": {
+                "address": 7
+            }
+        },
+        "LC_10_CONVEYOR_3": {
+            "bus": "ethercat",
+            "class": "io/lc_10",
+            "configuration": {
+                "address": 8
+            }
+        },
+        "OL3_E57H_FEEDER_1": {
+            "bus": "ethercat",
+            "class": "io/OL3_E57H",
+            "configuration": {
+                "address": 2,
+                "max_current": 3000
+            }
+        },
+        "OL3_E57H_FEEDER_2": {
+            "bus": "ethercat",
+            "class": "io/OL3_E57H",
+            "configuration": {
+                "address": 1,
+                "max_current": 3000
+            }
+        },
+        "OL3_E57H_FEEDER_3": {
+            "bus": "ethercat",
+            "class": "io/OL3_E57H",
+            "configuration": {
+                "address": 0,
+                "max_current": 3000
+            }
+        },
+        "EC3A_IO1632_CHAMBER_1": {
+            "bus": "ethercat",
+            "class": "io/ec3a_io1632",
+            "configuration": {
+                "address": 9,
+                "motor_with_endstops_axis" : [
+                    {
+                        "power_output_port": 3,
+                        "direction_output_port": 4,
+                        "up_endstop_input_port": 1,
+                        "down_endstop_input_port": 2
+                    },
+                    {
+                        "power_output_port": 8,
+                        "direction_output_port": 9,
+                        "up_endstop_input_port": 6,
+                        "down_endstop_input_port": 7
+                    },
+                    {
+                        "power_output_port": 13,
+                        "direction_output_port": 14,
+                        "up_endstop_input_port": 11,
+                        "down_endstop_input_port": 12
+                    }
+                ]
+            }
+        },
+        "EC3A_IO1632_CHAMBER_2": {
+            "bus": "ethercat",
+            "class": "io/ec3a_io1632",
+            "configuration": {
+                "address": 10
+            }
+        }
+    },
+    "virtual_device": {
+        "feeder1": {
+            "class": "FeederTacek3",
+            "configuration": {
+                "backward_acceleration": 16000,
+                "backward_decceleration": 16000,
+                "backward_speed": -4000,
+                "forward_acceleration": 16000,
+                "forward_decceleration": 16000,
+                "forward_speed": 4000,
+                "stop_deceleration": 64000
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "is_motor_running"
+                },
+                "read_sensor_1": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "di3"
+                },
+                "read_sensor_2": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "di5"
+                },
+                "read_sensor_3": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "di4"
+                },
+                "read_sensor_4": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "di6"
+                },
+                "run_jog": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "run_jog"
+                },
+                "stop": {
+                    "device": "OL3_E57H_FEEDER_1",
+                    "method": "stop"
+                }
+            }
+        },
+        "feeder2": {
+            "class": "FeederTacek3",
+            "configuration": {
+                "backward_acceleration": 16000,
+                "backward_decceleration": 16000,
+                "backward_speed": -4000,
+                "forward_acceleration": 16000,
+                "forward_decceleration": 16000,
+                "forward_speed": 4000,
+                "stop_deceleration": 64000
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "is_motor_running"
+                },
+                "read_sensor_1": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "di4"
+                },
+                "read_sensor_2": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "di5"
+                },
+                "read_sensor_3": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "di3"
+                },
+                "read_sensor_4": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "di6"
+                },
+                "run_jog": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "run_jog"
+                },
+                "stop": {
+                    "device": "OL3_E57H_FEEDER_2",
+                    "method": "stop"
+                }
+            }
+        },
+        "feeder3": {
+            "class": "FeederTacek3",
+            "configuration": {
+                "backward_acceleration": 16000,
+                "backward_decceleration": 16000,
+                "backward_speed": -4000,
+                "forward_acceleration": 32000,
+                "forward_decceleration": 32000,
+                "forward_speed": 4000,
+                "stop_deceleration": 64000
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "is_motor_running"
+                },
+                "read_sensor_1": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "di3"
+                },
+                "read_sensor_2": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "di5"
+                },
+                "read_sensor_3": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "di4"
+                },
+                "read_sensor_4": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "di6"
+                },
+                "run_jog": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "run_jog"
+                },
+                "stop": {
+                    "device": "OL3_E57H_FEEDER_3",
+                    "method": "stop"
+                }
+            }
+        },
+        "wydawka1": {
+            "class": "Wydawka2",
+            "configuration": {
+                "acceleration": 180000000,
+                "back_velocity": 400000,
+                "deceleration": 180000000,
+                "external_encoder_reverse_direction": false,
+                "max_velocity": -2000000,
+                "steps": 2215,
+                "veloctiy_segments": [
+                    [
+                        0.0,
+                        1.0
+                    ],
+                    [
+                        0.9,
+                        0.5
+                    ],
+                    [
+                        0.95,
+                        0.35
+                    ],
+                    [
+                        0.98,
+                        0.1
+                    ]
+                ]
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "LC_10_CONVEYOR_1",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "LC_10_CONVEYOR_1",
+                    "method": "is_motor_running"
+                },
+                "move_forward": {
+                    "device": "LC_10_CONVEYOR_1",
+                    "method": "run_jog"
+                },
+                "read_encoder": {
+                    "device": "EL5152_1",
+                    "method": "cnt1"
+                },
+                "stop": {
+                    "device": "LC_10_CONVEYOR_1",
+                    "method": "stop"
+                }
+            }
+        },
+        "wydawka2": {
+            "class": "Wydawka2",
+            "configuration": {
+                "acceleration": 180000000,
+                "back_velocity": 400000,
+                "deceleration": 180000000,
+                "external_encoder_reverse_direction": false,
+                "max_velocity": -2000000,
+                "steps": 2215,
+                "veloctiy_segments": [
+                    [
+                        0.0,
+                        1.0
+                    ],
+                    [
+                        0.9,
+                        0.5
+                    ],
+                    [
+                        0.95,
+                        0.35
+                    ],
+                    [
+                        0.98,
+                        0.1
+                    ]
+                ]
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "LC_10_CONVEYOR_2",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "LC_10_CONVEYOR_2",
+                    "method": "is_motor_running"
+                },
+                "move_forward": {
+                    "device": "LC_10_CONVEYOR_2",
+                    "method": "run_jog"
+                },
+                "read_encoder": {
+                    "device": "EL5152_1",
+                    "method": "cnt2"
+                },
+                "stop": {
+                    "device": "LC_10_CONVEYOR_2",
+                    "method": "stop"
+                }
+            }
+        },
+        "wydawka3": {
+            "class": "Wydawka2",
+            "configuration": {
+                "acceleration": 180000000,
+                "back_velocity": 400000,
+                "deceleration": 180000000,
+                "external_encoder_reverse_direction": false,
+                "max_velocity": -2000000,
+                "steps": 2215,
+                "veloctiy_segments": [
+                    [
+                        0.0,
+                        1.0
+                    ],
+                    [
+                        0.9,
+                        0.5
+                    ],
+                    [
+                        0.95,
+                        0.35
+                    ],
+                    [
+                        0.98,
+                        0.1
+                    ]
+                ]
+            },
+            "methods": {
+                "is_failure": {
+                    "device": "LC_10_CONVEYOR_3",
+                    "method": "is_failure"
+                },
+                "is_motor_running": {
+                    "device": "LC_10_CONVEYOR_3",
+                    "method": "is_motor_running"
+                },
+                "move_forward": {
+                    "device": "LC_10_CONVEYOR_3",
+                    "method": "run_jog"
+                },
+                "read_encoder": {
+                    "device": "EL5152_2",
+                    "method": "cnt1"
+                },
+                "stop": {
+                    "device": "LC_10_CONVEYOR_3",
+                    "method": "stop"
+                }
+            }
+        },
+        "chamber1": {
+            "class": "KomoraOdbiorcza2",
+            "methods": {
+                "block_for_client": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do0"
+                },
+                "chamber_open": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di0"
+                },
+                "move_partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_up_0"
+                },
+                "move_partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_down_0"
+                },
+                "partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di1"
+                },
+                "partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di2"
+                },
+                "stop_partition": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_stop_0"
+                },
+                "product_sensor_1": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di3"
+                },
+                "product_sensor_2": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di4"
+                },
+                "change_red_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do1"
+                },
+                "change_white_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do2"
+                }
+            }
+        },
+        "chamber2": {
+            "class": "KomoraOdbiorcza2",
+            "methods": {
+                "block_for_client": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do5"
+                },
+                "chamber_open": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di5"
+                },
+                "move_partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_up_1"
+                },
+                "move_partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_down_1"
+                },
+                "partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di6"
+                },
+                "partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di7"
+                },
+                "stop_partition": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_stop_1"
+                },
+                "product_sensor_1": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di8"
+                },
+                "product_sensor_2": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di9"
+                },
+                "change_red_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do6"
+                },
+                "change_white_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do7"
+                }
+            }
+        },
+        "chamber3": {
+            "class": "KomoraOdbiorcza2",
+            "methods": {
+                "block_for_client": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do10"
+                },
+                "chamber_open": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di10"
+                },
+                "move_partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_up_3"
+                },
+                "move_partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_move_down_3"
+                },
+                "partition_up": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di11"
+                },
+                "partition_down": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di12"
+                },
+                "stop_partition": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "motor_with_endstops_stop_3"
+                },
+                "product_sensor_1": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di13"
+                },
+                "product_sensor_2": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "di14"
+                },
+                "change_red_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do11"
+                },
+                "change_white_led_state": {
+                    "device": "EC3A_IO1632_CHAMBER_1",
+                    "method": "do12"
+                }
+            }
+        }
+    }
+}

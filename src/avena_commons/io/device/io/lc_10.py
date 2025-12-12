@@ -84,7 +84,7 @@ class LC_10_Slave(EtherCatSlave):
     
     def _config_function(self, slave_pos):
         #setting io
-        print("mapping start")
+        # print("mapping start")
         # self.master.slaves[slave_pos].sdo_write(0x2510, 0, struct.pack('<H', 9))
         # self.master.slaves[slave_pos].sdo_write(0x2511, 0, struct.pack('<H', 10))
         # self.master.slaves[slave_pos].sdo_write(0x2512, 0, struct.pack('<H', 11))
@@ -142,7 +142,7 @@ class LC_10_Slave(EtherCatSlave):
         self.master.slaves[slave_pos].sdo_write(0x1C12, 0, struct.pack('B', 1))
         self.master.slaves[slave_pos].sdo_write(0x1C13, 1, struct.pack('<H', 0x1A00))
         self.master.slaves[slave_pos].sdo_write(0x1C13, 0, struct.pack('B', 1))
-        print("mapping stop")
+        # print("mapping stop")
         
     def _read_pdo(self):
         input_bytes = self.master.slaves[self.address].input
@@ -174,6 +174,7 @@ class LC_10_Slave(EtherCatSlave):
             self.actual_position = unpacked_data[2]
             self.actual_velocity = unpacked_data[3]
             self.input_values = unpacked_data[4]
+            self.error_code = unpacked_data[5]
 
             # print(f"--- Unpacked PDO Data ---")
             # print(f"Raw: {unpacked_data}")
@@ -289,28 +290,28 @@ class LC_10_Slave(EtherCatSlave):
         
         if (status_word & 0x004F) == 0x0000:
             state = cia402_states.NOT_READY_TO_SWITCH_ON
-            print(f"{self.device_name}: State - NOT_READY_TO_SWITCH_ON")
+            # print(f"{self.device_name}: State - NOT_READY_TO_SWITCH_ON")
         elif (status_word & 0x004F) == 0x0040:
             state = cia402_states.SWITCH_ON_DISABLED
-            print(f"{self.device_name}: State - SWITCH_ON_DISABLED")
+            # print(f"{self.device_name}: State - SWITCH_ON_DISABLED")
         elif (status_word & 0x006F) == 0x0021:
             state = cia402_states.READY_TO_SWITCH_ON
-            print(f"{self.device_name}: State - READY_TO_SWITCH_ON")
+            # print(f"{self.device_name}: State - READY_TO_SWITCH_ON")
         elif (status_word & 0x006F) == 0x0023:
             state = cia402_states.SWITCHED_ON
-            print(f"{self.device_name}: State - SWITCHED_ON")
+            # print(f"{self.device_name}: State - SWITCHED_ON")
         elif (status_word & 0x006F) == 0x0027:
             state = cia402_states.OPERATION_ENABLED
-            print(f"{self.device_name}: State - OPERATION_ENABLED")
+            # print(f"{self.device_name}: State - OPERATION_ENABLED")
         elif (status_word & 0x006F) == 0x0007:
             state = cia402_states.QUICK_STOP_ACTIVE
-            print(f"{self.device_name}: State - QUICK_STOP_ACTIVE")
+            # print(f"{self.device_name}: State - QUICK_STOP_ACTIVE")
         elif (status_word & 0x004F) == 0x000F:
             state = cia402_states.FAULT_REACTION_ACTIVE
-            print(f"{self.device_name}: State - FAULT_REACTION_ACTIVE")
+            # print(f"{self.device_name}: State - FAULT_REACTION_ACTIVE")
         elif (status_word & 0x004F) == 0x0008:
             state = cia402_states.FAULT
-            print(f"{self.device_name}: State - FAULT")
+            # print(f"{self.device_name}: State - FAULT")
         
         return state
 
@@ -321,21 +322,23 @@ class LC_10_Slave(EtherCatSlave):
         match self.cia402_state:
             case cia402_states.SWITCH_ON_DISABLED:
                 self.control_word = 0x0006  # Enable Voltage
-                print(f"{self.device_name}: Enabling voltage.")
+                # print(f"{self.device_name}: Enabling voltage.")
             case cia402_states.READY_TO_SWITCH_ON:
                 self.control_word = 0x0007  # Switch On
-                print(f"{self.device_name}: Switching on.")
+                # print(f"{self.device_name}: Switching on.")
             case cia402_states.SWITCHED_ON:
                 self.control_word = 0x000F  # Enable Operation
-                print(f"{self.device_name}: Enabling operation.")
+                # print(f"{self.device_name}: Enabling operation.")
             case cia402_states.OPERATION_ENABLED:
                 self.fsm = LC10_FSM.OPERATIONAL
                 print(f"{self.device_name}: Drive is now operational.")
                 info(f"{self.device_name}: Drive initialized and operational.", self.message_logger)
             case cia402_states.FAULT:
                 self.control_word = 0x0080  # Clear Fault
-                print(f"{self.device_name}: Clearing fault.")
-                error(f"{self.device_name}: Drive in FAULT state. Clearing fault.", self.message_logger)
+                
+                
+                print(f"{self.device_name}: Clearing fault. {self.status_word} {self.error_code}")
+                error(f"{self.device_name}: Drive in FAULT state. Clearing fault. {self.status_word} {self.error_code}", self.message_logger)
             case _:
                 pass
             
@@ -351,28 +354,66 @@ class LC_10_Slave(EtherCatSlave):
         return self.target_vel == 0 and self.is_target_reached()
             
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
+        # """
+        # Uruchamia napęd w trybie prędkościowym (Profile Velocity Mode - 3).
+        # :param speed: Prędkość docelowa (jednostki użytkownika, np. pulses/s)
+        # :param accel: Przyspieszenie
+        # :param decel: Hamowanie
+        # """
+        # if self.fsm != LC10_FSM.OPERATIONAL:
+        #     print(f"{self.device_name}: Drive not operational. Cannot run jog. {self.fsm}")
+        #     return
+        
+        # # 1. Ustaw tryb Profile Velocity (3)
+        # self.mode = 3
+        
+        # # 2. Ustaw parametry ruchu
+        # self.prof_vel = abs(speed)
+        # self.target_vel = speed
+        # self.prof_accel = accel #4*abs(speed) #accel # change to accel and decel
+        # self.prof_decel = decel #4*abs(speed) #decel
+        
+        # # 3. Control Word: Enable Operation (Bit 3=1) + HALT=0 (Bit 8=0)
+        # # 0x000F = 0000 0000 0000 1111
+        # self.control_word = 0x000F
+        # self.fsm = LC10_FSM.IN_PROFILE_VELOCITY
         """
         Uruchamia napęd w trybie prędkościowym (Profile Velocity Mode - 3).
-        :param speed: Prędkość docelowa (jednostki użytkownika, np. pulses/s)
-        :param accel: Przyspieszenie
-        :param decel: Hamowanie
+        Allows updating speed on the fly.
         """
-        if self.fsm != LC10_FSM.OPERATIONAL:
-            print(f"{self.device_name}: Drive not operational. Cannot run jog.")
+        # DEFINUJEMY DOZWOLONE STANY
+        # Pozwalamy na zmianę prędkości jeśli napęd stoi (OPERATIONAL)
+        # LUB jeśli już jedzie (IN_PROFILE_VELOCITY)
+        # Opcjonalnie: LUB jeśli właśnie hamuje (STOPPING), aby przerwać hamowanie i ruszyć
+        allowed_states = [
+            LC10_FSM.OPERATIONAL, 
+            LC10_FSM.IN_PROFILE_VELOCITY, 
+            LC10_FSM.STOPPING
+        ]
+        
+        if self.fsm not in allowed_states:
+            print(f"{self.device_name}: Cannot change speed. Drive state is {self.fsm.name}")
             return
         
         # 1. Ustaw tryb Profile Velocity (3)
         self.mode = 3
         
         # 2. Ustaw parametry ruchu
+        # W standardzie CiA 402 zmiana Target Velocity w locie natychmiast zmienia prędkość
         self.prof_vel = abs(speed)
         self.target_vel = speed
-        self.prof_accel = 4*abs(speed) #accel # change to accel and decel
-        self.prof_decel = 4*abs(speed) #decel
         
-        # 3. Control Word: Enable Operation (Bit 3=1) + HALT=0 (Bit 8=0)
-        # 0x000F = 0000 0000 0000 1111
+        # Aktualizuj przyspieszenia tylko jeśli podano nowe (opcjonalne)
+        if accel > 0:
+            self.prof_accel = accel
+        if decel > 0:
+            self.prof_decel = decel
+        
+        # 3. Control Word: Enable Operation
+        # Bit 8 (Halt) musi być 0, aby napęd jechał
         self.control_word = 0x000F
+        
+        # 4. Aktualizacja stanu maszyny stanów
         self.fsm = LC10_FSM.IN_PROFILE_VELOCITY
         
     def run_absolute_position(self, position: int, vel: int, accel: int, decel: int):
@@ -390,15 +431,27 @@ class LC_10_Slave(EtherCatSlave):
         self.prof_accel = accel
         self.prof_decel = decel
         
-    def stop_motor(self):
-        if self.fsm != LC10_FSM.IN_PROFILE_VELOexCITY:
-            print(f"{self.device_name}: Drive not operational. Cannot run jog.")
-            return
+    def stop_motor(self, decel : int):
+        info(f"{self.device_name}: Stopping motor with deceleration {decel}.", self.message_logger)
+        # 1. Remove the blocking return. valid state check should only LOG, not BLOCK.
+        if self.fsm != LC10_FSM.IN_PROFILE_VELOCITY:
+            print(f"{self.device_name}: Warning - Stopping from state {self.fsm.name}")
         
         print(f"{self.device_name}: Stopping drive.")
-        info(f"{self.device_name}: Stopping drive.", self.message_logger)
+        
+        # 2. Set Target Velocity to 0
         self.target_vel = 0
-        self.control_word = 0x010F  # Bit 1=1 (Switch Off), Bit 3=1 (Enable Operation)
+        
+        # 3. Use 0x000F (Enable Operation) instead of 0x010F (Halt).
+        # This instructs the drive to actively drive speed to 0 using the Profile Deceleration.
+        # 0x000F = Bit 0,1,2,3 High. Bit 8 (Halt) Low.
+        self.control_word = 0x000F 
+        
+        # 4. Ensure Deceleration is sufficient (Optional safety fallback)
+        # If prof_decel is 0, the motor will not stop. Set a default if needed.
+        self.prof_decel = decel # Default safe deceleration value
+
+        # Update state
         self.fsm = LC10_FSM.STOPPING
     
     def read_input(self, port):
@@ -441,6 +494,20 @@ class LC_10_Slave(EtherCatSlave):
         info(f"{self.device_name}: Resetting fault.", self.message_logger)
         self.fsm = LC10_FSM.IDLE
         
+    def disable_drive(self):
+        """
+        Disables the power stage (releases the motor shaft).
+        Safe to disconnect power after calling this.
+        """
+        if self.fsm == LC10_FSM.STOPPING and not self.is_stopped():
+            print(f"{self.device_name}: Cannot disable yet, motor is still stopping.")
+            return
+
+        print(f"{self.device_name}: Disabling Power Stage (Safe off).")
+        # 0x0006 = Shutdown (Transition to Ready to Switch On)
+        # 0x0000 = Disable Voltage (Transition to Switch On Disabled)
+        self.control_word = 0x0000 
+        self.fsm = LC10_FSM.IDLE
 
 class lc_10(EtherCatDevice):
     
@@ -469,8 +536,8 @@ class lc_10(EtherCatDevice):
     def run_jog(self, speed: int, accel: int = 0, decel: int = 0):
         self.bus.run_jog(self.address, speed, accel, decel)
         
-    def stop(self):
-        self.bus.stop_motor(self.address)
+    def stop(self, decel):
+        self.bus.stop_motor(self.address, decel)
         
     def read_input(self, port):
         value = self.bus.read_input(self.address, port)
@@ -506,12 +573,10 @@ class lc_10(EtherCatDevice):
         value = self.read_input(6)
         return value
     
-    @property
     def is_motor_running(self) -> bool:
         result = self.bus.is_motor_running(self.address)
         return result
 
-    @property
     def is_failure(self) -> bool:
         return False
         

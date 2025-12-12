@@ -4,7 +4,7 @@ import time
 from enum import Enum
 
 import pysoem
-
+import ctypes
 from avena_commons.util.logger import debug, error, info, warning
 from avena_commons.util.measure_time import MeasureTime
 from avena_commons.util.worker import Connector, Worker
@@ -106,7 +106,7 @@ class EtherCATWorker(Worker):
             sleep (float): Dodatkowe opóźnienie na koniec cyklu (sekundy).
         """
         ret = self.master.receive_processdata(1000)  # odczyt danych z sieci EtherCat
-
+        # print(f"wck {ret} vs ex wck {self.master.expected_wkc}")
         if ret == 0:
             error(
                 f"{self.device_name} Error receiving processdata: {ret}",
@@ -184,6 +184,9 @@ class EtherCATWorker(Worker):
     def __configure(self, slave_args: list):
         """Konfiguruje slave'y, ustawia PREOP, mapuje PDO i przygotowuje DC."""
         info(f"slave_args {slave_args}", message_logger=self._message_logger)
+        slave_args.sort(key=lambda x: x[3])
+        info(f"slave_args sorted {slave_args}", message_logger=self._message_logger)
+        
         for i, slave_arg in enumerate(slave_args):
             device_name = slave_arg[0]
             slave_product_code = slave_arg[1]
@@ -199,7 +202,7 @@ class EtherCATWorker(Worker):
                 and self.master.slaves[slave_address].man == slave_vendor_code
             ):
                 self._add_device(slave_arg)
-                info(f"slave_address {slave_address}, slaves {self.master.slaves}", self._message_logger)
+                info(f"slave_address {slave_address} {i}, slaves num ecat {len(self.master.slaves)}, slaves {len(self._slaves)}", self._message_logger)
                 self.master.slaves[slave_address].config_func = self._slaves[
                     i
                 ]._config_function  # przypisanie funkcji konfiguracji do slave
@@ -234,7 +237,10 @@ class EtherCATWorker(Worker):
 
         # TODO: ADD CHECKS
         try:
-            self.master.config_map()  # budowanie mapy komunikatow - pobranie od slave
+            size = 409600 # Make this generously large for testing
+            iomap = (ctypes.c_uint8 * size)()
+            map_size = self.master.config_map()  # budowanie mapy komunikatow - pobranie od slave
+            print(f"MASTER Map size - {map_size}")
         except Exception as e:
             error(
                 f"{self.device_name} CONFIG - Error: {e}",
@@ -292,6 +298,7 @@ class EtherCATWorker(Worker):
                 1000
             )  # odczyt danych z sieci EtherCat
 
+            
             if ret == 0:
                 warning(
                     f"{self.device_name} - Error receiving processdata during measurement",
@@ -566,10 +573,10 @@ class EtherCATWorker(Worker):
                                 pipe_in.send(True)
                             case "STOP_MOTOR":
                                 info(
-                                    f"{self.device_name} - STOP MOTOR, {data[1]}",
+                                    f"{self.device_name} - STOP MOTOR, {data[1]} at deceleration {data[2]}",
                                     message_logger=self._message_logger,
                                 )
-                                self._slaves[data[1]].stop_motor()
+                                self._slaves[data[1]].stop_motor(data[2])
                                 pipe_in.send(True)
                             case "IS_MOTOR_RUNNING":
                                 info(
@@ -583,9 +590,36 @@ class EtherCATWorker(Worker):
                                     f"{self.device_name} - READ_CNT, {data[1]}",
                                     message_logger=self._message_logger,
                                 )
-                                print(f"In worker {data[1]} {len(self._slaves)}")
+                                # print(f"In worker {data[1]} {len(self._slaves)}")
                                 value = self._slaves[data[1]].read_counter(data[2])
                                 pipe_in.send(value)
+                            case "MOTOR_WITH_ENDSTOPS_MOVE_UP":
+                                info(
+                                    f"{self.device_name} - MOTOR_WITH_ENDSTOPS_MOVE_UP, {data[1]}, {data[2]}",
+                                    message_logger=self._message_logger,
+                                )
+                                self._slaves[data[1]].motor_with_endstops_move_up(
+                                    data[2]
+                                )
+                                pipe_in.send(True)
+                            case "MOTOR_WITH_ENDSTOPS_MOVE_DOWN":
+                                info(
+                                    f"{self.device_name} - MOTOR_WITH_ENDSTOPS_MOVE_DOWN, {data[1]}, {data[2]}",
+                                    message_logger=self._message_logger,
+                                )
+                                self._slaves[data[1]].motor_with_endstops_move_up(
+                                    data[2]
+                                )
+                                pipe_in.send(True)
+                            case "MOTOR_WITH_ENDSTOPS_STOP":
+                                info(
+                                    f"{self.device_name} - MOTOR_WITH_ENDSTOPS_STOP, {data[1]}, {data[2]}",
+                                    message_logger=self._message_logger,
+                                )
+                                self._slaves[data[1]].motor_with_endstops_stop(
+                                    data[2]
+                                )
+                                pipe_in.send(True)
                             case _:
                                 error(
                                     f"{self.device_name} - Unknown command: {data[0]}",
@@ -609,7 +643,7 @@ class EtherCATWorker(Worker):
             f"{self.device_name} - Processing check",
             show_only_errors=True,
             message_logger=self._message_logger,
-            max_execution_time=0.50,
+            max_execution_time=4 #0.5,
         )
 
         try:
@@ -650,7 +684,7 @@ class EtherCATWorker(Worker):
                                     f"{self.device_name} CONFIG - Error measuring actual network cycle: {e}",
                                     message_logger=self._message_logger,
                                 )
-                                period_time = self.__cycle_time
+                                period_time = 4/1000#self.__cycle_time
                                 warning(
                                     f"{self.device_name} CONFIG - Using default cycle time: {period_time * 1000:.3f}ms ({1 / period_time:.1f}Hz)",
                                     message_logger=self._message_logger,
@@ -955,11 +989,38 @@ class EtherCAT(Connector):
                 decel,
             ])
             return result
+        
+    def motor_with_endstops_move_up(self, address: int, axis: int):
+        with self.__lock:
+            result = self.__execute_command([
+                "MOTOR_WITH_ENDSTOPS_MOVE_UP",
+                address,
+                axis
+            ])
+            return result
+        
+    def motor_with_endstops_move_down(self, address: int, axis: int):
+        with self.__lock:
+            result = self.__execute_command([
+                "MOTOR_WITH_ENDSTOPS_MOVE_DOWN",
+                address,
+                axis
+            ])
+            return result
+    
+    def motor_with_endstops_stop(self, address: int, axis: int):
+        with self.__lock:
+            result = self.__execute_command([
+                "MOTOR_WITH_ENDSTOPS_STOP",
+                address,
+                axis
+            ])
+            return result
 
-    def stop_motor(self, address: int):
+    def stop_motor(self, address: int, decel:int):
         """Zatrzymuje wszystkie osie na wskazanym slave'ie."""
         with self.__lock:
-            result = self.__execute_command(["STOP_MOTOR", address])
+            result = self.__execute_command(["STOP_MOTOR", address, decel])
             return result
 
     def is_motor_running(self, address: int) -> bool:

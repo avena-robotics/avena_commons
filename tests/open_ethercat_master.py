@@ -35,7 +35,7 @@ def check_ethercat(iface_name: str, device_check_loop: bool = False):
             print(f"Found {number_of_slaves} slaves.")
 
         for i, slave in enumerate(master.slaves):  # pokazuje co znalazl
-            print(f"Slave {i} name='{slave.name}', state={slave.state}")
+            print(f"Slave {i} name='{slave.name}', state={slave.state} vendor_code={slave.man}, product_code={slave.id}")
 
         for slave in master.slaves:  # zmiana trybu slave na mozliwe do konfiguracji
             slave.state = pysoem.PREOP_STATE

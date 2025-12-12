@@ -173,6 +173,11 @@ def sort_qr_by_center_position(
     if not detections:
         return {1: None, 2: None, 3: None, 4: None}
 
+    # FIXME: Zrobić to lepiej
+    # Krok 0.5: W przypadku pojedynczej detekcji, przypisz ją bezpośrednio do pozycji 4
+    if expected_count == 1 and len(detections) == 1:
+        return {1: None, 2: None, 3: None, 4: detections[0]}
+    
     # Krok 1: Próba ze statycznym podziałem
     static_position_lists = _try_static_division(detections)
 

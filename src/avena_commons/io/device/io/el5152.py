@@ -172,13 +172,10 @@ class el5152(EtherCatDevice):
     def check_device_connection(self) -> bool:
         return True
     
-    @property
     def cnt1(self):
-        print("in property")
         value = self._read_counter(0)
         return value
     
-    @property
     def cnt2(self):
         value = self._read_counter(1)
         return value

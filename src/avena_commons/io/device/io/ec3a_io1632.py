@@ -17,6 +17,56 @@ class ImpulseFSM(Enum):
     VEL_PROFILE_RUN = 4
     STOP = 5
 
+class MotorWithEndstopsFSM(Enum):
+    """Enum stanów wewnętrznego FSM osi z krańcówkami."""
+
+    IDLE = 0
+    MOVING_UP = 1
+    MOVING_DOWN = 2
+    STOPPING = 3
+
+class MotorWithEndstopsAxis:
+    def __init__(self):
+        self.direction_output_port = 0
+        self.power_output_port = 1
+        self.up_endstop_input_port = 0
+        self.down_endstop_input_port = 1
+        
+        self.fsm = MotorWithEndstopsFSM.IDLE
+        self.power_output_state = False
+        self.direction_output_state = False
+    
+    def process(self, up_endstop_state: bool, down_endstop_state: bool):
+        match self.fsm:
+            case MotorWithEndstopsFSM.IDLE:
+                self.power_output_state = False
+                self.direction_output_state = False
+            case MotorWithEndstopsFSM.MOVING_UP:
+                self.power_output_state = True
+                self.direction_output_state = True
+
+                if up_endstop_state:
+                    self.power_output_port = False
+                    self.fsm = MotorWithEndstopsFSM.IDLE
+            case MotorWithEndstopsFSM.MOVING_DOWN:
+                self.power_output_state = True
+                self.direction_output_state = False
+
+                if down_endstop_state:
+                    self.power_output_port = False
+                    self.fsm = MotorWithEndstopsFSM.IDLE
+    
+        return self.power_output_state, self.direction_output_state
+    
+    def move_up(self):
+        self.fsm = MotorWithEndstopsFSM.MOVING_UP
+    
+    def move_down(self):
+        self.fsm = MotorWithEndstopsFSM.MOVING_DOWN
+    
+    def stop(self):
+        self.fsm = MotorWithEndstopsFSM.IDLE
+    
 
 class ImpulseAxis:
     """Symulator osi impulsowej generującej sygnały PULSE/DIR.
@@ -191,14 +241,27 @@ class EC3A_IO1632_Slave(EtherCatSlave):
         self.outputs_ports = [0 for _ in range(16)]
         self.previous_outputs = [0 for _ in range(16)]
         axis_list = config["axis"]
+        motor_with_endstops_axis_list = config.get("motor_with_endstops_axis", [])
         self.axis = []
+        self.motor_with_endstops_axis = []
         for axis in axis_list:
-            self.axis.append(
+            self.axis.append(    
                 ImpulseAxis(
                     device_name,
                     axis["pulse_port"],
                     axis["direction_port"],
                     self.message_logger,
+                )
+            )
+        for axis in motor_with_endstops_axis_list:
+            self.motor_with_endstops_axis.append(
+                MotorWithEndstopsAxis(
+                    device_name,
+                    axis["power_output_port"],
+                    axis["direction_output_port"],
+                    axis["up_endstop_input_port"],
+                    axis["down_endstop_input_port"],
+                    self.message_logger
                 )
             )
 
@@ -272,6 +335,14 @@ class EC3A_IO1632_Slave(EtherCatSlave):
 
             self.outputs_ports[axis.pulse_port] = output_state
             self.outputs_ports[axis.direction_port] = direction_state
+        
+        for axis in self.motor_with_endstops_axis:
+            up_endstop_state = self.inputs_ports[axis.up_endstop_input_port]
+            down_endstop_state = self.inputs_ports[axis.down_endstop_input_port]
+            power_output_state, direction_output_state = axis.process(up_endstop_state, down_endstop_state)
+
+            self.outputs_ports[axis.power_output_port] = power_output_state
+            self.outputs_ports[axis.direction_output_port] = direction_output_state
 
     def _process(self):
         """Główna pętla przetwarzania urządzenia (wywoływana cyklicznie)."""
@@ -402,6 +473,7 @@ class EC3A_IO1632(EtherCatDevice):
         bus,
         address,
         axis=list,
+        motor_with_endstops_axis=list,
         message_logger: MessageLogger | None = None,
         debug=True,
     ):
@@ -410,7 +482,7 @@ class EC3A_IO1632(EtherCatDevice):
         vendor_code = 2965
         info(f"{self.device_name} - Axis config: {axis}", message_logger=message_logger)
         self.number_of_axis = len(axis)
-        configuration = {"axis": axis}
+        configuration = {"axis": axis, "motor_with_endstops_axis": motor_with_endstops_axis}
         super().__init__(
             bus,
             vendor_code,
@@ -471,6 +543,18 @@ class EC3A_IO1632(EtherCatDevice):
     def _axis_in_move(self, axis: int):
         """Zwraca informację o ruchu osi (zapytanie do magistrali)."""
         return self.bus.axis_in_move(self.address, axis)
+
+    def _motor_with_endstops_move_up(self, axis: int):
+        """Rozpoczyna ruch w górę osi z krańcówkami (wywołanie do magistrali)."""
+        self.bus.motor_with_endstops_move_up(self.address, axis)
+        
+    def _motor_with_endstops_move_down(self, axis: int):
+        """Rozpoczyna ruch w dół osi z krańcówkami (wywołanie do magistrali)."""
+        self.bus.motor_with_endstops_move_down(self.address, axis)
+        
+    def _motor_with_endstops_stop(self, axis: int):
+        """Zatrzymuje oś z krańcówkami (wywołanie do magistrali)."""
+        self.bus.motor_with_endstops_stop(self.address, axis)
 
     def di(self, index: int):
         """Zwraca stan wejścia cyfrowego (skrót do `_read_input`)."""
@@ -583,6 +667,70 @@ class EC3A_IO1632(EtherCatDevice):
 
     def axis_in_move_7(self):
         return self._axis_in_move(7)
+    
+    def motor_with_endstops_move_up_0(self):
+        return self._motor_with_endstops_move_up(0)
+    
+    def motor_with_endstops_move_up_1(self):
+        return self._motor_with_endstops_move_up(1)
+    
+    def motor_with_endstops_move_up_2(self):
+        return self._motor_with_endstops_move_up(2)
+    
+    def motor_with_endstops_move_up_3(self):
+        return self._motor_with_endstops_move_up(3)
+    
+    def motor_with_endstops_move_up_4(self):
+        return self._motor_with_endstops_move_up(4)
+    
+    def motor_with_endstops_move_up_5(self):
+        return self._motor_with_endstops_move_up(5)
+    
+    def motor_with_endstops_move_up_6(self):
+        return self._motor_with_endstops_move_up(6)
+    
+    def motor_with_endstops_move_down_0(self):
+        return self._motor_with_endstops_move_down(0)
+    
+    def motor_with_endstops_move_down_1(self):
+        return self._motor_with_endstops_move_down(1)
+    
+    def motor_with_endstops_move_down_2(self):
+        return self._motor_with_endstops_move_down(2)
+    
+    def motor_with_endstops_move_down_3(self):
+        return self._motor_with_endstops_move_down(3)
+    
+    def motor_with_endstops_move_down_4(self):
+        return self._motor_with_endstops_move_down(4)
+    
+    def motor_with_endstops_move_down_5(self):
+        return self._motor_with_endstops_move_down(5)
+    
+    def motor_with_endstops_move_down_6(self):
+        return self._motor_with_endstops_move_down(6)
+    
+    def motor_with_endstops_stop_0(self):
+        return self._motor_with_endstops_stop(0)
+    
+    def motor_with_endstops_stop_1(self):
+        return self._motor_with_endstops_stop(1)
+    
+    def motor_with_endstops_stop_2(self):
+        return self._motor_with_endstops_stop(2)
+    
+    def motor_with_endstops_stop_3(self):
+        return self._motor_with_endstops_stop(3)
+    
+    def motor_with_endstops_stop_4(self):
+        return self._motor_with_endstops_stop(4)
+    
+    def motor_with_endstops_stop_5(self):
+        return self._motor_with_endstops_stop(5)
+    
+    def motor_with_endstops_stop_6(self):
+        return self._motor_with_endstops_stop(6)
+    
 
     def check_device_connection(self) -> bool:
         return True
