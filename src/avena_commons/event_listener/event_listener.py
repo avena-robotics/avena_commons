@@ -136,7 +136,7 @@ class EventListener:
         # For non-blocking CPU calculation
         self.__last_proc_cpu_times: dict = {}
         self.__last_cpu_calc_time: float = 0.0
-        
+
         # Auto Control Loop synchronization
         self.__loop_synchronization = loop_synchronization
 

@@ -32,7 +32,9 @@ class CollisionAndErrorHandler:
         self._last_collision_position = None
         self._recovery_attempts = 0
         self._max_recovery_attempts = 3
-        self._safe_movement_distance = 100  # mm of safe movement to reset collision recovery
+        self._safe_movement_distance = (
+            100  # mm of safe movement to reset collision recovery
+        )
 
     def detect_errors(self):
         """
@@ -63,7 +65,10 @@ class CollisionAndErrorHandler:
         # Handle collision fault specially
         if error_name == "collision fault":
             if self._debug:
-                debug(f"Collision detected: {main_code}.{sub_code}: {error_description}", self._message_logger)
+                debug(
+                    f"Collision detected: {main_code}.{sub_code}: {error_description}",
+                    self._message_logger,
+                )
 
             # Reset the error
             reset_result = self._robot.ResetAllError()
@@ -79,9 +84,19 @@ class CollisionAndErrorHandler:
             return True  # Signal that a collision was detected and handled
 
         # For non-collision errors, raise exception
-        raise Exception(f"Robot current errors {main_code}.{sub_code}: {error_name} => {error_description}")
-    
-    def handle_recovery(self, robot, current_position, send_move_commands_fn, movetype, waypoints, max_speed=None):
+        raise Exception(
+            f"Robot current errors {main_code}.{sub_code}: {error_name} => {error_description}"
+        )
+
+    def handle_recovery(
+        self,
+        robot,
+        current_position,
+        send_move_commands_fn,
+        movetype,
+        waypoints,
+        max_speed=None,
+    ):
         """
         Handle collision recovery by incrementing attempts and sending commands.
 
@@ -108,7 +123,9 @@ class CollisionAndErrorHandler:
         # Check if we've exceeded maximum attempts
         if self._recovery_attempts > self._max_recovery_attempts:
             self._robot.StopMotion()
-            raise Exception(f"Too many collision recovery attempts: {self._recovery_attempts}")
+            raise Exception(
+                f"Too many collision recovery attempts: {self._recovery_attempts}"
+            )
 
         # Log and add delay before retry
         if self._debug:
@@ -146,7 +163,9 @@ class CollisionAndErrorHandler:
             return False
 
         # Calculate distance moved since collision
-        distance = calculate_distance_fn(self._last_collision_position, current_position)
+        distance = calculate_distance_fn(
+            self._last_collision_position, current_position
+        )
 
         # If we've moved a safe distance, reset recovery counters
         if distance > self._safe_movement_distance:

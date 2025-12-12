@@ -38,9 +38,7 @@ def handle_errors(
                     else f"Operacja nie powiodła się w {func.__name__}"
                 )
                 if self._message_logger:
-                    self._message_logger.error(
-                        f"{self._error_message}: {str(e)}"
-                    )
+                    self._message_logger.error(f"{self._error_message}: {str(e)}")
                 return None
 
         return wrapper

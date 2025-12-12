@@ -20,7 +20,7 @@ except ImportError:
 
 from dotenv import load_dotenv
 
-from avena_commons.event_listener.types import Path, Waypoint
+from avena_commons.event_listener.types import Path
 from avena_commons.util.catchtime import Catchtime
 from avena_commons.util.control_loop import ControlLoop
 from avena_commons.util.logger import (
@@ -35,7 +35,11 @@ from .collision_and_error_handler import CollisionAndErrorHandler
 from .enum import MoveType, PostCollisionStrategy, RobotControllerState
 from .error_codes import FAIRINO_ERROR_CODES
 from .error_handler import handle_errors
-from .utils import PressureCalculator
+
+try:
+    from ..grippers.base import BaseGripper
+except ImportError:
+    BaseGripper = None
 
 load_dotenv(override=True)
 
@@ -60,6 +64,7 @@ class RobotController(Connector):
         message_logger=None,
         configuration=None,
         debug=False,
+        gripper=None,
     ) -> None:
         """Inicjalizuje `Supervisor` zarządzający robotem i peryferiami.
 
@@ -68,6 +73,7 @@ class RobotController(Connector):
             message_logger: Logger do zapisu komunikatów.
             configuration (dict): Konfiguracja połączeń i parametrów pracy (wymagana).
             debug (bool): Czy włączyć tryb debug.
+            gripper (Optional[BaseGripper]): Gripper instance for tool management.
 
         Raises:
             Exception: Gdy `configuration` nie została przekazana lub wystąpi błąd inicjalizacji.
@@ -82,7 +88,7 @@ class RobotController(Connector):
         # self.__gripper_state = gripper_state
         self.__suffix = suffix
         self.__supervisor_frequency = self.__configuration["frequencies"]["supervisor"]
-        self.__gripper_enabled = self.__configuration["gripper"]["enabled"]
+        self._gripper = gripper  # Modular gripper instance (optional)
         # self.__camera_enabled = self.__configuration["camera"]["enabled"]
         self._can_you_run_it = False
         self._start_max_distance = self.__configuration["general"][
@@ -101,42 +107,18 @@ class RobotController(Connector):
         self._error_message = ""
 
         self._state = RobotControllerState.STOPPED
-        self.__pressure_calculator = PressureCalculator()
-        
-        self._initialize_robot(self.__configuration["network"]["ip_address"])
-
-        # Initialize collision handler
-        self.robot_error_and_collision_handler = CollisionAndErrorHandler(
-            self._robot, message_logger=self._message_logger, debug=self._debug
-        )
+        self._status = {}
         # self.is_rotation = False
         self._start_position = None
         # self._camera_data = None
-        self._gripper_check = False
         self._interrupt = False
         self._testing_move_check = True
-        self._gripper_watchdog_override = False
         self._last_waypoint = None
 
         self._robot_current_position = None
         self._current_waypoint = None
         self._current_path = None
         self._remaining_waypoints = []
-
-        # Add state transition tracking for gripper
-        self._gripper_pump_on = False
-        self._pump_holding = False  # supervisor
-        self._pump_holding_timer = None
-        self._gripper_pressure = 0.0  # Current gripper pressure in kPa
-        self._gripper_pump_holding = self.__configuration["gripper"][
-            "pump_holding"
-        ]  # gripper
-        self._pump_pressure_threshold = self.__configuration["gripper"][
-            "pressure_threshold"
-        ]
-        self._pump_hold_threshold_ms = self.__configuration["gripper"][
-            "hold_threshold_ms"
-        ]  # Wait 250ms to confirm state change
         # Set the move distance threshold for checking if the robot is moving
         self._move_distance_counter = int(
             0.3 * self.__supervisor_frequency
@@ -152,6 +134,12 @@ class RobotController(Connector):
 
         self.max_distance_check = 0
 
+        self._initialize_robot(self.__configuration["network"]["ip_address"])
+
+        # Initialize collision handler
+        self.robot_error_and_collision_handler = CollisionAndErrorHandler(
+            self._robot, message_logger=self._message_logger, debug=self._debug
+        )
         self._stop_event = threading.Event()
 
     @property
@@ -173,6 +161,21 @@ class RobotController(Connector):
         """
         pass
 
+    @property
+    def status(self) -> dict:
+        """
+        Pobiera aktualny status supervisora.
+
+        Returns:
+            dict: Status supervisora.
+        """
+        return self._status
+
+    @status.setter
+    @Connector._read_only_property("status")
+    def status(self, *args):
+        pass
+
     @handle_errors()
     def get_status_update(self):
         """
@@ -181,21 +184,46 @@ class RobotController(Connector):
         Returns:
             dict: Status supervisora.
         """
-        main_code = self.robot.robot_state_pkg.main_code
-        sub_code = self.robot.robot_state_pkg.sub_code
-        joint_current_torque = list(self.robot.robot_state_pkg.jt_cur_tor)
+        new_state_pkg = self.robot.robot_state_pkg
+
+        main_code = new_state_pkg.main_code
+        sub_code = new_state_pkg.sub_code
+        joint_current_torque = list(new_state_pkg.jt_cur_tor)
         self._robot_current_position = self.cartesian_position
 
-        return {
+        # Get gripper state if gripper is configured
+        gripper_state = {}
+        gripper_type = None
+        if self._gripper:
+            gripper_type = type(self._gripper).__name__
+            try:
+                # Update gripper with full robot state snapshot
+                self._gripper.update_io_state(new_state_pkg)
+                info(f"Gripper IO state updated: CLDO{new_state_pkg.cl_dgt_output_l}, CLDI{new_state_pkg.cl_dgt_input_l}", self._message_logger)
+                gripper_state = self._gripper.get_state()
+            except Exception as e:
+                gripper_state = {"error": str(e)}
+
+        # Handle unknown error codes defensively
+        try:
+            error_name = FAIRINO_ERROR_CODES[main_code]["name"]
+            error_description = FAIRINO_ERROR_CODES[main_code]["sub_codes"][sub_code]
+        except (KeyError, TypeError):
+            error_name = f"Unknown error {main_code}"
+            error_description = f"Unknown subcode {sub_code}"
+            warning(
+                f"Unknown error code encountered: main_code={main_code}, sub_code={sub_code}",
+                self._message_logger,
+            )
+
+        self._status.update({
             "state": self.state,
             "current_error": self._error_message,
             "robot_state": {
-                "error_name": FAIRINO_ERROR_CODES[main_code]["name"],
-                "error_description": FAIRINO_ERROR_CODES[main_code]["sub_codes"][
-                    sub_code
-                ],
-                "enable_state": self.robot.robot_state_pkg.rbtEnableState,
-                "mode_state": self.robot.robot_state_pkg.robot_mode,
+                "error_name": error_name,
+                "error_description": error_description,
+                "enable_state": new_state_pkg.rbtEnableState,
+                "mode_state": new_state_pkg.robot_mode,
                 "current_position": self._robot_current_position,
                 "joint_current_torque": joint_current_torque,
             },
@@ -206,9 +234,12 @@ class RobotController(Connector):
                 "current_path": self._current_path,
                 "interrupt": self._interrupt,
                 "testing_move_check": self._testing_move_check,
-                "watchdog_override": self._gripper_watchdog_override,
             },
-        }
+            "gripper_state": {
+                "type": gripper_type,
+                "state": gripper_state,
+            },
+        })
 
     @property
     def robot(self):
@@ -224,47 +255,6 @@ class RobotController(Connector):
     @Connector._read_only_property("robot")
     def robot(self, *args):
         pass
-
-    @property
-    def gripper_check(self):
-        """
-        Pobiera status sprawdzania chwytaka.
-
-        Returns:
-            bool: Status sprawdzania chwytaka.
-        """
-        return self._gripper_check
-
-    @gripper_check.setter
-    @Connector._read_only_property("gripper_check")
-    def gripper_check(self, *args):
-        pass
-
-    @property
-    def pump_hold_threshold_ms(self):
-        """
-        Pobiera próg trzymania pompy w milisekundach.
-
-        Returns:
-            int: Próg trzymania pompy w milisekundach.
-        """
-        return self._pump_hold_threshold_ms
-
-    @pump_hold_threshold_ms.setter
-    def pump_hold_threshold_ms(self, value: int):
-        """
-        Ustawia próg trzymania pompy w milisekundach.
-
-        Args:
-            value (int): Nowy próg trzymania pompy w milisekundach.
-        """
-        if not isinstance(value, (int, float)):
-            raise ValueError(
-                f"Pump hold threshold must be an integer or float: {value} type: {type(value)}"
-            )
-        if value < 0:
-            raise ValueError("Pump hold threshold must be non-negative")
-        self._pump_hold_threshold_ms = value
 
     @property
     @handle_errors()
@@ -350,169 +340,6 @@ class RobotController(Connector):
             state (RobotControllerState): Nowy stan supervisora.
         """
         self._state = state
-
-    def gripper_pressure(self) -> float:
-        """
-        Pobiera aktualne ciśnienie w chwytaku.
-
-        Returns:
-            float: Aktualne ciśnienie w chwytaku w kPa.
-        """
-        error, current_pressure_voltage = self._robot_tool_io(
-            io_type="AI", operation="get", id=self.__configuration["gripper"]["pump_AI"]
-        )
-        self._gripper_pressure = self.__pressure_calculator.calculate_pressure(
-            voltage_in=current_pressure_voltage
-        )
-        return self._gripper_pressure
-
-    def decode_tool_do_status(self, status: int) -> dict[str, bool]:
-        """Dekoduje status DO narzędzia z wartości bitowej.
-
-        Args:
-            status: Status DO jako liczba całkowita (wartość bitowa).
-
-        Returns:
-            dict[str, bool]: Słownik ze statusem każdego DO (DO0, DO1, itd.).
-
-        Example:
-            >>> decode_tool_do_status(9)
-            {'DO0': True, 'DO1': False, 'DO2': False, 'DO3': True}
-        """
-        result = {}
-        for i in range(8):  # Zakładając maksymalnie 8 DO
-            bit_value = (status >> i) & 1
-            result[f"DO{i}"] = bool(bit_value)
-        return result
-
-    def is_do_active(self, status: int, do_number: int) -> bool:
-        """Sprawdza czy określony DO jest aktywny.
-
-        Args:
-            status: Status DO jako liczba całkowita.
-            do_number: Numer DO do sprawdzenia (0-7).
-
-        Returns:
-            bool: True jeśli DO jest aktywny, False w przeciwnym razie.
-        """
-        return bool((status >> do_number) & 1)
-
-    def _robot_tool_io(self, io_type: str, operation: str, **kwargs):
-        """
-        Uniwersalna metoda obsługi Digital Output (DO), Analog Output (AO) i Digital Input (DI) narzędzia robota.
-
-        Args:
-            io_type (str): Typ IO - 'DO', 'AO' lub 'DI'.
-            operation (str): Operacja - 'get' lub 'set' (tylko dla DO i AO).
-            **kwargs: Parametry specyficzne dla operacji (id, status, value, smooth, block).
-
-        Returns:
-            tuple: (error, value) dla operacji 'get', None dla 'set'.
-
-        Raises:
-            ValueError: Przy nieprawidłowych parametrach.
-            Exception: Przy błędach komunikacji z robotem.
-        """
-        if io_type == "DO":
-            if operation == "get":
-                error, status = self._robot.GetToolDO()
-                if error == 0:
-                    if not kwargs["id"] in [0, 1]:
-                        raise ValueError(
-                            f"Invalid DO id: {kwargs['id']}. Must be 0 or 1."
-                        )
-                    if self.is_do_active(status, kwargs["id"]):
-                        # debug(f"Get Tool DO{kwargs['id']} status: {True}", self._message_logger)
-                        return error, True
-                    # debug(f"Get Tool DO{kwargs['id']} status: {False}", self._message_logger)
-                    return error, False
-                else:
-                    raise Exception("Error while getting Tool DO status")
-
-            elif operation == "set":
-                id, status = kwargs["id"], kwargs["status"]
-                smooth, block = kwargs.get("smooth", 0), kwargs.get("block", 1)
-
-                if (
-                    not (0 <= id <= 1)
-                    or status not in [0, 1]
-                    or smooth not in [0, 1]
-                    or block not in [0, 1]
-                ):
-                    raise ValueError(
-                        f"Invalid DO parameters: id={id}, status={status}, smooth={smooth}, block={block}"
-                    )
-
-                error = self._robot.SetToolDO(id, status, smooth=smooth, block=block)
-                if error != 0:
-                    raise Exception(f"Error setting Tool DO{id} to {status}")
-                # debug(f"Set Tool DO{id} to {status}", self._message_logger)
-
-        elif io_type == "AO":
-            if operation == "get":
-                error, value = self._robot.GetToolAO(0)
-                if error == 0:
-                    # debug(f"Get Tool AO value: {value}", self._message_logger)
-                    return error, value
-                else:
-                    raise Exception("Error while getting Tool AO value")
-
-            elif operation == "set":
-                id, value = kwargs.get("id", 0), kwargs["value"]
-                block = kwargs.get("block", 1)
-
-                if id != 0 or not (0 <= value <= 100) or block not in [0, 1]:
-                    raise ValueError(
-                        f"Invalid AO parameters: id={id}, value={value}, block={block}"
-                    )
-
-                error = self._robot.SetToolAO(id, value, block=block)
-                if error != 0:
-                    raise Exception(f"Error setting Tool AO{id} to {value}")
-                # debug(f"Set Tool AO{id} to {round((value / 10), 1)}V", self._message_logger)
-
-        elif io_type == "DI":
-            if operation == "get":
-                id = kwargs["id"]
-                block = kwargs.get("block", 0)
-                if not (0 <= id <= 1) or block not in [0, 1]:
-                    raise ValueError(f"Invalid AI parameters: id={id}, block={block}")
-
-                error, status = self._robot.GetToolDI(id, block=block)
-                if error == 0:
-                    if self.is_do_active(status, kwargs["id"]):
-                        # debug(f"Get Tool DI{kwargs['id']} status: {True}", self._message_logger)
-                        return error, True
-                    # debug(f"Get Tool DI{kwargs['id']} status: {False}", self._message_logger)
-                    return error, False
-                else:
-                    raise Exception(f"Error while getting Tool DI status")
-
-            elif operation == "set":
-                raise ValueError("DI (Digital Input) does not support 'set' operation")
-
-        elif io_type == "AI":
-            if operation == "get":
-                id = kwargs["id"]
-                block = kwargs.get("block", 0)
-
-                if not (0 <= id <= 1) or block not in [0, 1]:
-                    raise ValueError(f"Invalid AI parameters: id={id}, block={block}")
-
-                error, ai_value = self._robot.GetToolAI(id, block=block)
-                if error == 0:
-                    # debug(f"Get Tool AI{id} value: {ai_value}", self._message_logger)
-                    return error, ai_value
-                else:
-                    raise Exception(f"Error while getting Tool AI{id} value")
-
-            elif operation == "set":
-                raise ValueError("AI (Analog Input) does not support 'set' operation")
-
-        else:
-            raise ValueError(
-                f"Unsupported IO type: {io_type}. Must be 'DO', 'AO', or 'AI'"
-            )
 
     def change_anticollision_settings(
         self,
@@ -647,7 +474,9 @@ class RobotController(Connector):
             raise Exception(
                 f"Error while setting robot to Auto Mode",
             )
-        self.gripperEnableLightControl(True)  # Enable gripper light Control
+
+        if self._gripper:
+            self._gripper.on_enable()
 
     @handle_errors()
     def robotDisable(self):
@@ -656,8 +485,9 @@ class RobotController(Connector):
 
         Wysyła żądanie do robota o jego wyłączenie. -> RobotEnable(state=0)
         """
-        self.gripperLightOff()  # Turn off gripper light if on
-        self.gripperEnableLightControl(False)  # Disable gripper light control
+        # Gripper enable callback - let gripper handle its own initialization
+        if self._gripper:
+            self._gripper.on_disable()
 
         errors = self._robot.RobotEnable(state=0)
         if errors == 0:
@@ -668,134 +498,42 @@ class RobotController(Connector):
                 f"Error while disabling robot: {errors}",
             )
 
-    def gripperCheckConnection(self):
+    def _initialize_gripper_systems(self):
+        """Initialize gripper tool configuration and validate connection.
+
+        Sets tool coordinate system and payload based on gripper configuration.
+        Validates gripper hardware connection if test sequence is configured.
+
+        Raises:
+            GripperError: If gripper connection validation fails.
         """
-        Sprawdza połączenie z chwytakiem.
-        Wysyła sygnał do chwytaka i oczekuje na odpowiedź, aby potwierdzić, że chwytak jest poprawnie podłączony.
-        """
-        # Sprawdzenie, czy gripper działa jeśli uruchomiony, wyślij DO0 true, sprawdź pozytyw w czasie 200ms, DO0 na false
-        if self.__gripper_enabled:
-            self.gripperPumpOn()  # Set DO0 to True
+        if not self._gripper:
+            return
 
-            time.sleep(1.0)  # wait 1000ms
-            error, tool_do_state = self._robot_tool_io(
-                io_type="DI",
-                operation="get",
-                id=self.__configuration["gripper"]["pump_DI"],
-            )  # Read DI0
+        # Get gripper configuration
+        robot_config = self._gripper.get_robot_config()
 
-            self.gripperPumpOff()  # Set DO0 to False
+        # Set tool coordinate system of gripper
+        self._robot.SetToolCoord(
+            robot_config.tool_id,  # id
+            robot_config.tool_coordinates,  # t_coord
+            robot_config.tool_type,  # type
+            robot_config.tool_installation,  # install
+            robot_config.tool_id,  # toolID
+            0,  # loadNum
+        )
 
-            if tool_do_state:  # If DO0 is True
-                info("Gripper connection successful", self._message_logger)
-            else:
-                warning("Gripper connection failed", self._message_logger)
-                raise RuntimeError("Gripper connection failed")
+        self._tool = robot_config.tool_id
 
-    def gripperPumpOn(self):
-        """
-        Włącza pompę chwytaka.
+        # Update payload with gripper weight
+        self.update_payload(
+            weight=0.0,
+            tool_weight=robot_config.weight,
+            tool_mass_coord=robot_config.mass_coord,
+        )
 
-        Ustawia chwytak w tryb aktywny.
-        """
-        if self.__gripper_enabled:
-            self._robot_tool_io(
-                io_type="DO",
-                operation="set",
-                id=self.__configuration["gripper"]["pump_DO"],
-                status=1,
-            )  # Set DO0 to True
-            self._gripper_pump_on = True
-
-    def gripperPumpOff(self):
-        """
-        Wyłącza pompę chwytaka.
-
-        Ustawia chwytak w tryb nieaktywny.
-        """
-        if self.__gripper_enabled:
-            self.__pressure_calculator.reset()  # Reset pressure buffer to avoid false readings on next use
-            self._robot_tool_io(
-                io_type="DO",
-                operation="set",
-                id=self.__configuration["gripper"]["pump_DO"],
-                status=0,
-            )  # Set DO0 to False
-            self._gripper_pump_on = False
-
-    def gripperEnableLightControl(self, enable: bool = True):
-        """
-        Włącza lub wyłącza kontrolę światła chwytaka.
-
-        Args:
-            enable (bool): True aby włączyć kontrolę światła, False aby wyłączyć.
-        """
-        if self.__gripper_enabled:
-            if enable:
-                self._robot_tool_io(
-                    io_type="DO",
-                    operation="set",
-                    id=self.__configuration["gripper"]["light_DO"],
-                    status=1,
-                )  # Enable gripper light Control
-            else:
-                self._robot_tool_io(
-                    io_type="DO",
-                    operation="set",
-                    id=self.__configuration["gripper"]["light_DO"],
-                    status=0,
-                )  # Disable gripper light Control
-
-    def gripperLightOn(self, value: int = 100):
-        """
-        Włącza światło chwytaka.
-
-        Ustawia wartość jasności światła chwytaka.
-        """
-        if self.__gripper_enabled:
-            if not (0 <= value <= 100):
-                raise ValueError(
-                    f"Gripper, wartość dla światła między 0 a 100: {value}"
-                )
-            # Sprawdzenie, jakie wartości min-max ma ustawione gripper, wysłanie przekalkulowanej wartości procentowej zaorkąglonej do 1.
-            if value == 0:
-                value = self.__configuration["gripper"][
-                    "light_min"
-                ]  # Wartości 0.0 to max , a 43 to min. 4,3V to brak światła.
-            elif value == 100:
-                value = self.__configuration["gripper"]["light_max"]
-            else:
-                value = int(
-                    round(
-                        self.__configuration["gripper"]["light_min"]
-                        - (value / 100)
-                        * (
-                            self.__configuration["gripper"]["light_min"]
-                            - self.__configuration["gripper"]["light_max"]
-                        ),
-                        0,
-                    )
-                )
-            self._robot_tool_io(
-                io_type="AO",
-                operation="set",
-                id=self.__configuration["gripper"]["light_AO"],
-                value=value,
-            )  # Set AO0 to value
-
-    def gripperLightOff(self):
-        """
-        Wyłącza światło chwytaka.
-
-        Ustawia wartość jasności światła chwytaka na 0.
-        """
-        if self.__gripper_enabled:
-            self._robot_tool_io(
-                io_type="AO",
-                operation="set",
-                id=self.__configuration["gripper"]["light_AO"],
-                value=self.__configuration["gripper"]["light_min"],
-            )  # Set AO0 to min value (light off)
+        self._gripper.on_initialize()
+        info("Gripper tool configuration set successfully", self._message_logger)
 
     @handle_errors()
     def _initialize_robot(self, robot_ip_address):
@@ -862,36 +600,10 @@ class RobotController(Connector):
                 self._message_logger,
             )
 
-            # TODO: Ustawianie konkretnego chwytaka podłączonego do robota, wynikające z konfiguracji
-            # id: coordinate system number, range [1~15];
-            # t_coord: Position of the tool center point relative to the center of the end flange in [mm][°];
-            # type: 0 - tool coordinate system, 1 - sensor coordinate system;
-            # install: installation position, 0 - robot end, 1 - robot exterior
-            # toolID: tool ID
-            # loadNum: load number
-
-            if self.__gripper_enabled:
-                self.gripperCheckConnection()  # Check gripper connection
-                self.gripperLightOff()  # Turn off gripper light if on
-
-                # Set tool coordinate system of gripper
-                self._robot.SetToolCoord(
-                    self.__configuration["gripper"]["id"],
-                    self.__configuration["gripper"]["tool_coordinates"],
-                    self.__configuration["gripper"]["tool_type"],
-                    self.__configuration["gripper"]["tool_installation"],
-                    self.__configuration["gripper"]["tool_id"],  # toolID
-                    0,  # loadNum
-                )
-                self._tool = self.__configuration["gripper"][
-                    "tool_id"
-                ]  # Set the tool id of gripper
-                self.update_payload(
-                    weight=0.0,
-                    tool_weight=self.__configuration["gripper"]["weight"],
-                    tool_mass_coord=self.__configuration["gripper"]["mass_coord"],
-                )  # Set the tool weight of gripper
-                # Check gripper connection
+            self.get_status_update()  # Initial status update
+            # Gripper enable callback - let gripper handle its own initialization
+            if self._gripper:
+                self._initialize_gripper_systems()
 
             self._state = RobotControllerState.IDLE
             # save current position
@@ -1096,8 +808,12 @@ class RobotController(Connector):
                         f"Can you run it: {self._can_you_run_it}", self._message_logger
                     )
 
-            if self.__gripper_enabled:
-                self.__check_gripper_status()
+            # Check gripper status before starting movement
+            if self._gripper:
+                gripper_error = self._gripper.check_errors()
+                if gripper_error and not gripper_error.recoverable:
+                    self._state = RobotControllerState.WATCHDOG_ERROR
+                    raise gripper_error
 
             self._state = RobotControllerState.IN_MOVE
             robot_connection_check = 1
@@ -1108,13 +824,6 @@ class RobotController(Connector):
             self._remaining_waypoints = []
             for waypoint in path.waypoints:
                 self._remaining_waypoints.append(waypoint)
-
-            if path.testing_move:
-                self._gripper_watchdog_override = (
-                    True  # OVERRIDE GRIPPER WATCHDOG ERROR FOR TESTING MOVES ONLY
-                )
-            else:
-                self._gripper_watchdog_override = False
 
             # Save last waypoint for position check after movement
             self._last_waypoint = path.waypoints[-1]
@@ -1196,6 +905,8 @@ class RobotController(Connector):
 
             while not self._stop_event.is_set():
                 local_loop.loop_begin()
+                self.get_status_update()  # Update status in each loop
+
                 # Robot current position
                 with Catchtime() as ct2:
                     try:
@@ -1346,10 +1057,14 @@ class RobotController(Connector):
                     ct8.t * 1000, 4
                 )  # in ms
 
-                # Check Gripper Status
+                # Check Gripper Status during movement
                 with Catchtime() as ct1:
-                    if self.__gripper_enabled:
-                        self.__check_gripper_status()
+                    if self._gripper:
+                        gripper_error = self._gripper.check_errors()
+                        if gripper_error and not gripper_error.recoverable:
+                            self._robot.StopMotion()
+                            self._state = RobotControllerState.WATCHDOG_ERROR
+                            raise gripper_error
                 self.__supervisor_overtime_info["gripper_status1"] = round(
                     ct1.t * 1000, 4
                 )  # in ms
@@ -1357,24 +1072,35 @@ class RobotController(Connector):
                 previous_position = self._robot_current_position
                 local_loop.loop_end()
 
-            # # Check Gripper Status after robot finished movement
-            if self.__gripper_enabled:
-                self.__check_gripper_status()
+            # Check Gripper Status after robot finished movement
+            if self._gripper:
+                gripper_error = self._gripper.check_errors()
+                if gripper_error and not gripper_error.recoverable:
+                    self._state = RobotControllerState.WATCHDOG_ERROR
+                    raise gripper_error
 
-            # Check if we are in testing move and pump is holding
-            if path.testing_move and not self._pump_holding:
-                self._testing_move_check = False
-                if self._debug:
-                    warning(
-                        f"Testing move finished with: {self._testing_move_check}",
-                        self._message_logger,
-                    )
-            elif path.testing_move and self._pump_holding:
-                if self._debug:
-                    info(
-                        f"Testing move finished with: {self._testing_move_check}",
-                        self._message_logger,
-                    )
+            # Validate path completion for testing moves
+            if path.testing_move:
+                if self._gripper:
+                    result = self._gripper.validate_path_completion(path)
+                    if not result:
+                        self._testing_move_check = False
+                        if self._debug:
+                            warning(
+                                f"Testing move validation failed by gripper",
+                                self._message_logger,
+                            )
+                    else:
+                        self._testing_move_check = True
+                        if self._debug:
+                            debug(
+                                "Testing move validation successful",
+                                self._message_logger,
+                            )
+
+            # Notify gripper that path has ended
+            if self._gripper:
+                self._gripper.on_path_end(path)
 
             for _ in range(4):  # FIXME: po zakonczeniu testów state_pkg pose
                 self._robot_current_position = self.cartesian_position
@@ -1410,146 +1136,6 @@ class RobotController(Connector):
             if on_end:
                 on_end()  # Execute end callback
 
-    def __check_gripper_status(self):
-        """
-        Sprawdza status chwytaka i obsługuje trzymanie pompy oraz warunki watchdog.
-
-        Funkcja monitoruje stan pompy chwytaka i realizuje:
-        1. Wykrywanie zmiany stanu trzymania pompy z potwierdzeniem czasowym.
-        2. Obsługę scenariuszy z nadpisaniem watchdog (watchdog override).
-        3. Zatrzymanie ruchu robota, jeśli wymagane przez warunki pompy.
-        4. Aktualizację ostatniego waypointu przy przerwaniach i potwierdzeniu chwytu.
-
-        Raises:
-            Exception: Gdy watchdog pompy wykryje utratę podciśnienia podczas trzymania
-            i nadpisanie watchdog nie jest aktywne.
-        """
-        if not self.__gripper_enabled:
-            return
-
-        if self._gripper_pump_on:
-            # Sprawdz stan podciśnienie
-            self.gripper_pressure()
-
-            if self._gripper_pressure < 0:
-                debug(
-                    f"Podciśnienie chwytaka: {self._gripper_pressure:.2f} kPa",
-                    self._message_logger,
-                )
-            # Sprawdz czy podciśnienie jest poniżej progu
-            if self._gripper_pressure < self._pump_pressure_threshold:
-                pressure_ok = True
-            else:
-                pressure_ok = False
-            # Ustaw trzymanie jeśli podciśnienie jest poprawne
-            if not self._gripper_pump_holding and pressure_ok:
-                self._gripper_pump_holding = True
-            # Resetuj trzymanie jeśli podciśnienie jest niepoprawne
-            elif self._gripper_pump_holding and not pressure_ok:
-                self._gripper_pump_holding = False
-        else:
-            self._gripper_pump_holding = False
-
-        # Case 1: Pump was turned off - reset holding state
-        if not self._gripper_pump_on and self._pump_holding:
-            self._pump_holding = False
-            self._pump_holding_timer = None
-            if self._debug:
-                debug("Pump turned off, reset holding state", self._message_logger)
-
-        # Case 2: Pump holding with watchdog override active
-        elif (
-            self._gripper_watchdog_override
-            and self._pump_holding
-            and not self._gripper_pump_holding
-        ):
-            self._pump_holding = False
-            self._pump_holding_timer = None
-
-            if not self._current_path.testing_move:
-                # self._last_waypoint.waypoint = self.cartesian_position #FIXME: CHECK new status callback for current position
-                self._last_waypoint.waypoint = list(
-                    self.robot.robot_state_pkg.tl_cur_pos
-                )
-                self._robot.StopMotion()
-                if self._debug:
-                    debug(
-                        "Pump lost vacuum but watchdog override active not in testing move, stopping robot and updating last waypoint",
-                        self._message_logger,
-                    )
-            if self._debug:
-                debug(
-                    "Gripper watchdog override active, ignoring non-holding state",
-                    self._message_logger,
-                )
-
-        # Case 3: Pump should be holding but isn't (watchdog error)
-        elif (
-            not self._gripper_watchdog_override
-            and self._pump_holding
-            and not self._gripper_pump_holding
-        ):
-            self._pump_holding_timer = None
-            self._pump_holding = False
-            self._robot.StopMotion()  # Stop the robot if pump lost vacuum while holding
-            self._state = RobotControllerState.WATCHDOG_ERROR
-            raise Exception(
-                f"Pump lost vacuum while holding! Current pressure: {self._gripper_pressure}",
-            )
-
-        # Case 4: State transition handling - pump just started or stopped holding
-        elif self._gripper_pump_holding and not self._pump_holding:
-            current_time = time.perf_counter() * 1000  # Current time in milliseconds
-
-            # Begin timer if this is the first detection of a potential state change
-            if self._pump_holding_timer is None:
-                self._robot.StopMotion()  # Stop the robot when pump starts holding
-                if self._debug:
-                    debug(
-                        f"Pump is reading pressure change, stopping the robot",
-                        self._message_logger,
-                    )
-                self._pump_holding_timer = current_time
-                if self._debug:
-                    debug(
-                        f"Potential pump state change detected: holding={self._gripper_pump_holding}, pressure={self._gripper_pressure}",
-                        self._message_logger,
-                    )
-            # Check if state has been stable for threshold period
-            elif (
-                current_time - self._pump_holding_timer
-            ) >= self._pump_hold_threshold_ms:
-                if self._gripper_pump_holding:
-                    # Confirmed pump is now holding
-                    self._pump_holding = True
-
-                    # Save current position as last waypoint
-                    try:
-                        self._last_waypoint.waypoint = self.cartesian_position
-                    except AttributeError:
-                        self._last_waypoint = Waypoint(
-                            waypoint=self.cartesian_position
-                        )
-
-                    if self._debug:
-                        debug(
-                            f"Pump state change confirmed - now holding with pressure: {self._gripper_pressure}",
-                            self._message_logger,
-                        )
-                else:
-                    # Confirmed pump is no longer holding
-                    self._pump_holding = False
-                    if self._debug:
-                        debug(
-                            f"Pump state change confirmed - no longer holding, pressure: {self._gripper_pressure}",
-                            self._message_logger,
-                        )
-
-                self._pump_holding_timer = None
-        else:
-            # Reset timer if state matches again before threshold
-            self._pump_holding_timer = None
-
     def __check_waypoint_reached(self, previous_position, list_of_waypoints):
         """
         Sprawdza, czy osiągnięto następny waypoint i obsługuje ustawienia specyficzne dla waypointu.
@@ -1573,8 +1159,9 @@ class RobotController(Connector):
                 0
             )  # Remove the waypoint from the list
 
-            if self._current_waypoint.watchdog_override:
-                self._gripper_watchdog_override = True  # OVERRIDE GRIPPER WATCHDOG ERROR STARTING FROM SPECIFIC WAYPOINT
+            # Notify gripper that waypoint was reached
+            if self._gripper:
+                self._gripper.on_waypoint_reached(self._current_waypoint)
 
         return list_of_waypoints
 
@@ -1701,6 +1288,10 @@ class RobotController(Connector):
                 f"Cannot start move, supervisor is in state: {self._state}",
             )
 
+        # Notify gripper that path is starting
+        if self._gripper:
+            self._gripper.on_path_start(path)
+
         # Start movement in a separate thread with callbacks
         threading.Thread(
             target=self._movement_task,
@@ -1745,10 +1336,11 @@ class RobotController(Connector):
                 f"Payload is not a float",
             )
 
-        if self.__gripper_enabled and self._tool_weight == 0:
+        if self._gripper and self._tool_weight == 0:
             if tool_weight == 0:
-                raise Exception(
-                    f"Tool weight must be provided when changing the payload for the first time",
+                warning(
+                    f"Tool weight is 0.0. No error will be raised, but make sure this is intended behavior.",
+                    self._message_logger,
                 )
             self._tool_weight = tool_weight
 
@@ -1843,53 +1435,13 @@ class RobotController(Connector):
         Raises:
             Exception: Jeśli chwytak nie jest włączony lub wystąpi błąd podczas oczekiwania.
         """
-        if not self.__gripper_enabled:
-            raise Exception(f"Gripper not enabled")
+        if not self._gripper:
+            raise Exception(f"Gripper not configured")
 
         self._state = RobotControllerState.WAITING_FOR_GRIPPER_INFO
-        self._gripper_check = False
-        # Start the thread with the gripper task
-        threading.Thread(
-            target=self.__check_gripper_status_task, args=(pump_on,)
-        ).start()
-
-    def __check_gripper_status_task(self, pump_on):
-        """
-        Monitoruje stan chwytaka do momentu osiągnięcia żądanego stanu pompy lub upłynięcia limitu czasu.
-
-        Args:
-            pump_on (bool): Docelowy stan pompy — True oznacza włączenie, False wyłączenie.
-
-        Returns:
-            None: Metoda nie zwraca wartości; ustawia flagę self._gripper_check oraz zmienia stan supervisora.
-
-        Raises:
-            Exception: W przypadku błędów komunikacji lub problemów podczas odczytu statusu chwytaka.
-        """
-        loop = ControlLoop(
-            "Gripper Status",
-            period=1 / self.__supervisor_frequency,
-            warning_printer=False,
-        )
-        timeout = time.time() + 1.0  # Set timeout to 1.0 second
-        while True:
-            loop.loop_begin()
-            if time.time() > timeout:
-                break
-
-            error, status = self._robot_tool_io(
-                io_type="DO",
-                operation="get",
-                id=self.__configuration["gripper"]["pump_DO"],
-            )  # Sprawdzanie stanu chwycenia przez gripper, supervisor check
-            if status and pump_on or not status and not pump_on:
-                self._gripper_check = True
-                break
-
-            loop.loop_end()
-
-        self._state = RobotControllerState.GRIPPER_FINISHED
-        return
+        # Note: This method needs to be refactored to use modular gripper architecture
+        # For now, raising not implemented error
+        raise NotImplementedError("Gripper check now handled by gripper module")
 
     @handle_errors()
     def wait(self, wait_time):

@@ -59,7 +59,9 @@ class NayaxResponse(Enum):
     RESPONSE_DEVICE_STATUS_OFF = str("d,STATUS,OFF")
     RESPONSE_DEVICE_STATUS_INITIALIZED = str("d,STATUS,INIT,1")
     RESPONSE_DEVICE_STATUS_IDLE = str("d,STATUS,IDLE")
-    RESPONSE_ERROR_TRANSACTION_FAILED = str('d,ERR,"-1"')  # Transaction failed immediately
+    RESPONSE_ERROR_TRANSACTION_FAILED = str(
+        'd,ERR,"-1"'
+    )  # Transaction failed immediately
 
 
 class NayaxWorker(Worker):
@@ -351,17 +353,29 @@ class NayaxWorker(Worker):
                                     pass
 
                                 case MdbStatus.PROCESSING_WAIT_STATUS_VEND:
-                                    if response == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value:
+                                    if (
+                                        response
+                                        == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value
+                                    ):
                                         # Natychmiastowa odmowa transakcji (przed VEND)
                                         warning(
                                             f"Transaction failed immediately (before VEND): [{response}]",
                                             message_logger=self._message_logger,
                                         )
-                                        self.status = MdbStatus.SENDING_END_AFTER_FAILED_RESULT
-                                        self.__last_payment_result = MdbTransactionResult.FAILED
+                                        self.status = (
+                                            MdbStatus.SENDING_END_AFTER_FAILED_RESULT
+                                        )
+                                        self.__last_payment_result = (
+                                            MdbTransactionResult.FAILED
+                                        )
                                         self.__start_time_after_payment = time.time()
-                                    elif response == NayaxResponse.RESPONSE_DEVICE_STATUS_VEND.value:
-                                        self.status = MdbStatus.PROCESSING_WAIT_STATUS_RESULT
+                                    elif (
+                                        response
+                                        == NayaxResponse.RESPONSE_DEVICE_STATUS_VEND.value
+                                    ):
+                                        self.status = (
+                                            MdbStatus.PROCESSING_WAIT_STATUS_RESULT
+                                        )
                                     else:
                                         error(
                                             f"Unexpected response while [{self.status}] [{response}]",
@@ -408,14 +422,21 @@ class NayaxWorker(Worker):
                                                 f"Unexpected amount in response while  [{self.status}] [{response}]",
                                                 message_logger=self._message_logger,
                                             )
-                                    elif response == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value:
+                                    elif (
+                                        response
+                                        == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value
+                                    ):
                                         # Błąd transakcji w trakcie oczekiwania na RESULT
                                         warning(
                                             f"Transaction failed (ERR,-1 during RESULT wait): [{response}]",
                                             message_logger=self._message_logger,
                                         )
-                                        self.status = MdbStatus.SENDING_END_AFTER_FAILED_RESULT
-                                        self.__last_payment_result = MdbTransactionResult.FAILED
+                                        self.status = (
+                                            MdbStatus.SENDING_END_AFTER_FAILED_RESULT
+                                        )
+                                        self.__last_payment_result = (
+                                            MdbTransactionResult.FAILED
+                                        )
                                         self.__start_time_after_payment = time.time()
                                     else:
                                         error(
@@ -424,9 +445,15 @@ class NayaxWorker(Worker):
                                         )
 
                                 case MdbStatus.WAITING_AFTER_PAYMENT:
-                                    if NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value in response:
+                                    if (
+                                        NayaxResponse.RESPONSE_DEVICE_STATUS_IDLE.value
+                                        in response
+                                    ):
                                         pass
-                                    elif response == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value:
+                                    elif (
+                                        response
+                                        == NayaxResponse.RESPONSE_ERROR_TRANSACTION_FAILED.value
+                                    ):
                                         # Ignoruj dodatkowe błędy w trakcie czekania
                                         debug(
                                             f"Ignoring error during wait period: [{response}]",

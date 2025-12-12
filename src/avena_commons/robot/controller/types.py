@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -93,8 +93,6 @@ class RobotModel(BaseModel):
     current_position: List[float] = Field(default=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     joint_current_torque: List[float] = Field(default=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     collision_levels: CollisionLevels = Field(default=CollisionLevels())
-    gripper_pump_holding: bool = False  # czy pompa trzyma ciśnienie
-    gripper_pressure: float = 0.0  # aktualne ciśnienie w chwili odczytu
 
     def __str__(self) -> str:
         pos_str = (
@@ -142,9 +140,11 @@ class SupervisorModel(BaseModel):
     id: int
     current_error: str = ""
 
-    # gripper_state: GripperModel = Field(default=GripperModel())
     robot_state: RobotModel = Field(default=RobotModel())
     path_execution_state: PathExecutionState = Field(default=PathExecutionState())
+    gripper_state: Optional[Dict[str, Any]] = Field(
+        default=None, description="Dynamic gripper state from gripper.get_state()"
+    )
 
     pump_watchdog_failure: bool = False
 
@@ -223,19 +223,26 @@ class SupervisorModel(BaseModel):
         data["state"] = self._state
 
         # Handle nested objects
-        # data["gripper_state"] = self.gripper_state.model_dump()
         data["robot_state"] = self.robot_state.model_dump()
         data["path_execution_state"] = self.path_execution_state.model_dump()
+
+        # gripper_state is already dict, no need to convert
+        if self.gripper_state:
+            data["gripper_state"] = self.gripper_state
 
         return data
 
     @classmethod
     def model_validate(cls, data: dict) -> "SupervisorModel":
         """Custom deserialization"""
+        # Handle None case (when get_status_update fails)
+        if data is None:
+            return cls(id=1)
+
         id = data.pop("id", 1)
         # Extract state from data before passing to constructor
         state_value = data.pop("state", RobotControllerState.STOPPED.name)
-        
+
         if "robot_state" in data:
             data["robot_state"] = RobotModel.model_validate(data["robot_state"])
 

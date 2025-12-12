@@ -93,7 +93,12 @@ FAIRINO_ERROR_CODES = {
             7: "End collision fault, resettable",
         },
     },
-    5: {"name": "Wrong number of active slaves", "sub_codes": {1: "The number of active slave stations is incorrect, and cannot be reset"}},
+    5: {
+        "name": "Wrong number of active slaves",
+        "sub_codes": {
+            1: "The number of active slave stations is incorrect, and cannot be reset"
+        },
+    },
     6: {
         "name": "slave station error",
         "sub_codes": {
@@ -123,7 +128,10 @@ FAIRINO_ERROR_CODES = {
             13: "WaitAuxAI wait timeout, resettable",
         },
     },
-    8: {"name": "Gripper error", "sub_codes": {1: "Gripper movement timeout error, resettable"}},
+    8: {
+        "name": "Gripper error",
+        "sub_codes": {1: "Gripper movement timeout error, resettable"},
+    },
     9: {
         "name": "file error",
         "sub_codes": {

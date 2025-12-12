@@ -17,14 +17,14 @@ from avena_commons.event_listener import (
 from avena_commons.event_listener.types import (
     SupervisorGripperAction,
     SupervisorMoveAction,
-    SupervisorPumpAction,
     Waypoint,
 )
 from avena_commons.util.logger import debug, error, info, warning
 
 from .controller.enum import RobotControllerState
 from .controller.robot_controller import RobotController
-from .controller.types import SupervisorModel, RobotModel
+from .controller.types import SupervisorModel
+from .grippers.base import IOMapping
 
 load_dotenv(override=True)
 
@@ -66,6 +66,7 @@ class Supervisor(EventListener):
         # Store basic configuration for later initialization
         self._message_logger = message_logger
         self._suffix = suffix
+        self._gripper = None  # Will be created in on_initializing based on config
         self._state_model = SupervisorModel(id=self._suffix)
         self._load_state: bool = load_state
         self.check_local_data_frequency: int = 10
@@ -73,10 +74,9 @@ class Supervisor(EventListener):
         # Default configuration - will be used in on_initialize()
         self._default_configuration = {
             "network": {"ip_address": "192.168.57.2", "port": 8003},
-            "frequencies": {"supervisor": 50, "camera": 20},
+            "frequencies": {"supervisor": 50},
             # General Settings
             "general": {
-                "z_box_offset": 5.0,
                 "send_requests_retries": 3,
                 "start_position_distance": 200,
                 "post_collision_safe_timeout_s": 2.0,
@@ -98,27 +98,7 @@ class Supervisor(EventListener):
                 "pos5": 0.0,
                 "pos6": 180.0,
             },
-            # FIXME: PLANUJEMY KONFIGURACJE PER CHWYTAK Z OBIEKTU DANEGO CHWYTAKA
-            "gripper": {  # Nowa konfiguracja chwytaka, prosto do fairino
-                "enabled": True,
-                "id": 1,  # coordinate system number, range [1~15];
-                "tool_id": 1,  # tool ID
-                "weight": 2.05,  # tool weight in kg
-                "mass_coord": [6.141, 1.176, 129.238],  # mm
-                "tool_coordinates": [0.0, 0.0, 280.0, 0.0, 0.0, 0.0],  # x,y,z,rx,ry,rz
-                "tool_type": 0,  # 0 - tool coordinate system, 1 - sensor coordinate system;
-                "tool_installation": 0,  # 0 - robot end, 1 - robot exterior
-                "pump_holding": False,  # Initial pump holding state
-                "pressure_threshold": -10,
-                "hold_threshold_ms": 250,  # Wait 250ms to confirm state change
-                "pump_DO": 1,  # Digital Output number for pump control (0, 1)
-                "pump_DI": 0,  # Digital Input number for pump status
-                "pump_AI": 0,  # Analog Input number for pressure reading
-                "light_DO": 0,  # Digital Output number for light control (0, 1)
-                "light_AO": 0,  # Analog Output number for light control
-                "light_max": 0.0,  # Max brightness for light control (0.0 to 41.0)
-                "light_min": 43.0,  # Min brightness for light control (0.0 to 41.0)
-            },
+            # Gripper Configuration, default NONE
         }
 
         # Initialize supervisor to None - will be created in on_initialized()
@@ -135,6 +115,131 @@ class Supervisor(EventListener):
             loop_synchronization=loop_synchronization,
             message_logger=message_logger,
         )
+
+    def _create_gripper_instance(
+        self, gripper_type: str, gripper_config_dict: dict, robot
+    ):
+        """Create gripper instance dynamically from configuration.
+
+        Attempts to import gripper class from local lib.robot.grippers first,
+        then falls back to avena_commons.robot.grippers.
+
+        Args:
+            gripper_type: Name of gripper class (e.g., "VacuumGripper")
+            gripper_config_dict: Configuration dictionary for gripper
+            robot: Robot instance to pass to gripper
+
+        Returns:
+            Gripper instance
+
+        Raises:
+            ImportError: If gripper class cannot be found
+            ValueError: If gripper configuration is invalid
+        """
+        import importlib
+        import sys
+        from pathlib import Path
+
+        # Convert io_mapping dict to IOMapping object if present
+        if "io_mapping" in gripper_config_dict and isinstance(
+            gripper_config_dict["io_mapping"], dict
+        ):
+            gripper_config_dict["io_mapping"] = IOMapping(
+                **gripper_config_dict["io_mapping"]
+            )
+
+        # Try local lib.robot.grippers first
+        gripper_class = None
+        gripper_config_class = None
+
+        # Check if local lib exists
+        local_lib_path = Path.cwd() / "lib" / "robot" / "grippers"
+        if local_lib_path.exists():
+            try:
+                debug(
+                    f"Attempting to load {gripper_type} from local lib.robot.grippers",
+                    self._message_logger,
+                )
+                # Add lib to path if not already there
+                lib_path_str = str(Path.cwd() / "lib")
+                if lib_path_str not in sys.path:
+                    sys.path.insert(0, lib_path_str)
+
+                # Import from local lib
+                module_name = f"robot.grippers.{self._to_snake_case(gripper_type)}"
+                module = importlib.import_module(module_name)
+                gripper_class = getattr(module, gripper_type)
+                gripper_config_class = getattr(module, f"{gripper_type}Config")
+
+                info(
+                    f"Loaded {gripper_type} from local lib.robot.grippers",
+                    self._message_logger,
+                )
+            except (ImportError, AttributeError) as e:
+                debug(
+                    f"Local gripper not found: {e}, falling back to avena_commons",
+                    self._message_logger,
+                )
+
+        # Fallback to avena_commons.robot.grippers
+        if gripper_class is None:
+            try:
+                debug(
+                    f"Loading {gripper_type} from avena_commons.robot.grippers",
+                    self._message_logger,
+                )
+                module_name = (
+                    f"avena_commons.robot.grippers.{self._to_snake_case(gripper_type)}"
+                )
+                module = importlib.import_module(module_name)
+                gripper_class = getattr(module, gripper_type)
+                gripper_config_class = getattr(module, f"{gripper_type}Config")
+
+                info(
+                    f"Loaded {gripper_type} from avena_commons.robot.grippers",
+                    self._message_logger,
+                )
+            except (ImportError, AttributeError) as e:
+                error(f"Failed to import {gripper_type}: {e}", self._message_logger)
+                raise ImportError(
+                    f"Cannot find gripper class '{gripper_type}'. "
+                    f"Tried: lib.robot.grippers and avena_commons.robot.grippers"
+                )
+
+        # Create config instance
+        try:
+            gripper_config = gripper_config_class(**gripper_config_dict)
+        except Exception as e:
+            error(f"Failed to create {gripper_type}Config: {e}", self._message_logger)
+            raise ValueError(f"Invalid gripper configuration: {e}")
+
+        # Create gripper instance
+        try:
+            gripper = gripper_class(
+                robot=robot, config=gripper_config, message_logger=self._message_logger
+            )
+            return gripper
+        except Exception as e:
+            error(
+                f"Failed to create {gripper_type} instance: {e}", self._message_logger
+            )
+            raise
+
+    @staticmethod
+    def _to_snake_case(name: str) -> str:
+        """Convert CamelCase to snake_case.
+
+        Args:
+            name: CamelCase string (e.g., "VacuumGripper")
+
+        Returns:
+            snake_case string (e.g., "vacuum_gripper")
+        """
+        import re
+
+        # Insert underscore before uppercase letters and convert to lowercase
+        s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+        return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
     # FSM Callback Methods
     async def on_initializing(self):
@@ -165,15 +270,39 @@ class Supervisor(EventListener):
             ]["current_position"]
             self._state = self._state_model.model_validate(self._state)
 
-        debug("Creating supervisor object", self._message_logger)
-        # Create Supervisor object
+        debug("Creating robot controller", self._message_logger)
+        # Create RobotController without gripper first
         self._robot_controller = RobotController(
             suffix=self._suffix,
             message_logger=self._message_logger,
             debug=debug,
             configuration=self._configuration,
+            gripper=None,  # Will be set after creation
         )
-        debug("Supervisor object created", self._message_logger)
+        debug("Robot controller created", self._message_logger)
+
+        # Create gripper from configuration if specified
+        if "gripper" in self._configuration and self._configuration["gripper"]:
+            debug("Creating gripper from configuration", self._message_logger)
+            gripper_type = self._configuration["gripper"]["type"]
+            gripper_config_dict = self._configuration["gripper"]["config"]
+
+            # Dynamically import gripper class
+            self._gripper = self._create_gripper_instance(
+                gripper_type, gripper_config_dict, self._robot_controller.robot
+            )
+
+            # Assign gripper to robot controller
+            self._robot_controller._gripper = self._gripper
+
+            # Initialize gripper systems (sets tool coords, weight, etc.)
+            self._robot_controller._initialize_gripper_systems()
+
+            debug(
+                f"Gripper {gripper_type} created and initialized", self._message_logger
+            )
+        else:
+            debug("No gripper configured", self._message_logger)
 
         # Configure start position
         start_position_distance = self._configuration["general"][
@@ -372,14 +501,32 @@ class Supervisor(EventListener):
             await self._reply(event)
             return False
 
-        # Route event to appropriate handler
-        action_type = event.event_type
-        add_to_processing = await self.action_selector(action_type, event)
+        # Pre-validation: Check if gripper can handle this event
+        if self._gripper and self._gripper.validate_event(event):
+            # Gripper claims this event - let it process
+            result = self._gripper.process_event(event)
+            if not result.result == "success":
+                error(
+                    f"Gripper event processing failed: {result.error_message}",
+                    self._message_logger,
+                )
+                event.result = Result(
+                    result="failure", error_message=result.error_message
+                )
+                await self._reply(event)
+                return False
+
+            # Success - check if async completion needed
+            add_to_processing = result.data.get("add_to_processing", False)
+        else:
+            # Not a gripper event - route to robot controller handlers
+            action_type = event.event_type
+            add_to_processing = await self.action_selector(action_type, event)
         if add_to_processing:
             self._current_event = event
             self._add_to_processing(event)
 
-        debug(f"Event {event.event_type} processed", self._message_logger)
+        debug(f"Event {event.event_type} analyzed", self._message_logger)
 
         return True
 
@@ -387,29 +534,31 @@ class Supervisor(EventListener):
         self, action_type: str, event: Event
     ):  # MARK: ACTION SELECTOR
         """
-        Kieruje akcje do odpowiednich obsługi na podstawie typu akcji.
+        Kieruje akcje do odpowiednich obsługi RobotController.
 
-        Obsługuje akcje ruchu (move_j, move_l), akcje chwytaka (pump_on, pump_off),
-        akcje światła (light_on, light_off) oraz akcje kamery (take_photo_box, take_photo_qr).
+        Obsługuje tylko built-in akcje kontrolera robota:
+        - move_j, move_l (ruchy)
+        - current_position (odczyt pozycji)
+
+        Eventy grippera są już obsłużone w _analyze_event() przez validate_event().
 
         Args:
-            action_type (str): Typ akcji do wykonania (move_j, move_l, pump_on, pump_off, light_on, light_off, take_photo_box, take_photo_qr)
+            action_type (str): Typ akcji do wykonania
             event (Event): Zdarzenie zawierające parametry akcji i dane
 
-        Raises:
-            ValueError: Jeśli typ akcji nie jest obsługiwany
+        Returns:
+            bool: True jeśli event ma być dodany do processing, False w przeciwnym razie
         """
-        match action_type:
-            case "move_j" | "move_l":
-                move_to_processing = await self._movement_actions(action_type, event)
-            case "pump_on" | "pump_off":
-                move_to_processing = await self._gripper_actions(action_type, event)
-            case "light_on" | "light_off":
-                move_to_processing = await self._light_actions(action_type, event)
-            case "current_position":
-                move_to_processing = await self._current_position_actions(event)
-            case _:
-                raise ValueError(f"Invalid action type: {action_type}")
+        # Robot controller built-in actions only
+        if action_type in ["move_j", "move_l"]:
+            move_to_processing = await self._movement_actions(action_type, event)
+        elif action_type == "current_position":
+            move_to_processing = await self._current_position_actions(event)
+        else:
+            # Unknown event type - not robot action and gripper didn't claim it
+            raise ValueError(
+                f"Unknown event type '{action_type}' - not a robot action and not handled by gripper"
+            )
 
         return move_to_processing
 
@@ -488,58 +637,6 @@ class Supervisor(EventListener):
 
         return True
 
-    async def _gripper_actions(self, action_type: str, event: Event):
-        """
-        Obsługuje operacje pompy podciśnieniowej chwytaka robota.
-
-        Steruje pompą podciśnieniową podczas operacji chwytania i oczekuje na zakończenie operacji.
-        Obsługuje włączanie (pump_on) i wyłączanie (pump_off) pompy.
-
-        Argumenty:
-            action_type (str): Typ operacji pompy ('pump_on' lub 'pump_off')
-            event (Event): Zdarzenie zawierające parametry operacji chwytaka
-        """
-        pump_action = SupervisorPumpAction(**event.data)
-
-        debug(f"Handling gripper action: {action_type}", self._message_logger)
-
-        match action_type:
-            case "pump_on":
-                self._robot_controller.gripperPumpOn()
-                self._robot_controller._pump_pressure_threshold = (
-                    pump_action.pressure_threshold
-                )
-                self._robot_controller.wait_for_gripper(True)
-            case "pump_off":
-                self._robot_controller.gripperPumpOff()
-                self._robot_controller.wait_for_gripper(False)
-        debug("Gripper action finished", self._message_logger)
-
-        return True
-
-    async def _light_actions(self, action_type: str, event: Event):
-        """
-        Obsługuje operacje oświetlenia robota.
-
-        Steruje oświetleniem robota podczas operacji i oczekuje na zakończenie operacji.
-        Obsługuje włączanie (light_on) i wyłączanie (light_off) oświetlenia.
-
-        Argumenty:
-            action_type (str): Typ operacji oświetlenia ('light_on' lub 'light_off')
-            event (Event): Zdarzenie zawierające parametry operacji oświetlenia
-        """
-
-        debug(f"Handling gripper action: {action_type}", self._message_logger)
-
-        match action_type:
-            case "light_on":
-                self._robot_controller.gripperLightOn(event.data.get("intensity", 0.0))
-            case "light_off":
-                self._robot_controller.gripperLightOff()
-        debug("Light action finished", self._message_logger)
-
-        return False
-
     async def _current_position_actions(self, event: Event):
         """
         Obsługuje operację odczytu bieżącej pozycji robota.
@@ -550,7 +647,10 @@ class Supervisor(EventListener):
             event (Event): Zdarzenie żądające aktualnej pozycji robota
         """
         debug("Handling current position request", self._message_logger)
-        debug(f"Current robot position: {self._state.robot_state.current_position}", self._message_logger)
+        debug(
+            f"Current robot position: {self._state.robot_state.current_position}",
+            self._message_logger,
+        )
 
         # Przygotuj odpowiedź z aktualną pozycją
         result = Result(result="success")
@@ -585,10 +685,19 @@ class Supervisor(EventListener):
             return  # Supervisor not initialized yet
 
         try:
-            supervisor_status = self._robot_controller.get_status_update()
-            # Update state from supervisor
+            self._robot_controller.get_status_update()
+
+            # Handle case when robot_controller returns None (error occurred)
+            if self._robot_controller.status is None:
+                warning(
+                    "RobotController.get_status_update() returned None - controller in ERROR state",
+                    self._message_logger,
+                )
+                return
+
+            # Update state from supervisor (includes gripper_state from robot controller)
             self._state = self._state_model.model_validate(
-                supervisor_status
+                self._robot_controller.status
             )
         except Exception as e:
             error(f"Error updating supervisor status: {e}", self._message_logger)
@@ -690,7 +799,10 @@ class Supervisor(EventListener):
         # Error handling (only if supervisor is available)
         if (
             self._robot_controller
-            and (self._state.state == RobotControllerState.ERROR or self._state.state == RobotControllerState.WATCHDOG_ERROR)
+            and (
+                self._state.state == RobotControllerState.ERROR
+                or self._state.state == RobotControllerState.WATCHDOG_ERROR
+            )
             and not self._error_read
         ):
             self._error_read = True
@@ -713,7 +825,21 @@ class Supervisor(EventListener):
                 await self._handle_event(("move_l", "move_j"))
 
             case RobotControllerState.GRIPPER_FINISHED:
-                await self._handle_event(("pump_on", "pump_off"))
+                # Handle any gripper event completion - check if current event is gripper event
+                if (
+                    self._gripper
+                    and hasattr(self, "_current_event")
+                    and self._current_event
+                ):
+                    if self._gripper.validate_event(self._current_event):
+                        # Current event is a gripper event - handle its completion
+                        await self._handle_event((self._current_event.event_type,))
+                    else:
+                        # Should not happen - GRIPPER_FINISHED without gripper event
+                        warning(
+                            f"GRIPPER_FINISHED state but current event {self._current_event.event_type} is not a gripper event",
+                            self._message_logger,
+                        )
 
     def _get_state_specific_error(self, event: Event) -> str | None:
         """
@@ -744,10 +870,26 @@ class Supervisor(EventListener):
                     return status, code, "Pump watchdog failure detected"
 
             case RobotControllerState.GRIPPER_FINISHED:
-                if not self._robot_controller.gripper_check:
-                    status = "failure"
-                    code = 3
-                    return status, code, "Pump on not activated"
+                # Delegate error checking to gripper
+                if self._gripper:
+                    # Get current path flags for error context
+                    path_flags = {}
+                    if (
+                        hasattr(self._state, "path_execution_state")
+                        and self._state.path_execution_state
+                    ):
+                        path_flags = {
+                            "testing_move": getattr(
+                                self._state.path_execution_state, "testing_move", False
+                            )
+                        }
+
+                    # Check for gripper-specific errors
+                    gripper_error = self._gripper.check_errors(path_flags)
+                    if gripper_error:
+                        status = "failure"
+                        code = 3
+                        return status, code, gripper_error.message
 
         return None
 

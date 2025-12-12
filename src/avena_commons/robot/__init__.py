@@ -1,3 +1,3 @@
 from .supervisor import Supervisor
 
-__all__ = ['Supervisor']
+__all__ = ["Supervisor"]
